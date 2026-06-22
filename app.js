@@ -16,6 +16,11 @@ const state = {
   requirementType: "product",
   activeProcessStep: "product",
   aboutOpen: false,
+  productWindchillTransferComplete: false,
+  productWindchillTransferredAt: "",
+  softwareWindchillTransferComplete: false,
+  softwareWindchillTransferredAt: "",
+  runtimeMock: false,
   scoreFilterActive: false,
   softwareScoreFilterActive: false,
   sourceFileName: "",
@@ -96,6 +101,10 @@ const els = {
   softwareScoreMetric: document.querySelector("#softwareScoreMetric"),
   softwareIssueMetric: document.querySelector("#softwareIssueMetric"),
   criticalSoftwareIssuesButton: document.querySelector("#criticalSoftwareIssuesButton"),
+  softwareTransferBar: document.querySelector("#softwareTransferBar"),
+  softwareTransferTitle: document.querySelector("#softwareTransferTitle"),
+  softwareTransferText: document.querySelector("#softwareTransferText"),
+  softwareTransferButton: document.querySelector("#softwareTransferButton"),
   softwareScoreFilterBar: document.querySelector("#softwareScoreFilterBar"),
   clearSoftwareScoreFilterButton: document.querySelector("#clearSoftwareScoreFilterButton"),
   softwareSelectionOverlay: document.querySelector("#softwareSelectionOverlay"),
@@ -131,6 +140,10 @@ const els = {
   scoreMetric: document.querySelector("#scoreMetric"),
   issueMetric: document.querySelector("#issueMetric"),
   criticalIssuesButton: document.querySelector("#criticalIssuesButton"),
+  productTransferBar: document.querySelector("#productTransferBar"),
+  productTransferTitle: document.querySelector("#productTransferTitle"),
+  productTransferText: document.querySelector("#productTransferText"),
+  productTransferButton: document.querySelector("#productTransferButton"),
   scoreFilterBar: document.querySelector("#scoreFilterBar"),
   clearScoreFilterButton: document.querySelector("#clearScoreFilterButton"),
   emptyWorkspace: document.querySelector("#emptyWorkspace"),
@@ -249,7 +262,9 @@ els.generateSoftwareMenuButton.addEventListener("click", async () => {
   closeMenus();
   await generateSoftwareRequirements();
 });
-els.exportButton.addEventListener("click", showWindchillExportUnavailable);
+els.exportButton.addEventListener("click", simulateActiveWindchillTransfer);
+els.productTransferButton.addEventListener("click", simulateProductWindchillTransfer);
+els.softwareTransferButton.addEventListener("click", simulateSoftwareWindchillTransfer);
 els.criticalIssuesButton.addEventListener("click", activateScoreFilter);
 els.clearScoreFilterButton.addEventListener("click", clearScoreFilter);
 els.criticalSoftwareIssuesButton.addEventListener("click", activateSoftwareScoreFilter);
@@ -351,16 +366,21 @@ function renderAboutPage() {
 
 function setActiveProcessStep(processStep) {
   if (!hasProject()) return;
-  if (!processStep || processStep === state.activeProcessStep) return;
+  if (!processStep) return;
   if (!isProcessStepAvailable(processStep)) {
     setStatus(getLockedStepMessage(processStep));
     updateWorkflowState();
     return;
   }
 
+  const wasAboutOpen = state.aboutOpen;
+  state.aboutOpen = false;
+  if (processStep === state.activeProcessStep && !wasAboutOpen) return;
+
   state.activeProcessStep = processStep;
   updateWorkflowState();
   renderProcessPages();
+  updateExportAvailability();
 
   setStatus(processStep === "product" ? "Bereit" : "In Vorbereitung");
 }
@@ -421,7 +441,7 @@ function renderWorkspaceState() {
   renderMenuAvailability();
   els.aboutPage.hidden = !state.aboutOpen;
   els.emptyWorkspace.hidden = state.aboutOpen || projectOpen;
-  els.workflowSelector.hidden = state.aboutOpen || !projectOpen;
+  els.workflowSelector.hidden = !projectOpen;
   els.processPages.forEach((page) => {
     if (state.aboutOpen || !projectOpen) {
       page.hidden = true;
@@ -469,7 +489,15 @@ function getLockedStepMessage(processStep) {
   if (!previousStep) return "";
 
   if (previousStep === "product") {
+    if (isProductQualityReady() && !state.productWindchillTransferComplete) {
+      return "Product Requirements zuerst nach Windchill übertragen";
+    }
+
     return `Product Requirement erst vollständig zuordnen und Score >= ${PRODUCT_STEP_MIN_SCORE} erreichen`;
+  }
+
+  if (previousStep === "software" && isSoftwareQualityReady() && !state.softwareWindchillTransferComplete) {
+    return "Software Requirements zuerst nach Windchill übertragen";
   }
 
   return `${PROCESS_STEP_LABELS[previousStep]} muss zuerst abgeschlossen werden`;
@@ -480,13 +508,25 @@ function getLockedStepShortText(processStep) {
   if (!previousStep) return "";
 
   if (previousStep === "product") {
+    if (isProductQualityReady() && !state.productWindchillTransferComplete) {
+      return "Windchill-Übertragung erforderlich";
+    }
+
     return `Score >= ${PRODUCT_STEP_MIN_SCORE} erforderlich`;
+  }
+
+  if (previousStep === "software" && isSoftwareQualityReady() && !state.softwareWindchillTransferComplete) {
+    return "Windchill-Übertragung erforderlich";
   }
 
   return `${PROCESS_STEP_LABELS[previousStep]} abschließen`;
 }
 
 function isProductStepComplete() {
+  return isProductQualityReady() && state.productWindchillTransferComplete;
+}
+
+function isProductQualityReady() {
   const progress = getProductStepProgress();
   return progress.allAssigned && progress.averageScore >= PRODUCT_STEP_MIN_SCORE && state.finalScoreUpdates.size === 0;
 }
@@ -643,6 +683,10 @@ function resetProjectState({ projectName, projectDescription }) {
   state.activeProcessStep = "product";
   state.scoreFilterActive = false;
   state.softwareScoreFilterActive = false;
+  state.productWindchillTransferComplete = false;
+  state.productWindchillTransferredAt = "";
+  state.softwareWindchillTransferComplete = false;
+  state.softwareWindchillTransferredAt = "";
   state.sourceFileName = "";
   state.projectName = projectName;
   state.projectDescription = projectDescription;
@@ -735,6 +779,10 @@ function refreshRequirements() {
   state.finalScoreUpdates = new Set();
   state.scoreFilterActive = false;
   state.softwareScoreFilterActive = false;
+  state.productWindchillTransferComplete = false;
+  state.productWindchillTransferredAt = "";
+  state.softwareWindchillTransferComplete = false;
+  state.softwareWindchillTransferredAt = "";
   state.analysisComplete = false;
   els.analyzeButton.disabled = state.requirements.length === 0;
   updateProjectActions();
@@ -971,6 +1019,8 @@ function excludeRequirement() {
   });
   state.softwareRequirements = [];
   state.softwareSelections = new Map();
+  resetProductWindchillTransfer();
+  resetSoftwareWindchillTransfer();
   closeSelectionDialog();
   renderTable();
   renderMetrics();
@@ -1007,6 +1057,8 @@ async function selectFinalText(choice) {
   state.finalSelections.set(Number(rowNumber), { choice, text });
   state.softwareRequirements = [];
   state.softwareSelections = new Map();
+  resetProductWindchillTransfer();
+  resetSoftwareWindchillTransfer();
   closeSelectionDialog();
   renderTable();
   renderMetrics();
@@ -1167,6 +1219,7 @@ function renderMetrics() {
   const progress = getProductStepProgress();
   const scores = getIncludedScores();
   const criticalScoreCount = getCriticalScoreRows().size;
+  const productReady = isProductQualityReady();
 
   els.countMetric.textContent = state.analysisComplete
     ? `${progress.assignedCount} / ${state.requirements.length}`
@@ -1177,6 +1230,7 @@ function renderMetrics() {
   els.criticalIssuesButton.disabled = criticalScoreCount === 0;
   els.criticalIssuesButton.classList.toggle("is-active", state.scoreFilterActive);
   els.scoreFilterBar.hidden = !state.scoreFilterActive;
+  renderProductTransferState(productReady);
   updateWorkflowState();
   renderSoftwarePage();
 }
@@ -1195,12 +1249,13 @@ function renderSoftwarePage() {
   els.criticalSoftwareIssuesButton.disabled = criticalSoftwareCount === 0;
   els.criticalSoftwareIssuesButton.classList.toggle("is-active", state.softwareScoreFilterActive);
   els.softwareScoreFilterBar.hidden = !state.softwareScoreFilterActive;
+  renderSoftwareTransferState();
   els.generateSoftwareButton.disabled = !hasProject() || !isProductStepComplete() || state.finalScoreUpdates.size > 0;
 
   if (!isProductStepComplete()) {
     els.softwareScoreFilterBar.hidden = true;
     els.softwareRequirementsBody.innerHTML =
-      '<tr><td colspan="5" class="empty">Schließe Product Requirements ab, um Software Requirements abzuleiten.</td></tr>';
+      `<tr><td colspan="5" class="empty">${isProductQualityReady() ? "Übertrage zuerst die Product Requirements nach Windchill." : "Schließe Product Requirements ab, um Software Requirements abzuleiten."}</td></tr>`;
     return;
   }
 
@@ -1425,9 +1480,10 @@ function deferSoftwareRequirementSelection() {
     state.softwareSelections.delete(String(softwareId));
   }
 
+  resetSoftwareWindchillTransfer();
   closeSoftwareSelectionDialog();
   renderSoftwarePage();
-  updateWorkflowState();
+  updateExportAvailability();
 }
 
 function acceptSoftwareRequirement() {
@@ -1459,9 +1515,10 @@ function acceptSoftwareRequirement() {
     acceptedAt: new Date().toISOString(),
   });
 
+  resetSoftwareWindchillTransfer();
   closeSoftwareSelectionDialog();
   renderSoftwarePage();
-  updateWorkflowState();
+  updateExportAvailability();
 }
 
 function excludeSoftwareRequirement() {
@@ -1478,12 +1535,17 @@ function excludeSoftwareRequirement() {
     acceptedAt: new Date().toISOString(),
   });
 
+  resetSoftwareWindchillTransfer();
   closeSoftwareSelectionDialog();
   renderSoftwarePage();
-  updateWorkflowState();
+  updateExportAvailability();
 }
 
 function isSoftwareStepComplete() {
+  return isSoftwareQualityReady() && state.softwareWindchillTransferComplete;
+}
+
+function isSoftwareQualityReady() {
   if (!state.softwareRequirements.length) return false;
 
   return state.softwareRequirements.every((item) => {
@@ -1495,6 +1557,10 @@ function isSoftwareStepComplete() {
 }
 
 function scoreAcceptedSoftwareRequirement(item, text) {
+  if (state.runtimeMock) {
+    return randomInteger(86, 99);
+  }
+
   const originalText = String(item.text || "").trim();
   const normalizedText = text.trim();
   if (normalizedText.length < 40) return 70;
@@ -1509,6 +1575,10 @@ function scoreAcceptedSoftwareRequirement(item, text) {
   ];
   const signalScore = qualitySignals.filter((pattern) => pattern.test(normalizedText)).length;
   return signalScore >= 4 ? Math.max(Number(item.score) || 0, 85) : Math.min(Number(item.score) || 84, 84);
+}
+
+function randomInteger(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 function getFinalProductRequirements() {
@@ -1562,6 +1632,7 @@ async function generateSoftwareRequirements() {
     );
     state.softwareSelections = new Map();
     state.softwareScoreFilterActive = false;
+    resetSoftwareWindchillTransfer();
     setStatus("Software Requirements erstellt");
     completeProgress(state.softwareRequirements.length);
   } catch (error) {
@@ -1664,9 +1735,122 @@ function isCriticalScore(score) {
 }
 
 function updateExportAvailability() {
-  els.exportButton.disabled = true;
-  els.exportButton.title = "Windchill-Export ist noch nicht verfügbar";
+  const canTransferProduct = hasProject() && state.activeProcessStep === "product" && isProductQualityReady();
+  const canTransferSoftware = hasProject() && state.activeProcessStep === "software" && isSoftwareQualityReady();
+
+  if (state.activeProcessStep === "software") {
+    els.exportButton.disabled = !canTransferSoftware || state.softwareWindchillTransferComplete;
+    els.exportButton.title = state.softwareWindchillTransferComplete
+      ? "Software Requirements wurden simuliert nach Windchill übertragen"
+      : canTransferSoftware
+        ? "Software Requirements simuliert nach Windchill übertragen"
+        : "SR-Übertragung ist nach abgeschlossener SR-Übernahme verfügbar";
+    updateWorkflowState();
+    return;
+  }
+
+  els.exportButton.disabled = !canTransferProduct || state.productWindchillTransferComplete;
+  els.exportButton.title = state.productWindchillTransferComplete
+    ? "Product Requirements wurden simuliert nach Windchill übertragen"
+    : canTransferProduct
+      ? "Product Requirements simuliert nach Windchill übertragen"
+      : "PR-Übertragung ist nach abgeschlossener PR-Bewertung verfügbar";
   updateWorkflowState();
+}
+
+function renderProductTransferState(productReady = isProductQualityReady()) {
+  if (!els.productTransferBar) return;
+
+  els.productTransferBar.hidden = !hasProject() || !state.analysisComplete || !productReady;
+  els.productTransferBar.classList.toggle("is-complete", state.productWindchillTransferComplete);
+  els.productTransferTitle.textContent = state.productWindchillTransferComplete
+    ? "PRs nach Windchill übertragen"
+    : "PR-Übertragung erforderlich";
+  els.productTransferText.textContent = state.productWindchillTransferComplete
+    ? `Simulierte Übertragung abgeschlossen${state.productWindchillTransferredAt ? `: ${new Date(state.productWindchillTransferredAt).toLocaleString()}` : "."}`
+    : "Übertrage die abgeschlossenen Product Requirements nach Windchill, bevor Software Requirements bearbeitet werden können.";
+  els.productTransferButton.disabled = state.productWindchillTransferComplete;
+  els.productTransferButton.textContent = state.productWindchillTransferComplete
+    ? "Übertragung abgeschlossen"
+    : "PRs nach Windchill übertragen";
+}
+
+async function simulateProductWindchillTransfer() {
+  if (!isProductQualityReady()) {
+    alert(`Bitte schließe zuerst alle PR mit Score >= ${PRODUCT_STEP_MIN_SCORE} ab.`);
+    return;
+  }
+
+  if (state.productWindchillTransferComplete) return;
+
+  setStatus("Übertrage PRs nach Windchill...");
+  els.exportButton.disabled = true;
+  els.productTransferButton.disabled = true;
+  els.productTransferButton.textContent = "Übertrage...";
+  await delay(900);
+  state.productWindchillTransferComplete = true;
+  state.productWindchillTransferredAt = new Date().toISOString();
+  setStatus("PRs übertragen");
+  renderMetrics();
+  updateExportAvailability();
+  updateWorkflowState();
+}
+
+function renderSoftwareTransferState() {
+  if (!els.softwareTransferBar) return;
+
+  const softwareReady = isSoftwareQualityReady();
+  els.softwareTransferBar.hidden = !hasProject() || !state.softwareRequirements.length || !softwareReady;
+  els.softwareTransferBar.classList.toggle("is-complete", state.softwareWindchillTransferComplete);
+  els.softwareTransferTitle.textContent = state.softwareWindchillTransferComplete
+    ? "SRs nach Windchill übertragen"
+    : "SR-Übertragung erforderlich";
+  els.softwareTransferText.textContent = state.softwareWindchillTransferComplete
+    ? `Simulierte Übertragung abgeschlossen${state.softwareWindchillTransferredAt ? `: ${new Date(state.softwareWindchillTransferredAt).toLocaleString()}` : "."}`
+    : "Übertrage die abgeschlossenen Software Requirements nach Windchill, bevor der nächste Prozessschritt verfügbar wird.";
+  els.softwareTransferButton.disabled = state.softwareWindchillTransferComplete;
+  els.softwareTransferButton.textContent = state.softwareWindchillTransferComplete
+    ? "Übertragung abgeschlossen"
+    : "SRs nach Windchill übertragen";
+}
+
+async function simulateSoftwareWindchillTransfer() {
+  if (!isSoftwareQualityReady()) {
+    alert(`Bitte übernimm oder schließe zuerst alle SR ab. Übernommene SR benötigen Score >= ${PRODUCT_STEP_MIN_SCORE}.`);
+    return;
+  }
+
+  if (state.softwareWindchillTransferComplete) return;
+
+  setStatus("Übertrage SRs nach Windchill...");
+  els.exportButton.disabled = true;
+  els.softwareTransferButton.disabled = true;
+  els.softwareTransferButton.textContent = "Übertrage...";
+  await delay(900);
+  state.softwareWindchillTransferComplete = true;
+  state.softwareWindchillTransferredAt = new Date().toISOString();
+  setStatus("SRs übertragen");
+  renderSoftwarePage();
+  updateExportAvailability();
+  updateWorkflowState();
+}
+
+function simulateActiveWindchillTransfer() {
+  if (state.activeProcessStep === "software") {
+    return simulateSoftwareWindchillTransfer();
+  }
+
+  return simulateProductWindchillTransfer();
+}
+
+function resetProductWindchillTransfer() {
+  state.productWindchillTransferComplete = false;
+  state.productWindchillTransferredAt = "";
+}
+
+function resetSoftwareWindchillTransfer() {
+  state.softwareWindchillTransferComplete = false;
+  state.softwareWindchillTransferredAt = "";
 }
 
 function updateProjectActions() {
@@ -1695,7 +1879,7 @@ function updateContextualMenuActions() {
   els.generateSoftwareMenuButton.disabled = !canDeriveSoftware;
   els.generateSoftwareMenuButton.title = canDeriveSoftware
     ? ""
-    : "Software Requirements können erst im SR-Schritt nach abgeschlossener PR-Zuordnung abgeleitet werden";
+    : "Software Requirements können erst im SR-Schritt nach abgeschlossener PR-Zuordnung und Windchill-Übertragung abgeleitet werden";
 }
 
 async function saveProjectFile() {
@@ -1822,6 +2006,10 @@ function createProjectPayload() {
       analysisComplete: state.analysisComplete,
       generatedIds: state.generatedIds,
       activeProcessStep: state.activeProcessStep,
+      productWindchillTransferComplete: state.productWindchillTransferComplete,
+      productWindchillTransferredAt: state.productWindchillTransferredAt,
+      softwareWindchillTransferComplete: state.softwareWindchillTransferComplete,
+      softwareWindchillTransferredAt: state.softwareWindchillTransferredAt,
     },
   };
 }
@@ -1887,6 +2075,10 @@ function loadProjectPayload(payload, fileName, handle = null) {
   state.finalScoreUpdates = new Set();
   state.scoreFilterActive = false;
   state.softwareScoreFilterActive = false;
+  state.productWindchillTransferComplete = Boolean(payload.state?.productWindchillTransferComplete);
+  state.productWindchillTransferredAt = payload.state?.productWindchillTransferredAt || "";
+  state.softwareWindchillTransferComplete = Boolean(payload.state?.softwareWindchillTransferComplete);
+  state.softwareWindchillTransferredAt = payload.state?.softwareWindchillTransferredAt || "";
   state.analysisComplete = Boolean(payload.state?.analysisComplete || state.results.length);
   state.activeProcessStep = payload.state?.activeProcessStep || "product";
 
@@ -1960,8 +2152,10 @@ function projectNameFromFile(fileName) {
   return String(fileName || "Miele.DevPilot").replace(/\.mdp$|\.miele-devpilot\.json$|\.json$/i, "");
 }
 
-function showWindchillExportUnavailable() {
-  alert("Windchill-Export ist noch nicht verfügbar.");
+function delay(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 function guessColumn(needles) {
@@ -2051,12 +2245,27 @@ function getSaveProjectEndpoint() {
   return getApiEndpoint("api/save-project");
 }
 
+function getRuntimeEndpoint() {
+  return getApiEndpoint("api/runtime");
+}
+
 function getApiEndpoint(path) {
   if (window.location.protocol === "file:") {
     return new URL(path, LOCAL_SERVER_APP_URL).href;
   }
 
   return new URL(path, window.location.href).pathname;
+}
+
+async function loadRuntimeInfo() {
+  try {
+    const response = await fetch(getRuntimeEndpoint());
+    if (!response.ok) return;
+    const data = await response.json();
+    state.runtimeMock = Boolean(data.mock);
+  } catch {
+    state.runtimeMock = false;
+  }
 }
 
 function showProgress(total) {
@@ -2095,7 +2304,9 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-renderWorkspaceState();
-renderProcessPages();
-updateProjectActions();
-renderMetrics();
+loadRuntimeInfo().finally(() => {
+  renderWorkspaceState();
+  renderProcessPages();
+  updateProjectActions();
+  renderMetrics();
+});

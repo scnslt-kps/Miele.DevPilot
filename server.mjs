@@ -57,6 +57,14 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && pathname === "/api/runtime") {
+      sendJson(res, 200, {
+        mock: process.env.OPENAI_MOCK === "true",
+        version: "0.1.0",
+      });
+      return;
+    }
+
     if (req.method !== "GET" && req.method !== "HEAD") {
       sendJson(res, 405, { error: "Method not allowed" });
       return;

@@ -129,7 +129,10 @@
               </dl>
             </section>
           </div>
-          <button id="closeAboutButton" type="button">Zurück zum Workspace</button>
+          <div class="about-actions">
+            <span>Bei geöffnetem Projekt kannst du auch direkt über den Prozessablauf zurückspringen.</span>
+            <button id="closeAboutButton" type="button">Zurück zum Workspace</button>
+          </div>
         </section>
 
         <nav class="workflow-selector" aria-label="Prozessschritte">
@@ -191,6 +194,14 @@
             </section>
           </div>
 
+          <div class="transfer-bar" id="productTransferBar" hidden>
+            <div>
+              <strong id="productTransferTitle">PR-Übertragung erforderlich</strong>
+              <span id="productTransferText">Übertrage die abgeschlossenen Product Requirements nach Windchill, bevor Software Requirements bearbeitet werden können.</span>
+            </div>
+            <button id="productTransferButton" type="button">PRs nach Windchill übertragen</button>
+          </div>
+
           <div class="filter-bar" id="scoreFilterBar" hidden>
             <span>Filter aktiv: Requirements mit Score &lt; 85</span>
             <button id="clearScoreFilterButton" type="button">Filter beenden</button>
@@ -243,6 +254,14 @@
                 <strong id="softwareIssueMetric">0</strong>
               </button>
             </section>
+          </div>
+
+          <div class="transfer-bar" id="softwareTransferBar" hidden>
+            <div>
+              <strong id="softwareTransferTitle">SR-Übertragung erforderlich</strong>
+              <span id="softwareTransferText">Übertrage die abgeschlossenen Software Requirements nach Windchill, bevor der nächste Prozessschritt verfügbar wird.</span>
+            </div>
+            <button id="softwareTransferButton" type="button">SRs nach Windchill übertragen</button>
           </div>
 
           <div class="filter-bar" id="softwareScoreFilterBar" hidden>
