@@ -295,6 +295,82 @@ h2 {
   display: none;
 }
 
+.about-page[hidden] {
+  display: none;
+}
+
+.about-page {
+  display: grid;
+  gap: 18px;
+}
+
+.about-hero,
+.about-grid section {
+  border: 1px solid var(--line);
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(39, 35, 31, 0.06);
+}
+
+.about-hero {
+  padding: 34px;
+}
+
+.about-hero h1 {
+  margin: 0 0 10px;
+  font-size: clamp(2rem, 5vw, 3.4rem);
+}
+
+.about-hero p:last-child {
+  max-width: 760px;
+  margin: 0;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.about-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.about-grid section {
+  padding: 20px;
+}
+
+.about-grid h2 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
+.about-grid p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.about-build-info {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.about-build-info div {
+  display: grid;
+  gap: 2px;
+}
+
+.about-build-info dt {
+  color: var(--black);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.about-build-info dd {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .page-placeholder {
   min-height: 360px;
   border: 1px solid var(--line);

@@ -15,6 +15,7 @@ const state = {
   generatedIds: false,
   requirementType: "product",
   activeProcessStep: "product",
+  aboutOpen: false,
   scoreFilterActive: false,
   softwareScoreFilterActive: false,
   sourceFileName: "",
@@ -26,6 +27,8 @@ const state = {
 
 const PROJECT_FILE_TYPE = "miele-devpilot-project";
 const PROJECT_FILE_VERSION = 1;
+const APP_VERSION = "0.1.0";
+const APP_BUILD = "POC";
 const ANALYSIS_BATCH_SIZE = 5;
 const PRODUCT_STEP_MIN_SCORE = 85;
 const LOCAL_SERVER_APP_URL = "http://localhost:3000/Miele.DevPilot/";
@@ -54,6 +57,12 @@ const els = {
   openProjectButton: document.querySelector("#openProjectButton"),
   saveProjectButton: document.querySelector("#saveProjectButton"),
   saveProjectAsButton: document.querySelector("#saveProjectAsButton"),
+  aboutButton: document.querySelector("#aboutButton"),
+  closeAboutButton: document.querySelector("#closeAboutButton"),
+  aboutVersion: document.querySelector("#aboutVersion"),
+  aboutBuild: document.querySelector("#aboutBuild"),
+  aboutBuildDate: document.querySelector("#aboutBuildDate"),
+  aboutRuntimePath: document.querySelector("#aboutRuntimePath"),
   openSettingsButton: document.querySelector("#openSettingsButton"),
   fileState: document.querySelector("#fileState"),
   requirementType: document.querySelector("#requirementType"),
@@ -125,6 +134,7 @@ const els = {
   scoreFilterBar: document.querySelector("#scoreFilterBar"),
   clearScoreFilterButton: document.querySelector("#clearScoreFilterButton"),
   emptyWorkspace: document.querySelector("#emptyWorkspace"),
+  aboutPage: document.querySelector("#aboutPage"),
   workflowSelector: document.querySelector(".workflow-selector"),
   progressOverlay: document.querySelector("#progressOverlay"),
   progressTitle: document.querySelector("#progressTitle"),
@@ -178,6 +188,11 @@ els.saveProjectAsButton.addEventListener("click", async () => {
   closeMenus();
   await saveProjectFileAs();
 });
+els.aboutButton.addEventListener("click", () => {
+  closeMenus();
+  openAboutPage();
+});
+els.closeAboutButton.addEventListener("click", closeAboutPage);
 els.openSettingsButton.addEventListener("click", () => {
   if (state.activeProcessStep !== "product") return;
   openSettingsDialog();
@@ -312,6 +327,28 @@ function closeMenus() {
   });
 }
 
+function openAboutPage() {
+  state.aboutOpen = true;
+  renderAboutPage();
+  renderWorkspaceState();
+  renderProcessPages();
+  setStatus("About");
+}
+
+function closeAboutPage() {
+  state.aboutOpen = false;
+  renderWorkspaceState();
+  renderProcessPages();
+  setStatus(hasProject() ? "Bereit" : "Kein Projekt");
+}
+
+function renderAboutPage() {
+  els.aboutVersion.textContent = `Proof of Concept ${APP_VERSION}`;
+  els.aboutBuild.textContent = APP_BUILD;
+  els.aboutBuildDate.textContent = document.lastModified || "Nicht verfügbar";
+  els.aboutRuntimePath.textContent = window.location.pathname || "/";
+}
+
 function setActiveProcessStep(processStep) {
   if (!hasProject()) return;
   if (!processStep || processStep === state.activeProcessStep) return;
@@ -367,7 +404,7 @@ function updateWorkflowState() {
 
 function renderProcessPages() {
   els.processPages.forEach((page) => {
-    const isActive = hasProject() && page.dataset.processPage === state.activeProcessStep;
+    const isActive = !state.aboutOpen && hasProject() && page.dataset.processPage === state.activeProcessStep;
     page.hidden = !isActive;
     page.classList.toggle("is-active", isActive);
   });
@@ -382,10 +419,11 @@ function renderWorkspaceState() {
   const projectOpen = hasProject();
   renderProjectHeader();
   renderMenuAvailability();
-  els.emptyWorkspace.hidden = projectOpen;
-  els.workflowSelector.hidden = !projectOpen;
+  els.aboutPage.hidden = !state.aboutOpen;
+  els.emptyWorkspace.hidden = state.aboutOpen || projectOpen;
+  els.workflowSelector.hidden = state.aboutOpen || !projectOpen;
   els.processPages.forEach((page) => {
-    if (!projectOpen) {
+    if (state.aboutOpen || !projectOpen) {
       page.hidden = true;
       page.classList.remove("is-active");
     }

@@ -69,6 +69,12 @@
                 </button>
               </div>
             </details>
+            <details class="menu-dropdown">
+              <summary>Hilfe</summary>
+              <div class="menu-popover" role="menu">
+                <button id="aboutButton" type="button" role="menuitem">About</button>
+              </div>
+            </details>
           </div>
           <div class="file-state" id="fileState">Kein Projekt geöffnet</div>
         </nav>
@@ -80,6 +86,50 @@
           <p class="eyebrow">Workspace</p>
           <h1>Kein Projekt geöffnet</h1>
           <p>Lege ein neues Projekt an oder lade eine Projektdatei, um Requirements zu importieren und zu bewerten.</p>
+        </section>
+
+        <section class="about-page" id="aboutPage" hidden>
+          <div class="about-hero">
+            <p class="eyebrow">About</p>
+            <h1>Miele.DevPilot</h1>
+            <p>Von Product Requirements zu qualitätsgesicherten Software Requirements, UseCases und Testartefakten.</p>
+          </div>
+          <div class="about-grid">
+            <section>
+              <h2>Zweck</h2>
+              <p>Miele.DevPilot unterstützt Requirements Engineering durch strukturierte Analyse, Bewertung, Ableitung und Übernahme von Requirements im Projektkontext.</p>
+            </section>
+            <section>
+              <h2>Arbeitsstand</h2>
+              <p>Aktuell verfügbar sind PR-Import und Analyse, Projektdateien sowie die Ableitung und Prüfung von SR inklusive Score-Schwelle und Übernahmestatus.</p>
+            </section>
+            <section>
+              <h2>Version</h2>
+              <p id="aboutVersion">Proof of Concept 0.1.0</p>
+            </section>
+            <section>
+              <h2>Autor</h2>
+              <p>Klaus-Peter Schäfer</p>
+            </section>
+            <section>
+              <h2>Build-Informationen</h2>
+              <dl class="about-build-info">
+                <div>
+                  <dt>Build</dt>
+                  <dd id="aboutBuild">-</dd>
+                </div>
+                <div>
+                  <dt>Stand</dt>
+                  <dd id="aboutBuildDate">-</dd>
+                </div>
+                <div>
+                  <dt>Pfad</dt>
+                  <dd id="aboutRuntimePath">-</dd>
+                </div>
+              </dl>
+            </section>
+          </div>
+          <button id="closeAboutButton" type="button">Zurück zum Workspace</button>
         </section>
 
         <nav class="workflow-selector" aria-label="Prozessschritte">
