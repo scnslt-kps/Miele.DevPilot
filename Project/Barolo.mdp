@@ -1,0 +1,352 @@
+{
+  "type": "miele-devpilot-project",
+  "version": 1,
+  "savedAt": "2026-06-19T10:08:09.655Z",
+  "project": {
+    "name": "Barolo",
+    "description": "Test"
+  },
+  "source": {
+    "fileName": "Product_requirements_Barolo_testl.xlsx",
+    "sheetName": "Product Requirements App",
+    "rows": [
+      [
+        "Cat",
+        "Sub-cat",
+        "Name",
+        "Desc",
+        "Additional information",
+        "Reference App case",
+        "HLF",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Dashboard",
+        "View appliance type on dashboard",
+        "User shall be able to view the appliance type on the app dashboard.",
+        "",
+        "UC03.02",
+        "",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Dashboard",
+        "View status on dashboard",
+        "User shall be able to view appliance status on the app dashboard.",
+        "",
+        "UC03.02",
+        "",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Temp control/view",
+        "View current temperature(s) on dashboard",
+        "User shall be able to view the current temperature per zone on the app dashboard.",
+        "",
+        "UC03.01",
+        "Temperature Display Wine",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Light control",
+        "Toggle Presenter light on dashboard",
+        "User shall be able to activate and deactivate Presenter light from the app dashboard quick actions. ",
+        "",
+        "UC03.03",
+        "Presentation Light Wine",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Temp control/view ",
+        "View current wine zone(s) temperature on detail",
+        "User shall be able to view the current temperature of any wine zone on the App Detail page.",
+        "",
+        "",
+        "Temperature Display Wine",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Temp control/view",
+        "Set wine zone(s) temperature",
+        "User shall be able to set the target temperature of any wine zone on the appliance detail page within the allowed range from 5°C to 20°C in 1°C steps.",
+        "Min & Max values according to specification. Awaiting a response from Liebherr",
+        "UC03.05",
+        "Temperature Adjustment Wine",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Temp control/view",
+        "View target wine zone(s) temperature on detail ",
+        "User shall be able to view the target temperature of any wine zone on the App Detail page.",
+        "",
+        "UC03.06",
+        "Temperature Adjustment Wine",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Light control",
+        "Control presenter light on/off ",
+        "User shall be able to activate and deactivate the presenter light.",
+        "",
+        "UC04.01",
+        "Presentation Light Wine",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]
+    ],
+    "headers": [
+      "Cat",
+      "Sub-cat",
+      "Name",
+      "Desc",
+      "Additional information",
+      "Reference App case",
+      "HLF",
+      "Spalte H",
+      "Spalte I"
+    ]
+  },
+  "config": {
+    "requirementType": "product",
+    "sheetName": "Product Requirements App",
+    "headerRow": "1",
+    "categoryColumn": "0",
+    "subcategoryColumn": "1",
+    "nameColumn": "2",
+    "requirementColumn": "3",
+    "idColumn": "",
+    "idPrefix": "BAR"
+  },
+  "state": {
+    "requirements": [
+      {
+        "rowNumber": 2,
+        "category": "BasicFunc",
+        "subcategory": "Dashboard",
+        "name": "View appliance type on dashboard",
+        "id": "PR_BAR_1.1",
+        "text": "User shall be able to view the appliance type on the app dashboard."
+      },
+      {
+        "rowNumber": 3,
+        "category": "BasicFunc",
+        "subcategory": "Dashboard",
+        "name": "View status on dashboard",
+        "id": "PR_BAR_1.2",
+        "text": "User shall be able to view appliance status on the app dashboard."
+      },
+      {
+        "rowNumber": 4,
+        "category": "BasicFunc",
+        "subcategory": "Temp control/view",
+        "name": "View current temperature(s) on dashboard",
+        "id": "PR_BAR_2.1",
+        "text": "User shall be able to view the current temperature per zone on the app dashboard."
+      },
+      {
+        "rowNumber": 5,
+        "category": "BasicFunc",
+        "subcategory": "Light control",
+        "name": "Toggle Presenter light on dashboard",
+        "id": "PR_BAR_3.1",
+        "text": "User shall be able to activate and deactivate Presenter light from the app dashboard quick actions."
+      },
+      {
+        "rowNumber": 6,
+        "category": "BasicFunc",
+        "subcategory": "Temp control/view",
+        "name": "View current wine zone(s) temperature on detail",
+        "id": "PR_BAR_2.2",
+        "text": "User shall be able to view the current temperature of any wine zone on the App Detail page."
+      },
+      {
+        "rowNumber": 7,
+        "category": "BasicFunc",
+        "subcategory": "Temp control/view",
+        "name": "Set wine zone(s) temperature",
+        "id": "PR_BAR_2.3",
+        "text": "User shall be able to set the target temperature of any wine zone on the appliance detail page within the allowed range from 5°C to 20°C in 1°C steps."
+      },
+      {
+        "rowNumber": 8,
+        "category": "BasicFunc",
+        "subcategory": "Temp control/view",
+        "name": "View target wine zone(s) temperature on detail",
+        "id": "PR_BAR_2.4",
+        "text": "User shall be able to view the target temperature of any wine zone on the App Detail page."
+      },
+      {
+        "rowNumber": 9,
+        "category": "BasicFunc",
+        "subcategory": "Light control",
+        "name": "Control presenter light on/off",
+        "id": "PR_BAR_3.2",
+        "text": "User shall be able to activate and deactivate the presenter light."
+      }
+    ],
+    "results": [],
+    "finalSelections": [],
+    "analysisComplete": false,
+    "generatedIds": true,
+    "activeProcessStep": "product"
+  }
+}

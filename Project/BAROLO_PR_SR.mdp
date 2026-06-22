@@ -1,0 +1,875 @@
+{
+  "type": "miele-devpilot-project",
+  "version": 1,
+  "savedAt": "2026-06-22T11:34:35.520Z",
+  "project": {
+    "name": "Barolo",
+    "description": "Das Barolo Weinkühlschrank Projekt"
+  },
+  "source": {
+    "fileName": "Product_requirements_Barolo_testl.xlsx",
+    "sheetName": "Product Requirements App",
+    "rows": [
+      [
+        "Cat",
+        "Sub-cat",
+        "Name",
+        "Desc",
+        "Additional information",
+        "Reference App case",
+        "HLF",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Dashboard",
+        "View appliance type on dashboard",
+        "User shall be able to view the appliance type on the app dashboard.",
+        "",
+        "UC03.02",
+        "",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Dashboard",
+        "View status on dashboard",
+        "User shall be able to view appliance status on the app dashboard.",
+        "",
+        "UC03.02",
+        "",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Temp control/view",
+        "View current temperature(s) on dashboard",
+        "User shall be able to view the current temperature per zone on the app dashboard.",
+        "",
+        "UC03.01",
+        "Temperature Display Wine",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Light control",
+        "Toggle Presenter light on dashboard",
+        "User shall be able to activate and deactivate Presenter light from the app dashboard quick actions. ",
+        "",
+        "UC03.03",
+        "Presentation Light Wine",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Temp control/view ",
+        "View current wine zone(s) temperature on detail",
+        "User shall be able to view the current temperature of any wine zone on the App Detail page.",
+        "",
+        "",
+        "Temperature Display Wine",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Temp control/view",
+        "Set wine zone(s) temperature",
+        "User shall be able to set the target temperature of any wine zone on the appliance detail page within the allowed range from 5°C to 20°C in 1°C steps.",
+        "Min & Max values according to specification. Awaiting a response from Liebherr",
+        "UC03.05",
+        "Temperature Adjustment Wine",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Temp control/view",
+        "View target wine zone(s) temperature on detail ",
+        "User shall be able to view the target temperature of any wine zone on the App Detail page.",
+        "",
+        "UC03.06",
+        "Temperature Adjustment Wine",
+        "",
+        ""
+      ],
+      [
+        "BasicFunc",
+        "Light control",
+        "Control presenter light on/off ",
+        "User shall be able to activate and deactivate the presenter light.",
+        "",
+        "UC04.01",
+        "Presentation Light Wine",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]
+    ],
+    "headers": [
+      "Cat",
+      "Sub-cat",
+      "Name",
+      "Desc",
+      "Additional information",
+      "Reference App case",
+      "HLF",
+      "Spalte H",
+      "Spalte I"
+    ]
+  },
+  "config": {
+    "requirementType": "product",
+    "sheetName": "Product Requirements App",
+    "headerRow": "1",
+    "categoryColumn": "0",
+    "subcategoryColumn": "1",
+    "nameColumn": "2",
+    "requirementColumn": "3",
+    "idColumn": "",
+    "idPrefix": "BAROLO"
+  },
+  "state": {
+    "requirements": [
+      {
+        "rowNumber": 2,
+        "category": "BasicFunc",
+        "subcategory": "Dashboard",
+        "name": "View appliance type on dashboard",
+        "id": "PR_BAROLO_1.1",
+        "text": "User shall be able to view the appliance type on the app dashboard."
+      },
+      {
+        "rowNumber": 3,
+        "category": "BasicFunc",
+        "subcategory": "Dashboard",
+        "name": "View status on dashboard",
+        "id": "PR_BAROLO_1.2",
+        "text": "User shall be able to view appliance status on the app dashboard."
+      },
+      {
+        "rowNumber": 4,
+        "category": "BasicFunc",
+        "subcategory": "Temp control/view",
+        "name": "View current temperature(s) on dashboard",
+        "id": "PR_BAROLO_2.1",
+        "text": "User shall be able to view the current temperature per zone on the app dashboard."
+      },
+      {
+        "rowNumber": 5,
+        "category": "BasicFunc",
+        "subcategory": "Light control",
+        "name": "Toggle Presenter light on dashboard",
+        "id": "PR_BAROLO_3.1",
+        "text": "User shall be able to activate and deactivate Presenter light from the app dashboard quick actions."
+      },
+      {
+        "rowNumber": 6,
+        "category": "BasicFunc",
+        "subcategory": "Temp control/view",
+        "name": "View current wine zone(s) temperature on detail",
+        "id": "PR_BAROLO_2.2",
+        "text": "User shall be able to view the current temperature of any wine zone on the App Detail page."
+      },
+      {
+        "rowNumber": 7,
+        "category": "BasicFunc",
+        "subcategory": "Temp control/view",
+        "name": "Set wine zone(s) temperature",
+        "id": "PR_BAROLO_2.3",
+        "text": "User shall be able to set the target temperature of any wine zone on the appliance detail page within the allowed range from 5°C to 20°C in 1°C steps."
+      },
+      {
+        "rowNumber": 8,
+        "category": "BasicFunc",
+        "subcategory": "Temp control/view",
+        "name": "View target wine zone(s) temperature on detail",
+        "id": "PR_BAROLO_2.4",
+        "text": "User shall be able to view the target temperature of any wine zone on the App Detail page."
+      },
+      {
+        "rowNumber": 9,
+        "category": "BasicFunc",
+        "subcategory": "Light control",
+        "name": "Control presenter light on/off",
+        "id": "PR_BAROLO_3.2",
+        "text": "User shall be able to activate and deactivate the presenter light."
+      }
+    ],
+    "results": [
+      {
+        "rowNumber": 2,
+        "id": "PR_BAROLO_1.1",
+        "score": 100,
+        "verdict": "Production-ready Product Requirement. It is clear, testable, sufficiently complete, atomic at Product Requirement level, solution-neutral, measurable through the stated acceptance criteria, and suitable for deriving Software Requirements.",
+        "issues": [],
+        "rewrittenRequirement": "A user viewing an appliance in the app dashboard shall be able to identify the appliance type of the currently selected appliance so that they can confirm they are viewing the correct appliance category.\n\nAcceptance criteria:\n- Given a user has access to an appliance, when the user opens the app dashboard for that appliance, then the dashboard displays the appliance type.\n- The displayed appliance type corresponds to the currently selected appliance and uses the product-defined appliance type name.\n- If the appliance type cannot be determined, the dashboard clearly indicates that the appliance type is unavailable instead of showing an incorrect or blank value."
+      },
+      {
+        "rowNumber": 3,
+        "id": "PR_BAROLO_1.2",
+        "score": 92,
+        "verdict": "High-quality Product Requirement with clear user value, scope, and mostly testable acceptance criteria. A small clarification is still useful around what 'current' means to avoid implying real-time accuracy without a defined freshness expectation.",
+        "issues": [
+          {
+            "criterion": "Measurability / ambiguity",
+            "severity": "low",
+            "explanation": "The phrase 'current overall status' is understandable but not fully measurable because it does not define whether the dashboard must show real-time status, the latest available status, or status within a specific freshness window.",
+            "suggestion": "Clarify that the dashboard shows the latest available appliance status according to the product-defined status model, unless a specific freshness/latency expectation is required elsewhere."
+          }
+        ],
+        "rewrittenRequirement": "A user viewing an appliance in the app dashboard shall be able to see the latest available overall status of the currently selected appliance so that they can quickly understand whether the appliance requires attention.\n\nAcceptance criteria:\n- Given a user has access to an appliance, when the user opens the app dashboard for that appliance, then the dashboard displays the appliance's latest available overall status.\n- The displayed status is based on the product-defined appliance status model, including at minimum a distinguishable normal/available state and a state indicating that attention or an issue may be present, if such a state applies to the appliance.\n- If the appliance status cannot be determined, the dashboard clearly indicates that the status is unavailable or unknown instead of showing a misleading normal status.\n- The status shown on the dashboard corresponds to the currently selected appliance."
+      },
+      {
+        "rowNumber": 4,
+        "id": "PR_BAROLO_2.1",
+        "score": 92,
+        "verdict": "High-quality Product Requirement with clear user value and mostly testable acceptance criteria. It is suitable for deriving Software Requirements, but two minor clarifications would improve consistency and verifiability.",
+        "issues": [
+          {
+            "criterion": "Consistency / Scope clarity",
+            "severity": "low",
+            "explanation": "The main requirement is explicitly about a multi-zone wine appliance, while the first acceptance criterion says 'one or more temperature-controlled zones', which could unintentionally broaden the scope to single-zone appliances.",
+            "suggestion": "Align the acceptance criterion with the stated multi-zone scope, e.g. 'two or more temperature-controlled zones' or 'a multi-zone appliance'."
+          },
+          {
+            "criterion": "Measurability / Ambiguity",
+            "severity": "low",
+            "explanation": "The term 'current measured temperature' is understandable but does not define whether it means the latest valid measured temperature or a value within a specific freshness threshold. This may need later refinement when deriving Software Requirements.",
+            "suggestion": "At Product Requirement level, clarify that the displayed value is the latest valid measured zone temperature available; detailed freshness or update intervals can be derived later as Software Requirements if needed."
+          }
+        ],
+        "rewrittenRequirement": "A user viewing a multi-zone wine appliance in the app dashboard shall be able to see the latest valid measured temperature available for each temperature-controlled zone so that they can quickly assess the condition of every zone.\n\nAcceptance criteria:\n- Given a user has access to a multi-zone appliance with two or more temperature-controlled zones, when the user opens the app dashboard for that appliance, then the dashboard displays the latest valid measured temperature available for each zone.\n- Each displayed temperature is clearly associated with the corresponding zone.\n- Temperature values are shown with a clear unit of measure according to the user's or product's temperature-unit setting.\n- The displayed temperature represents the measured zone temperature, not the target/set temperature.\n- If the current measured temperature for a zone cannot be determined, the dashboard clearly indicates that the temperature for that zone is unavailable."
+      },
+      {
+        "rowNumber": 5,
+        "id": "PR_BAROLO_3.1",
+        "score": 100,
+        "verdict": "Production-ready Product Requirement. It is clear, testable, sufficiently complete, atomic at Product Requirement level, consistent, solution-neutral enough for the stated product context, measurable through acceptance criteria, and suitable for deriving Software Requirements.",
+        "issues": [],
+        "rewrittenRequirement": "A user viewing an appliance in the app dashboard shall be able to switch the Presenter light of the currently selected appliance on or off from the dashboard quick actions so that they can control the appliance lighting without navigating deeper into the app.\n\nAcceptance criteria:\n- Given the Presenter light is available for the selected appliance and is off, when the user activates the Presenter light from the dashboard quick actions, then the Presenter light is turned on and the user can see that the resulting state is on.\n- Given the Presenter light is available for the selected appliance and is on, when the user deactivates the Presenter light from the dashboard quick actions, then the Presenter light is turned off and the user can see that the resulting state is off.\n- The control and displayed result apply only to the currently selected appliance.\n- If the Presenter light is not supported, unavailable, or the state change cannot be completed, the user is informed that the action is unavailable or failed and the app does not present an incorrect resulting state."
+      },
+      {
+        "rowNumber": 6,
+        "id": "PR_BAROLO_2.2",
+        "score": 95,
+        "verdict": "High-quality Product Requirement. It is clear, mostly atomic, solution-neutral, and includes concrete acceptance criteria suitable for deriving Software Requirements. One minor ambiguity remains around which temperature-unit setting applies if both user and product settings exist.",
+        "issues": [
+          {
+            "criterion": "Ambiguity / consistency",
+            "severity": "low",
+            "explanation": "The phrase \"according to the user's or product's temperature-unit setting\" does not define which setting takes precedence if both exist or conflict. This may lead to inconsistent Software Requirements or implementation behavior.",
+            "suggestion": "Refer to the applicable configured temperature-unit setting, or explicitly define precedence if that is known at Product Requirement level."
+          }
+        ],
+        "rewrittenRequirement": "A user viewing the app detail page for a wine appliance shall be able to see the current measured temperature for each temperature-controlled wine zone of that appliance so that they can inspect zone temperatures in detail.\n\nAcceptance criteria:\n- Given a user has access to a wine appliance with one or more temperature-controlled wine zones, when the user opens the app detail page for that appliance, then the user can view the current measured temperature for each wine zone.\n- Each displayed temperature is clearly associated with the corresponding wine zone.\n- Temperature values are shown with a clear unit of measure according to the applicable configured temperature-unit setting.\n- The displayed temperature represents the measured zone temperature, not the target/set temperature.\n- If the current measured temperature for a wine zone cannot be determined, the detail page clearly indicates that the temperature for that zone is unavailable."
+      },
+      {
+        "rowNumber": 7,
+        "id": "PR_BAROLO_2.3",
+        "score": 100,
+        "verdict": "Production-ready Product Requirement. The requirement is clear, testable, sufficiently complete, atomic at Product Requirement level, measurable, solution-neutral, and includes concrete acceptance criteria suitable for deriving Software Requirements.",
+        "issues": [],
+        "rewrittenRequirement": "An authorized user shall be able to set the target temperature, in degrees Celsius, for each available wine zone of a connected compatible appliance from the appliance detail page in the app. The allowed target temperature range shall be 5°C to 20°C inclusive, selectable only in 1°C increments.\n\nAcceptance criteria:\n- Given a compatible appliance with one or more wine zones is available to the user, when the user opens the appliance detail page, then each available wine zone offers target temperature values from 5°C through 20°C inclusive.\n- Given the user selects a target temperature for a wine zone, when the value is within 5°C to 20°C and in a 1°C increment, then the selected value is accepted as the target temperature for that zone.\n- Given the user attempts to choose or enter a value below 5°C, above 20°C, or not in a 1°C increment, then that value is not accepted as a valid target temperature.\n- Given multiple wine zones exist, when the user changes the target temperature of one zone, then the change applies to that selected zone only."
+      },
+      {
+        "rowNumber": 8,
+        "id": "PR_BAROLO_2.4",
+        "score": 100,
+        "verdict": "Production-ready Product Requirement. The requirement is clear, testable, sufficiently complete, atomic at Product Requirement level, consistent, measurable through concrete acceptance criteria, and suitable for deriving Software Requirements.",
+        "issues": [],
+        "rewrittenRequirement": "An authorized user shall be able to view the target temperature, in degrees Celsius, for each available wine zone of a connected compatible appliance on the appliance detail page in the app.\n\nAcceptance criteria:\n- Given a compatible appliance with one or more wine zones is available to the user, when the user opens the appliance detail page, then the target temperature for each available wine zone is visible to the user.\n- Given a wine zone has a known target temperature, when it is displayed, then the value is shown in degrees Celsius.\n- Given the appliance has multiple wine zones, when the user views the appliance detail page, then the displayed target temperature is clearly associated with the corresponding wine zone.\n- Given the target temperature for a wine zone is unavailable or unknown, when the user views that wine zone, then the app clearly indicates that the target temperature is not available instead of displaying an incorrect or stale value as current."
+      },
+      {
+        "rowNumber": 9,
+        "id": "PR_BAROLO_3.2",
+        "score": 94,
+        "verdict": "High-quality Product Requirement. It is clear, mostly atomic, solution-neutral, testable, and includes concrete acceptance criteria suitable for deriving Software Requirements. Minor clarification would improve completeness around unavailable/error states and the meaning of authorization if not defined elsewhere.",
+        "issues": [
+          {
+            "criterion": "Completeness / acceptance criteria",
+            "severity": "low",
+            "explanation": "The requirement covers supported and unsupported appliances and both state transitions, but it does not state the expected product behavior if the connected appliance becomes temporarily unavailable or the control action cannot be completed.",
+            "suggestion": "If this scenario is in scope at Product Requirement level, add an acceptance criterion describing that the user is informed when the current state cannot be retrieved or a requested state change cannot be completed."
+          },
+          {
+            "criterion": "Clarity / ambiguity",
+            "severity": "low",
+            "explanation": "The term 'authorized user' is used but not defined in the requirement. This is acceptable if authorization is defined globally, but ambiguous if read standalone.",
+            "suggestion": "Ensure 'authorized user' is defined in a shared glossary or cross-cutting access-control requirement."
+          }
+        ],
+        "rewrittenRequirement": "An authorized user shall be able to control the presenter light of a connected compatible appliance that provides this feature, so that the user can switch the presenter light between active and inactive states from the appliance detail context in the app. The presenter light refers to the appliance light feature used to illuminate or present the stored wine.\n\nAcceptance criteria:\n- Given a connected compatible appliance has a presenter light, when the user views the appliance detail context, then the user can see whether the presenter light is currently active or inactive.\n- Given the presenter light is inactive, when the user chooses to activate it, then the presenter light state becomes active and this state is visible to the user.\n- Given the presenter light is active, when the user chooses to deactivate it, then the presenter light state becomes inactive and this state is visible to the user.\n- Given a connected appliance does not provide a presenter light feature, when the user views the appliance detail context, then presenter light control is not presented as an available capability."
+      }
+    ],
+    "softwareRequirements": [
+      {
+        "sourceRowNumber": 2,
+        "sourceId": "PR_BAROLO_1.1",
+        "id": "SR_BAROLO_1.1",
+        "text": "The app dashboard shall display the product-defined appliance type name for the currently selected appliance to users who have access to that appliance; if the appliance type for the selected appliance cannot be determined, the dashboard shall display a clear 'appliance type unavailable' indication and shall not display a blank, incorrect, or previously selected appliance type value.",
+        "happyFlow": "Given a user with access selects an appliance and opens the dashboard, when the app retrieves the appliance metadata, then the dashboard displays the product-defined appliance type name for that selected appliance.",
+        "alternativeFlows": [
+          "Given the user switches to another accessible appliance while viewing the dashboard, when the dashboard context changes, then the displayed appliance type updates to the product-defined appliance type name of the newly selected appliance."
+        ],
+        "exceptionFlows": [
+          "Given the appliance type is missing, unknown, or cannot be retrieved, when the dashboard is displayed, then the dashboard shows a clear unavailable indication for appliance type and does not show an empty, misleading, stale, or incorrect value."
+        ],
+        "acceptanceCriteria": [
+          "Given an accessible appliance with a known product-defined appliance type, when the user opens the dashboard for that appliance, then the appliance type field is visible on the dashboard.",
+          "Given the appliance type field is visible, when the selected appliance is appliance A, then the displayed value equals the product-defined appliance type name returned for appliance A.",
+          "Given the user changes the selected appliance from appliance A to appliance B, when the dashboard refreshes its context, then the displayed appliance type corresponds to appliance B and not appliance A.",
+          "Given the selected appliance has no determinable appliance type, when the dashboard is displayed, then the appliance type field shows an explicit unavailable indication.",
+          "Given the selected appliance has no determinable appliance type, when the dashboard is displayed, then the appliance type field is not blank and does not show a value from another appliance."
+        ],
+        "score": 93,
+        "issues": [],
+        "rationale": "The derived requirement is clear, atomic, traceable, observable, and testable using controlled appliance metadata. It adds explicit selected-appliance binding and unavailable-state behavior required for reliable use-case and test-case derivation."
+      },
+      {
+        "sourceRowNumber": 3,
+        "sourceId": "PR_BAROLO_1.2",
+        "id": "SR_BAROLO_1.2",
+        "text": "The app dashboard shall display the current overall status of the currently selected appliance according to the product-defined appliance status model, including distinguishable normal/available and attention-or-issue states where applicable; if the status cannot be determined, the dashboard shall display a clear unknown or unavailable status and shall not display a misleading normal status.",
+        "happyFlow": "Given a user with access opens the dashboard for a selected appliance, when the app obtains the appliance's overall status, then the dashboard displays the status for that selected appliance using the product-defined status model.",
+        "alternativeFlows": [
+          "Given the appliance status model reports a normal or available state, when the dashboard is displayed, then the dashboard shows a state distinguishable as normal or available.",
+          "Given the appliance status model reports an attention, warning, issue, or similar non-normal state, when the dashboard is displayed, then the dashboard shows a state distinguishable from normal or available.",
+          "Given the user changes the selected appliance, when the dashboard context changes, then the displayed status updates to the status of the newly selected appliance."
+        ],
+        "exceptionFlows": [
+          "Given the overall appliance status cannot be retrieved, calculated, or mapped to the product-defined status model, when the dashboard is displayed, then the dashboard shows a clear unknown or unavailable status and does not show normal or available by default."
+        ],
+        "acceptanceCriteria": [
+          "Given an accessible appliance with a known current overall status, when the user opens the dashboard, then an overall status indicator is visible.",
+          "Given the selected appliance has status S in the product-defined status model, when the dashboard displays the status, then the displayed status corresponds to S for the selected appliance.",
+          "Given the selected appliance has a normal or available status, when the dashboard displays it, then the normal or available state is visually or textually distinguishable from attention-or-issue states.",
+          "Given the selected appliance has an attention-or-issue status, when the dashboard displays it, then that status is visually or textually distinguishable from normal or available.",
+          "Given the selected appliance status cannot be determined, when the dashboard is displayed, then the status indicator shows unknown or unavailable and does not show normal or available.",
+          "Given the user switches from appliance A to appliance B, when the dashboard updates, then the status shown corresponds to appliance B only."
+        ],
+        "score": 88,
+        "issues": [
+          {
+            "criterion": "Completeness / measurability",
+            "severity": "low",
+            "explanation": "The source requirement references a product-defined status model but does not enumerate the exact allowed statuses, labels, or mapping rules.",
+            "suggestion": "Reference or provide the authoritative status model, including status identifiers, display labels, severity ordering, and mapping from appliance telemetry to overall status."
+          },
+          {
+            "criterion": "Measurability",
+            "severity": "low",
+            "explanation": "The term 'current' is not bounded by a freshness or refresh-time expectation.",
+            "suggestion": "Define whether 'current' means latest value returned at page load, latest cached value, or a value no older than a specified duration."
+          }
+        ],
+        "rationale": "The SR is testable against a known status model and covers normal, issue, appliance-switching, and unknown-status flows. Minor ambiguity remains because the PR depends on an external status model and does not define freshness."
+      },
+      {
+        "sourceRowNumber": 4,
+        "sourceId": "PR_BAROLO_2.1",
+        "id": "SR_BAROLO_2.1",
+        "text": "The app dashboard shall display, for each temperature-controlled zone of the currently selected accessible wine appliance, the latest available measured zone temperature with a clear zone association and temperature unit according to the applicable user or product temperature-unit setting; if a measured temperature for a zone cannot be determined, the dashboard shall display an unavailable indication for that specific zone.",
+        "happyFlow": "Given a user with access opens the dashboard for a wine appliance with one or more temperature-controlled zones, when measured temperatures are available, then the dashboard displays one measured temperature per zone, each with the correct zone association and unit of measure.",
+        "alternativeFlows": [
+          "Given the appliance has multiple temperature-controlled zones, when the dashboard is displayed, then each displayed temperature is associated with its corresponding zone.",
+          "Given the applicable temperature-unit setting is Celsius or Fahrenheit, when the temperature is displayed, then the displayed value includes the corresponding unit according to that setting.",
+          "Given the target temperature differs from the measured temperature, when the dashboard displays zone temperature, then the displayed value is the measured temperature and not the target temperature."
+        ],
+        "exceptionFlows": [
+          "Given the measured temperature for one zone cannot be determined, when the dashboard is displayed, then only that zone shows temperature unavailable while other zones with known measured temperatures continue to display their values.",
+          "Given the selected appliance has no temperature-controlled zones, when the dashboard is displayed, then no per-zone measured temperature values are shown for that appliance."
+        ],
+        "acceptanceCriteria": [
+          "Given an accessible appliance with N temperature-controlled zones where N is at least 1 and measured temperatures are known for all zones, when the user opens the dashboard, then exactly N measured zone temperature values are displayed.",
+          "Given a displayed temperature belongs to zone Z, when the dashboard is shown, then the temperature is clearly labeled or positioned so it can be associated with zone Z.",
+          "Given the applicable temperature-unit setting is U, when a measured temperature is displayed, then the value is shown with unit U.",
+          "Given a zone has measured temperature M and target temperature T where M differs from T, when the dashboard displays that zone temperature, then the displayed value corresponds to M and not T.",
+          "Given one zone's measured temperature is unavailable, when the dashboard is displayed, then that zone shows a clear unavailable indication instead of a numeric value, blank value, or target temperature.",
+          "Given one zone's measured temperature is unavailable and another zone's measured temperature is available, when the dashboard is displayed, then the available zone still displays its measured temperature."
+        ],
+        "score": 90,
+        "issues": [
+          {
+            "criterion": "Measurability",
+            "severity": "low",
+            "explanation": "The source requirement does not define the maximum age of a value that may be considered 'current'.",
+            "suggestion": "Define a freshness rule, such as 'latest value returned by the appliance service at dashboard load' or 'not older than X minutes unless marked stale'."
+          },
+          {
+            "criterion": "Unambiguity",
+            "severity": "low",
+            "explanation": "The source requirement does not define the exact zone identifiers or display names to use for association.",
+            "suggestion": "Reference the product-defined zone naming/ordering model for wine appliances."
+          }
+        ],
+        "rationale": "The SR is verifiable with test data for zone counts, measured values, target values, unavailable values, and unit settings. Minor external definitions are needed for freshness and zone naming."
+      },
+      {
+        "sourceRowNumber": 5,
+        "sourceId": "PR_BAROLO_3.1",
+        "id": "SR_BAROLO_3.1",
+        "text": "The app dashboard quick actions shall allow a user viewing the currently selected appliance to switch that appliance's Presenter light on or off when the feature is supported and available, shall show the resulting on/off state after a successful change, and shall inform the user without showing an incorrect resulting state if the feature is unsupported, unavailable, or the state change fails.",
+        "happyFlow": "Given the selected appliance supports Presenter light and its current state is known, when the user activates or deactivates the Presenter light from dashboard quick actions, then the app sends the requested state change for the selected appliance and displays the confirmed resulting state.",
+        "alternativeFlows": [
+          "Given the Presenter light is off, when the user activates the dashboard quick action, then the Presenter light is turned on and the dashboard shows the state as on.",
+          "Given the Presenter light is on, when the user deactivates the dashboard quick action, then the Presenter light is turned off and the dashboard shows the state as off.",
+          "Given the user has multiple appliances, when the user uses the Presenter light quick action, then the command and resulting state apply only to the currently selected appliance."
+        ],
+        "exceptionFlows": [
+          "Given the selected appliance does not support Presenter light, when the dashboard quick actions are displayed, then the app either does not present the control as available or informs the user that the action is unavailable.",
+          "Given Presenter light support exists but the current state cannot be retrieved, when the dashboard quick action is displayed or used, then the app does not claim an incorrect on/off state and informs the user that the state or action is unavailable.",
+          "Given the requested state change cannot be completed, when the command fails or is rejected, then the user is informed that the action failed and the app does not display the requested state as confirmed."
+        ],
+        "acceptanceCriteria": [
+          "Given the selected appliance supports Presenter light and the light is off, when the user selects the quick action to turn it on, then the light state becomes on for the selected appliance.",
+          "Given the selected appliance supports Presenter light and the light is off, when the turn-on action succeeds, then the dashboard displays the resulting state as on.",
+          "Given the selected appliance supports Presenter light and the light is on, when the user selects the quick action to turn it off, then the light state becomes off for the selected appliance.",
+          "Given the selected appliance supports Presenter light and the light is on, when the turn-off action succeeds, then the dashboard displays the resulting state as off.",
+          "Given appliance A is selected and appliance B also exists, when the user changes the Presenter light state from dashboard quick actions, then the command is issued for appliance A only and appliance B's Presenter light state is not changed.",
+          "Given the selected appliance does not support Presenter light, when the dashboard is shown, then the quick action is not presented as an available executable action or clearly indicates that it is unavailable.",
+          "Given the state-change command fails, times out, or is rejected, when the dashboard updates, then the user sees a failure or unavailable message and the app does not show the requested state as confirmed."
+        ],
+        "score": 89,
+        "issues": [
+          {
+            "criterion": "Measurability",
+            "severity": "low",
+            "explanation": "The source requirement does not define confirmation timing, timeout duration, or whether optimistic UI updates are allowed before command confirmation.",
+            "suggestion": "Define command acknowledgement behavior and timeout threshold, for example whether the UI may show a pending state until the appliance/service confirms the new state."
+          },
+          {
+            "criterion": "Unambiguity",
+            "severity": "low",
+            "explanation": "The term 'available' may refer to feature support, connectivity, command availability, or known state.",
+            "suggestion": "Define separate states for unsupported feature, temporarily unavailable feature, unknown light state, and command failure."
+          }
+        ],
+        "rationale": "The requirement is suitable for use cases and test cases because it specifies command input, selected-appliance scope, successful outputs, unsupported-feature handling, unknown-state handling, and failure behavior. Some timing and availability semantics remain to be defined."
+      },
+      {
+        "sourceRowNumber": 6,
+        "sourceId": "PR_BAROLO_2.2",
+        "id": "SR_BAROLO_2.2",
+        "text": "The appliance detail page shall display, for each temperature-controlled wine zone of the selected accessible wine appliance, the latest available measured zone temperature with a clear wine-zone association and temperature unit according to the applicable user or product temperature-unit setting; if a measured temperature for a wine zone cannot be determined, the detail page shall display an unavailable indication for that specific wine zone.",
+        "happyFlow": "Given a user with access opens the detail page for a wine appliance with one or more temperature-controlled wine zones, when measured temperatures are available, then the detail page displays one measured temperature per wine zone with the correct zone association and unit of measure.",
+        "alternativeFlows": [
+          "Given the wine appliance has multiple wine zones, when the detail page is displayed, then each measured temperature is associated with its corresponding wine zone.",
+          "Given the applicable temperature-unit setting is Celsius or Fahrenheit, when the measured temperature is displayed, then the value includes the corresponding unit according to that setting.",
+          "Given the measured and target temperatures differ for a wine zone, when the detail page displays the current temperature, then it displays the measured temperature and not the target temperature."
+        ],
+        "exceptionFlows": [
+          "Given the measured temperature for a wine zone cannot be determined, when the detail page is displayed, then that wine zone shows temperature unavailable while other zones with known measured temperatures continue to display their values.",
+          "Given the selected appliance has no temperature-controlled wine zones, when the detail page is displayed, then no per-zone wine temperature values are displayed for that appliance."
+        ],
+        "acceptanceCriteria": [
+          "Given an accessible wine appliance with N temperature-controlled wine zones where N is at least 1 and all measured temperatures are known, when the user opens the appliance detail page, then exactly N measured wine-zone temperature values are visible.",
+          "Given a measured temperature belongs to wine zone Z, when the detail page is shown, then the temperature is clearly associated with wine zone Z.",
+          "Given the applicable temperature-unit setting is U, when a measured temperature is displayed, then the value is shown with unit U.",
+          "Given a wine zone has measured temperature M and target temperature T where M differs from T, when the detail page displays current measured temperature, then the displayed value corresponds to M and not T.",
+          "Given the measured temperature for wine zone Z is unavailable, when the detail page is shown, then wine zone Z displays a clear unavailable indication instead of a numeric value, blank value, or target temperature.",
+          "Given one wine zone has unavailable measured temperature and another wine zone has available measured temperature, when the detail page is shown, then the available wine zone still displays its measured temperature."
+        ],
+        "score": 90,
+        "issues": [
+          {
+            "criterion": "Measurability",
+            "severity": "low",
+            "explanation": "The term 'current' is not associated with a defined freshness threshold or refresh behavior.",
+            "suggestion": "Specify the permitted age of displayed measured temperatures or state that the value is the latest value returned by the appliance service at page load/refresh."
+          },
+          {
+            "criterion": "Unambiguity",
+            "severity": "low",
+            "explanation": "The source requirement does not identify the authoritative wine-zone naming or ordering scheme.",
+            "suggestion": "Reference the product-defined wine-zone identifiers, names, and display order."
+          }
+        ],
+        "rationale": "The SR is clear, traceable, and testable for single-zone, multi-zone, unit, measured-versus-target, and unavailable-temperature scenarios. Remaining issues are limited to external definitions of freshness and zone labeling."
+      },
+      {
+        "sourceRowNumber": 7,
+        "sourceId": "PR_BAROLO_2.3",
+        "id": "SR_BAROLO_2.3",
+        "text": "The appliance detail page shall allow an authorized user to set the target temperature in degrees Celsius independently for each available wine zone of a connected compatible appliance, accepting only values from 5°C through 20°C inclusive in 1°C increments and rejecting all values outside that range or increment without applying them to any zone.",
+        "happyFlow": "Given an authorized user opens the detail page for a connected compatible appliance with one or more available wine zones, when the user selects a valid target temperature value for a wine zone, then the app accepts the value and applies the target temperature change to that selected wine zone only.",
+        "alternativeFlows": [
+          "Given multiple wine zones are available, when the user changes the target temperature of one selected wine zone, then other wine zones' target temperatures are not changed.",
+          "Given the detail page presents selectable target temperature values, when values are shown for a wine zone, then the offered values are 5°C, 6°C, 7°C, 8°C, 9°C, 10°C, 11°C, 12°C, 13°C, 14°C, 15°C, 16°C, 17°C, 18°C, 19°C, and 20°C."
+        ],
+        "exceptionFlows": [
+          "Given the user attempts to select or enter a value below 5°C, above 20°C, or not in a 1°C increment, when the app validates the value, then the value is rejected and no target-temperature command is applied.",
+          "Given the appliance is not connected, not compatible, or has no available wine zones, when the detail page is shown, then target-temperature setting is not presented as an available capability for unavailable zones.",
+          "Given a valid target-temperature command cannot be completed, when the command fails or is rejected, then the app informs the user of the failure and does not display the failed value as the confirmed target temperature."
+        ],
+        "acceptanceCriteria": [
+          "Given a connected compatible appliance with at least one available wine zone, when an authorized user opens the appliance detail page, then each available wine zone provides a control for setting target temperature.",
+          "Given the target-temperature control is displayed for a wine zone, when its selectable values are inspected, then only integer Celsius values 5 through 20 inclusive are offered.",
+          "Given the user selects 5°C for wine zone Z, when the selection is submitted successfully, then 5°C is accepted as the target temperature for wine zone Z.",
+          "Given the user selects 20°C for wine zone Z, when the selection is submitted successfully, then 20°C is accepted as the target temperature for wine zone Z.",
+          "Given the user selects any integer Celsius value V where 5 <= V <= 20, when the selection is submitted successfully, then V is accepted as the target temperature for the selected wine zone.",
+          "Given the user attempts to enter 4°C, 21°C, 10.5°C, or any non-integer Celsius value, when validation occurs, then the value is rejected and no target-temperature change is applied.",
+          "Given wine zones Z1 and Z2 exist, when the user successfully changes the target temperature of Z1, then Z2's target temperature remains unchanged.",
+          "Given the user is not authorized, the appliance is disconnected, the appliance is incompatible, or the wine zone is unavailable, when target-temperature setting is attempted, then the app does not apply the change.",
+          "Given a valid command fails after submission, when the app displays the result, then the user is informed of the failure and the failed target value is not shown as confirmed current target temperature."
+        ],
+        "score": 91,
+        "issues": [
+          {
+            "criterion": "Completeness",
+            "severity": "low",
+            "explanation": "The source requirement does not specify command failure behavior, confirmation timing, or whether a pending state is required.",
+            "suggestion": "Define the acknowledgement, timeout, pending, and rollback behavior for target-temperature changes."
+          },
+          {
+            "criterion": "Unambiguity",
+            "severity": "low",
+            "explanation": "The source requirement says 'authorized user' but does not define authorization rules or roles.",
+            "suggestion": "Reference the access-control policy that defines which users may set target temperatures."
+          }
+        ],
+        "rationale": "The SR is highly testable because it defines exact valid values, invalid values, per-zone scoping, and connected/compatible constraints. Low-risk ambiguities remain around authorization policy and command confirmation behavior."
+      },
+      {
+        "sourceRowNumber": 8,
+        "sourceId": "PR_BAROLO_2.4",
+        "id": "SR_BAROLO_2.4",
+        "text": "The appliance detail page shall display the known target temperature in degrees Celsius for each available wine zone of the selected connected compatible appliance, clearly associated with its wine zone; if a zone's target temperature is unavailable or unknown, the detail page shall display a target-temperature unavailable indication for that zone and shall not display an incorrect or stale value as current.",
+        "happyFlow": "Given an authorized user opens the detail page for a connected compatible appliance with one or more available wine zones and known target temperatures, when the target-temperature data is retrieved, then the detail page displays the target temperature in degrees Celsius for each available wine zone.",
+        "alternativeFlows": [
+          "Given multiple wine zones exist, when the detail page is displayed, then each target temperature is clearly associated with the corresponding wine zone.",
+          "Given a target temperature is known for a wine zone, when it is displayed, then the value includes degrees Celsius as the unit."
+        ],
+        "exceptionFlows": [
+          "Given the target temperature for a wine zone is unavailable or unknown, when the detail page is displayed, then that zone shows a clear target-temperature unavailable indication.",
+          "Given the target temperature for one wine zone is unavailable and another wine zone has a known target temperature, when the detail page is displayed, then the known target temperature is still shown for the other zone.",
+          "Given a previously known value exists but the current value cannot be confirmed, when the detail page is displayed, then the app does not present the previous value as the current target temperature."
+        ],
+        "acceptanceCriteria": [
+          "Given a connected compatible appliance with N available wine zones where N is at least 1 and all target temperatures are known, when the user opens the appliance detail page, then exactly N target-temperature values are visible.",
+          "Given target temperature T is known for wine zone Z, when the detail page displays wine zone Z, then T is shown in degrees Celsius.",
+          "Given multiple wine zones exist, when target temperatures are displayed, then each value is clearly associated with its corresponding wine zone.",
+          "Given the target temperature for wine zone Z is unavailable or unknown, when the detail page is displayed, then wine zone Z shows a clear unavailable indication instead of a numeric current target value.",
+          "Given the target temperature for wine zone Z is unavailable or unknown and another wine zone has a known target temperature, when the detail page is displayed, then the other wine zone's known target temperature remains visible.",
+          "Given only a stale or previously selected target temperature is available for a wine zone and the current target cannot be determined, when the detail page is displayed, then the app does not label that stale value as the current target temperature."
+        ],
+        "score": 89,
+        "issues": [
+          {
+            "criterion": "Measurability",
+            "severity": "low",
+            "explanation": "The source requirement prohibits displaying a stale value as current but does not define when a value becomes stale.",
+            "suggestion": "Define a freshness or validation rule for target temperatures, such as requiring a confirmed value from the appliance service at page load or marking cached values with their timestamp/status."
+          },
+          {
+            "criterion": "Unambiguity",
+            "severity": "low",
+            "explanation": "The requirement states degrees Celsius regardless of user settings but does not clarify whether conversion or localization is ever allowed.",
+            "suggestion": "Confirm that target temperature display for this feature must always be Celsius, independent of global temperature-unit settings."
+          }
+        ],
+        "rationale": "The SR is testable for known, unknown, multi-zone, Celsius-unit, and stale-value scenarios. Full precision requires an explicit stale-value policy."
+      },
+      {
+        "sourceRowNumber": 9,
+        "sourceId": "PR_BAROLO_3.2",
+        "id": "SR_BAROLO_3.2",
+        "text": "In the appliance detail context, the app shall display the current active/inactive state of the presenter light and allow an authorized user to switch it between active and inactive states for a selected connected compatible appliance that provides the presenter light feature; for a connected appliance that does not provide the feature, the app shall not present presenter light control as an available capability.",
+        "happyFlow": "Given a connected compatible appliance provides a presenter light and the user opens the appliance detail context, when the app obtains the presenter light state, then the app displays whether the presenter light is active or inactive and allows the user to change it.",
+        "alternativeFlows": [
+          "Given the presenter light is inactive, when the user chooses to activate it and the command succeeds, then the presenter light becomes active and the app displays active.",
+          "Given the presenter light is active, when the user chooses to deactivate it and the command succeeds, then the presenter light becomes inactive and the app displays inactive."
+        ],
+        "exceptionFlows": [
+          "Given a connected appliance does not provide a presenter light feature, when the user views the appliance detail context, then the app does not present presenter light control as an available capability.",
+          "Given the presenter light state cannot be determined, when the detail context is displayed, then the app does not show an incorrect active/inactive state and indicates that the state or control is unavailable.",
+          "Given a state-change command fails, is rejected, or cannot be completed, when the app displays the result, then the app informs the user of the failure and does not display the requested state as confirmed."
+        ],
+        "acceptanceCriteria": [
+          "Given a connected compatible appliance has a presenter light and the current state is inactive, when the user views the appliance detail context, then the presenter light state is visible as inactive.",
+          "Given a connected compatible appliance has a presenter light and the current state is active, when the user views the appliance detail context, then the presenter light state is visible as active.",
+          "Given the presenter light is inactive, when the authorized user chooses to activate it and the command succeeds, then the presenter light state becomes active for the selected appliance and the app displays active.",
+          "Given the presenter light is active, when the authorized user chooses to deactivate it and the command succeeds, then the presenter light state becomes inactive for the selected appliance and the app displays inactive.",
+          "Given appliance A is selected, when the user changes the presenter light state in the appliance detail context, then the command applies to appliance A only.",
+          "Given a connected appliance does not provide the presenter light feature, when the user views the appliance detail context, then no available presenter light control is displayed.",
+          "Given the presenter light command fails or is rejected, when the app updates the displayed state, then the user is informed of the failure and the requested state is not shown as confirmed.",
+          "Given the presenter light current state cannot be determined, when the appliance detail context is displayed, then the app indicates the state or control is unavailable instead of showing an incorrect active or inactive state."
+        ],
+        "score": 90,
+        "issues": [
+          {
+            "criterion": "Completeness",
+            "severity": "low",
+            "explanation": "The source requirement does not define behavior for command failure or unknown current state, although such behavior is necessary for reliable testing.",
+            "suggestion": "Add explicit acceptance criteria for unknown-state display, command failure, timeout, and pending state behavior."
+          },
+          {
+            "criterion": "Unambiguity",
+            "severity": "low",
+            "explanation": "The source requirement uses 'authorized user' but does not define the authorization policy.",
+            "suggestion": "Reference the user roles or permission model that determines who may control the presenter light."
+          }
+        ],
+        "rationale": "The SR is clear and testable for state display, activation, deactivation, unsupported-feature hiding, selected-appliance scope, and failure behavior. Remaining ambiguities relate to authorization and command lifecycle details."
+      }
+    ],
+    "softwareSelections": [
+      {
+        "id": "SR_BAROLO_1.1",
+        "text": "The app dashboard shall display the product-defined appliance type name for the currently selected appliance to users who have access to that appliance; if the appliance type for the selected appliance cannot be determined, the dashboard shall display a clear 'appliance type unavailable' indication and shall not display a blank, incorrect, or previously selected appliance type value.",
+        "score": 93,
+        "excluded": false,
+        "acceptedAt": "2026-06-22T11:33:20.873Z"
+      },
+      {
+        "id": "SR_BAROLO_1.2",
+        "text": "The app dashboard shall display the current overall status of the currently selected appliance according to the product-defined appliance status model, including distinguishable normal/available and attention-or-issue states where applicable; if the status cannot be determined, the dashboard shall display a clear unknown or unavailable status and shall not display a misleading normal status.",
+        "score": 88,
+        "excluded": false,
+        "acceptedAt": "2026-06-22T11:33:43.365Z"
+      },
+      {
+        "id": "SR_BAROLO_2.1",
+        "text": "The app dashboard shall display, for each temperature-controlled zone of the currently selected accessible wine appliance, the latest available measured zone temperature with a clear zone association and temperature unit according to the applicable user or product temperature-unit setting; if a measured temperature for a zone cannot be determined, the dashboard shall display an unavailable indication for that specific zone.",
+        "score": 90,
+        "excluded": false,
+        "acceptedAt": "2026-06-22T11:33:52.788Z"
+      },
+      {
+        "id": "SR_BAROLO_3.1",
+        "text": "The app dashboard quick actions shall allow a user viewing the currently selected appliance to switch that appliance's Presenter light on or off when the feature is supported and available, shall show the resulting on/off state after a successful change, and shall inform the user without showing an incorrect resulting state if the feature is unsupported, unavailable, or the state change fails.",
+        "score": 89,
+        "excluded": false,
+        "acceptedAt": "2026-06-22T11:33:59.687Z"
+      },
+      {
+        "id": "SR_BAROLO_2.2",
+        "text": "The appliance detail page shall display, for each temperature-controlled wine zone of the selected accessible wine appliance, the latest available measured zone temperature with a clear wine-zone association and temperature unit according to the applicable user or product temperature-unit setting; if a measured temperature for a wine zone cannot be determined, the detail page shall display an unavailable indication for that specific wine zone.",
+        "score": 90,
+        "excluded": false,
+        "acceptedAt": "2026-06-22T11:34:06.288Z"
+      },
+      {
+        "id": "SR_BAROLO_2.3",
+        "text": "The appliance detail page shall allow an authorized user to set the target temperature in degrees Celsius independently for each available wine zone of a connected compatible appliance, accepting only values from 5°C through 20°C inclusive in 1°C increments and rejecting all values outside that range or increment without applying them to any zone.",
+        "score": 91,
+        "excluded": false,
+        "acceptedAt": "2026-06-22T11:34:11.942Z"
+      },
+      {
+        "id": "SR_BAROLO_2.4",
+        "text": "The appliance detail page shall display the known target temperature in degrees Celsius for each available wine zone of the selected connected compatible appliance, clearly associated with its wine zone; if a zone's target temperature is unavailable or unknown, the detail page shall display a target-temperature unavailable indication for that zone and shall not display an incorrect or stale value as current.",
+        "score": 89,
+        "excluded": false,
+        "acceptedAt": "2026-06-22T11:34:17.271Z"
+      },
+      {
+        "id": "SR_BAROLO_3.2",
+        "text": "In the appliance detail context, the app shall display the current active/inactive state of the presenter light and allow an authorized user to switch it between active and inactive states for a selected connected compatible appliance that provides the presenter light feature; for a connected appliance that does not provide the feature, the app shall not present presenter light control as an available capability.",
+        "score": 90,
+        "excluded": false,
+        "acceptedAt": "2026-06-22T11:34:23.276Z"
+      }
+    ],
+    "finalSelections": [
+      {
+        "rowNumber": 2,
+        "choice": "ai",
+        "text": "A user viewing an appliance in the app dashboard shall be able to identify the appliance type of the currently selected appliance so that they can confirm they are viewing the correct appliance category.\n\nAcceptance criteria:\n- Given a user has access to an appliance, when the user opens the app dashboard for that appliance, then the dashboard displays the appliance type.\n- The displayed appliance type corresponds to the currently selected appliance and uses the product-defined appliance type name.\n- If the appliance type cannot be determined, the dashboard clearly indicates that the appliance type is unavailable instead of showing an incorrect or blank value.",
+        "excluded": false
+      },
+      {
+        "rowNumber": 3,
+        "choice": "ai",
+        "text": "A user viewing an appliance in the app dashboard shall be able to see the current overall status of the currently selected appliance so that they can quickly understand whether the appliance requires attention.\n\nAcceptance criteria:\n- Given a user has access to an appliance, when the user opens the app dashboard for that appliance, then the dashboard displays the appliance's current overall status.\n- The displayed status is based on the product-defined appliance status model, including at minimum a distinguishable normal/available state and a state indicating that attention or an issue may be present, if such a state applies to the appliance.\n- If the appliance status cannot be determined, the dashboard clearly indicates that the status is unavailable or unknown instead of showing a misleading normal status.\n- The status shown on the dashboard corresponds to the currently selected appliance.",
+        "excluded": false
+      },
+      {
+        "rowNumber": 4,
+        "choice": "ai",
+        "text": "A user viewing a multi-zone wine appliance in the app dashboard shall be able to see the current measured temperature for each temperature-controlled zone so that they can quickly assess the condition of every zone.\n\nAcceptance criteria:\n- Given a user has access to an appliance with one or more temperature-controlled zones, when the user opens the app dashboard for that appliance, then the dashboard displays a current measured temperature for each zone.\n- Each displayed temperature is clearly associated with the corresponding zone.\n- Temperature values are shown with a clear unit of measure according to the user's or product's temperature-unit setting.\n- The displayed temperature represents the measured zone temperature, not the target/set temperature.\n- If the current measured temperature for a zone cannot be determined, the dashboard clearly indicates that the temperature for that zone is unavailable.",
+        "excluded": false
+      },
+      {
+        "rowNumber": 5,
+        "choice": "ai",
+        "text": "A user viewing an appliance in the app dashboard shall be able to switch the Presenter light of the currently selected appliance on or off from the dashboard quick actions so that they can control the appliance lighting without navigating deeper into the app.\n\nAcceptance criteria:\n- Given the Presenter light is available for the selected appliance and is off, when the user activates the Presenter light from the dashboard quick actions, then the Presenter light is turned on and the user can see that the resulting state is on.\n- Given the Presenter light is available for the selected appliance and is on, when the user deactivates the Presenter light from the dashboard quick actions, then the Presenter light is turned off and the user can see that the resulting state is off.\n- The control and displayed result apply only to the currently selected appliance.\n- If the Presenter light is not supported, unavailable, or the state change cannot be completed, the user is informed that the action is unavailable or failed and the app does not present an incorrect resulting state.",
+        "excluded": false
+      },
+      {
+        "rowNumber": 6,
+        "choice": "ai",
+        "text": "A user viewing the app detail page for a wine appliance shall be able to see the current measured temperature for each temperature-controlled wine zone of that appliance so that they can inspect zone temperatures in detail.\n\nAcceptance criteria:\n- Given a user has access to a wine appliance with one or more temperature-controlled wine zones, when the user opens the app detail page for that appliance, then the user can view the current measured temperature for each wine zone.\n- Each displayed temperature is clearly associated with the corresponding wine zone.\n- Temperature values are shown with a clear unit of measure according to the user's or product's temperature-unit setting.\n- The displayed temperature represents the measured zone temperature, not the target/set temperature.\n- If the current measured temperature for a wine zone cannot be determined, the detail page clearly indicates that the temperature for that zone is unavailable.",
+        "excluded": false
+      },
+      {
+        "rowNumber": 7,
+        "choice": "ai",
+        "text": "An authorized user shall be able to set the target temperature, in degrees Celsius, for each available wine zone of a connected compatible appliance from the appliance detail page in the app. The allowed target temperature range shall be 5°C to 20°C inclusive, selectable only in 1°C increments.\n\nAcceptance criteria:\n- Given a compatible appliance with one or more wine zones is available to the user, when the user opens the appliance detail page, then each available wine zone offers target temperature values from 5°C through 20°C inclusive.\n- Given the user selects a target temperature for a wine zone, when the value is within 5°C to 20°C and in a 1°C increment, then the selected value is accepted as the target temperature for that zone.\n- Given the user attempts to choose or enter a value below 5°C, above 20°C, or not in a 1°C increment, then that value is not accepted as a valid target temperature.\n- Given multiple wine zones exist, when the user changes the target temperature of one zone, then the change applies to that selected zone only.",
+        "excluded": false
+      },
+      {
+        "rowNumber": 8,
+        "choice": "ai",
+        "text": "An authorized user shall be able to view the target temperature, in degrees Celsius, for each available wine zone of a connected compatible appliance on the appliance detail page in the app.\n\nAcceptance criteria:\n- Given a compatible appliance with one or more wine zones is available to the user, when the user opens the appliance detail page, then the target temperature for each available wine zone is visible to the user.\n- Given a wine zone has a known target temperature, when it is displayed, then the value is shown in degrees Celsius.\n- Given the appliance has multiple wine zones, when the user views the appliance detail page, then the displayed target temperature is clearly associated with the corresponding wine zone.\n- Given the target temperature for a wine zone is unavailable or unknown, when the user views that wine zone, then the app clearly indicates that the target temperature is not available instead of displaying an incorrect or stale value as current.",
+        "excluded": false
+      },
+      {
+        "rowNumber": 9,
+        "choice": "ai",
+        "text": "An authorized user shall be able to control the presenter light of a connected compatible appliance that provides this feature, so that the user can switch the presenter light between active and inactive states from the appliance detail context in the app. The presenter light refers to the appliance light feature used to illuminate or present the stored wine.\n\nAcceptance criteria:\n- Given a connected compatible appliance has a presenter light, when the user views the appliance detail context, then the user can see whether the presenter light is currently active or inactive.\n- Given the presenter light is inactive, when the user chooses to activate it, then the presenter light state becomes active and this state is visible to the user.\n- Given the presenter light is active, when the user chooses to deactivate it, then the presenter light state becomes inactive and this state is visible to the user.\n- Given a connected appliance does not provide a presenter light feature, when the user views the appliance detail context, then presenter light control is not presented as an available capability.",
+        "excluded": false
+      }
+    ],
+    "analysisComplete": true,
+    "generatedIds": true,
+    "activeProcessStep": "software"
+  }
+}

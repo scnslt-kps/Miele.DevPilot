@@ -1,0 +1,21 @@
+image: node:20-alpine
+
+stages:
+  - check
+  - package
+
+check:
+  stage: check
+  script:
+    - node --check server.mjs
+    - node --check app.js
+
+package:
+  stage: package
+  script:
+    - sh scripts/build-release.sh
+  artifacts:
+    name: "Miele.DevPilot-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - release/Miele.DevPilot-server.tar.gz
+    expire_in: 14 days

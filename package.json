@@ -1,0 +1,12 @@
+{
+  "name": "miele-devpilot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "BASE_PATH=/Miele.DevPilot node server.mjs",
+    "start:mock": "OPENAI_MOCK=true BASE_PATH=/Miele.DevPilot node server.mjs",
+    "check": "node --check server.mjs && node --check app.js",
+    "build:release": "sh scripts/build-release.sh"
+  }
+}

@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Miele.DevPilot</title>
+    <link rel="icon" href="Res/Miele.DevPilot_Logo.png" type="image/png" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="vendor/xlsx.full.min.js"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace" id="analyse">
+        <header class="app-header">
+          <div>
+            <div class="app-title">
+              <img class="app-logo" src="Res/Miele.DevPilot_Logo.png" alt="Miele.DevPilot" />
+            </div>
+            <p class="eyebrow">AI Engineering Platform</p>
+            <p class="header-copy">
+              Von Produktanforderungen zu umsetzbaren Entwicklungs- und Testartefakten.
+            </p>
+          </div>
+          <div class="header-state">
+            <div class="project-state">
+              <span>Projekt</span>
+              <strong id="projectHeaderName">Kein Projekt geöffnet</strong>
+              <small id="projectHeaderDescription"></small>
+            </div>
+            <div class="status-pill" id="statusPill">Bereit</div>
+          </div>
+        </header>
+
+        <nav class="menu-bar" aria-label="Hauptmenü">
+          <div class="menu-actions" role="menubar">
+            <details class="menu-dropdown">
+              <summary>Projekt</summary>
+              <div class="menu-popover" role="menu">
+                <button id="newProjectButton" type="button" role="menuitem">Neues Projekt</button>
+                <button id="openProjectButton" type="button" role="menuitem">Projekt laden</button>
+                <button id="saveProjectButton" type="button" role="menuitem" disabled>Projekt speichern</button>
+                <button id="saveProjectAsButton" type="button" role="menuitem" disabled>Projekt speichern unter...</button>
+              </div>
+            </details>
+            <details class="menu-dropdown" data-requires-project="true">
+              <summary>Import</summary>
+              <div class="menu-popover" role="menu">
+                <button id="openFileButton" type="button" role="menuitem">Datei</button>
+                <button id="openWindchillButton" class="windchill-button" type="button" role="menuitem" disabled title="Requirements aus Windchill laden ist noch nicht verfügbar">
+                  <img src="assets/windchill-logo.svg" alt="" />
+                  <span>Windchill</span>
+                </button>
+              </div>
+            </details>
+            <details class="menu-dropdown" data-requires-project="true">
+              <summary>Analyse</summary>
+              <div class="menu-popover" role="menu">
+                <button id="openSettingsButton" type="button" role="menuitem" disabled>Einstellungen</button>
+                <button id="analyzeButton" type="button" role="menuitem" disabled>PR Analysieren</button>
+                <button id="generateSoftwareMenuButton" type="button" role="menuitem" disabled>Software Requirements ableiten</button>
+              </div>
+            </details>
+            <details class="menu-dropdown" data-requires-project="true">
+              <summary>Export</summary>
+              <div class="menu-popover" role="menu">
+                <button id="exportButton" class="windchill-button" type="button" role="menuitem" disabled title="Windchill-Export ist noch nicht verfügbar">
+                  <img src="assets/windchill-logo.svg" alt="" />
+                  <span>Nach Windchill</span>
+                </button>
+              </div>
+            </details>
+          </div>
+          <div class="file-state" id="fileState">Kein Projekt geöffnet</div>
+        </nav>
+
+        <input id="fileInput" class="visually-hidden" type="file" accept=".xlsx,.xls,.csv" />
+        <input id="projectInput" class="visually-hidden" type="file" accept=".mdp,.json,.miele-devpilot.json,application/json" />
+
+        <section class="empty-workspace" id="emptyWorkspace">
+          <p class="eyebrow">Workspace</p>
+          <h1>Kein Projekt geöffnet</h1>
+          <p>Lege ein neues Projekt an oder lade eine Projektdatei, um Requirements zu importieren und zu bewerten.</p>
+        </section>
+
+        <nav class="workflow-selector" aria-label="Prozessschritte">
+          <div class="workflow-map">
+            <svg class="workflow-lines" viewBox="0 0 1200 430" aria-hidden="true" focusable="false">
+              <defs>
+                <marker id="workflow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z"></path>
+                </marker>
+              </defs>
+              <path d="M 220 215 H 300"></path>
+              <path d="M 520 215 H 590 V 105 H 650"></path>
+              <path d="M 590 215 V 285 H 650"></path>
+              <path d="M 870 285 H 930 V 195 H 980"></path>
+              <path d="M 930 285 V 375 H 980"></path>
+            </svg>
+            <button class="workflow-step is-active" type="button" data-process-step="product" aria-current="page">
+              <span>1. Product<br />Requirement</span>
+              <small>Aktueller Schritt</small>
+            </button>
+            <button class="workflow-step" type="button" data-process-step="software" disabled>
+              <span>2. Software<br />Requirement</span>
+              <small>Step 1 abschließen</small>
+            </button>
+            <button class="workflow-step" type="button" data-process-step="e2e" disabled>
+              <span>E2E TestCase</span>
+              <small>Step 1 abschließen</small>
+            </button>
+            <button class="workflow-step" type="button" data-process-step="usecase" disabled>
+              <span>UseCase</span>
+              <small>Step 1 abschließen</small>
+            </button>
+            <button class="workflow-step" type="button" data-process-step="userstory" disabled>
+              <span>UserStory</span>
+              <small>Step 1 abschließen</small>
+            </button>
+            <button class="workflow-step" type="button" data-process-step="app-test" disabled>
+              <span>App TestCase</span>
+              <small>Step 1 abschließen</small>
+            </button>
+          </div>
+        </nav>
+
+        <section class="process-page is-active" id="page-product" data-process-page="product">
+          <div class="tool-grid">
+            <section class="panel summary-panel">
+              <div class="metric">
+                <span id="countMetricLabel">Requirements</span>
+                <strong id="countMetric">0</strong>
+              </div>
+              <div class="metric">
+                <span>Durchschnitt</span>
+                <strong id="scoreMetric">-</strong>
+              </div>
+              <button class="metric metric-button" id="criticalIssuesButton" type="button" disabled>
+                <span>Kritische Hinweise</span>
+                <strong id="issueMetric">0</strong>
+              </button>
+            </section>
+          </div>
+
+          <div class="filter-bar" id="scoreFilterBar" hidden>
+            <span>Filter aktiv: Requirements mit Score &lt; 85</span>
+            <button id="clearScoreFilterButton" type="button">Filter beenden</button>
+          </div>
+
+          <section class="table-wrap" id="ergebnisse">
+            <table id="resultsTable" class="results-table">
+              <thead>
+                <tr>
+                  <th class="decision-header">Status</th>
+                  <th>Zeile</th>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Requirement</th>
+                  <th>Score</th>
+                  <th>Hinweise</th>
+                  <th>AI-Vorschlag</th>
+                </tr>
+              </thead>
+              <tbody id="resultsBody">
+                <tr>
+                  <td colspan="7" class="empty">Lade eine Excel-Datei, um Requirements zu prüfen.</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </section>
+
+        <section class="process-page" id="page-software" data-process-page="software" hidden>
+          <div class="software-toolbar">
+            <div>
+              <p class="eyebrow">Software Requirements</p>
+              <h1>Aus Product Requirements ableiten</h1>
+            </div>
+            <button id="generateSoftwareButton" class="primary" type="button">Software Requirements ableiten</button>
+          </div>
+
+          <div class="tool-grid">
+            <section class="panel summary-panel software-summary-panel">
+              <div class="metric">
+                <span>SR abgeleitet</span>
+                <strong id="softwareDerivedMetric">0 / 0</strong>
+              </div>
+              <div class="metric">
+                <span>SR Durchschnitt</span>
+                <strong id="softwareScoreMetric">-</strong>
+              </div>
+              <button class="metric metric-button" id="criticalSoftwareIssuesButton" type="button" disabled>
+                <span>Kritische SR</span>
+                <strong id="softwareIssueMetric">0</strong>
+              </button>
+            </section>
+          </div>
+
+          <div class="filter-bar" id="softwareScoreFilterBar" hidden>
+            <span>Gefiltert: Software Requirements mit Score &lt; 85</span>
+            <button id="clearSoftwareScoreFilterButton" type="button">Filter beenden</button>
+          </div>
+
+          <section class="table-wrap">
+            <table class="results-table software-table analysis-complete">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>SR-ID</th>
+                  <th>Verwendetes Product Requirement</th>
+                  <th>Software Requirement</th>
+                  <th>Score</th>
+                </tr>
+              </thead>
+              <tbody id="softwareRequirementsBody">
+                <tr>
+                  <td colspan="5" class="empty">Schließe Product Requirements ab, um Software Requirements abzuleiten.</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </section>
+
+        <section class="process-page" id="page-usecase" data-process-page="usecase" hidden>
+          <div class="page-placeholder">
+            <p class="eyebrow">Prozessschritt</p>
+            <h1>UseCase</h1>
+            <p>UseCase-Erstellung und Review werden als eigener Arbeitsbereich vorbereitet.</p>
+          </div>
+        </section>
+
+        <section class="process-page" id="page-userstory" data-process-page="userstory" hidden>
+          <div class="page-placeholder">
+            <p class="eyebrow">Prozessschritt</p>
+            <h1>UserStory</h1>
+            <p>UserStory-Erstellung und Qualitätsprüfung werden als eigener Arbeitsbereich vorbereitet.</p>
+          </div>
+        </section>
+
+        <section class="process-page" id="page-e2e" data-process-page="e2e" hidden>
+          <div class="page-placeholder">
+            <p class="eyebrow">Prozessschritt</p>
+            <h1>E2E TestCase</h1>
+            <p>E2E-TestCase-Erstellung und Prüfung werden als eigener Arbeitsbereich vorbereitet.</p>
+          </div>
+        </section>
+
+        <section class="process-page" id="page-app-test" data-process-page="app-test" hidden>
+          <div class="page-placeholder">
+            <p class="eyebrow">Prozessschritt</p>
+            <h1>App TestCase</h1>
+            <p>App-TestCase-Erstellung und Prüfung werden als eigener Arbeitsbereich vorbereitet.</p>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <div class="settings-overlay" id="settingsOverlay" hidden>
+      <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <div class="selection-header">
+          <div>
+            <p class="eyebrow">Einstellungen</p>
+            <h2 id="settingsTitle">Import und Analyse konfigurieren</h2>
+          </div>
+          <button class="icon-button" id="settingsCloseButton" type="button" aria-label="Einstellungen schließen">×</button>
+        </div>
+
+        <section class="controls-panel">
+          <div class="field-group">
+            <label for="requirementType">Requirement-Typ</label>
+            <select id="requirementType">
+              <option value="product" selected>Product Requirements</option>
+              <option value="software" disabled>Software Requirements - spaeter verfuegbar</option>
+            </select>
+          </div>
+
+          <div class="field-row">
+            <div class="field-group">
+              <label for="sheetSelect">Sheet</label>
+              <select id="sheetSelect" disabled></select>
+            </div>
+            <div class="field-group">
+              <label for="headerRow">Header-Zeile</label>
+              <input id="headerRow" type="number" min="1" value="1" disabled />
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field-group">
+              <label for="categoryColumn">Kategorie-Spalte</label>
+              <select id="categoryColumn" disabled></select>
+            </div>
+            <div class="field-group">
+              <label for="subcategoryColumn">Subkategorie-Spalte</label>
+              <select id="subcategoryColumn" disabled></select>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field-group">
+              <label for="nameColumn">Name-Spalte</label>
+              <select id="nameColumn" disabled></select>
+            </div>
+            <div class="field-group">
+              <label for="requirementColumn">Requirement-Spalte</label>
+              <select id="requirementColumn" disabled></select>
+            </div>
+          </div>
+
+          <div class="field-row compact-row" id="idFieldRow">
+            <div class="field-group">
+              <label for="idColumn">ID-Spalte</label>
+              <select id="idColumn" disabled></select>
+            </div>
+            <div class="field-group" id="autoIdGroup" hidden>
+              <label for="idPrefix">ID-Kennung</label>
+              <input id="idPrefix" type="text" value="REQ" placeholder="z.B. CRM" disabled />
+            </div>
+          </div>
+
+          <p class="hint">Nach dem Upload koennen Tabellenblatt und Requirement-Spalte frei gewaehlt werden.</p>
+        </section>
+
+        <div class="selection-actions">
+          <button id="settingsDoneButton" type="button">Fertig</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="project-overlay" id="projectOverlay" hidden>
+      <div class="project-dialog" role="dialog" aria-modal="true" aria-labelledby="projectTitle">
+        <div class="selection-header">
+          <div>
+            <p class="eyebrow">Projekt</p>
+            <h2 id="projectTitle">Neues Projekt anlegen</h2>
+          </div>
+          <button class="icon-button" id="projectCloseButton" type="button" aria-label="Projekt-Dialog schließen">×</button>
+        </div>
+
+        <section class="controls-panel">
+          <div class="field-group">
+            <label for="projectName">Projektname</label>
+            <input id="projectName" type="text" placeholder="z.B. Miele.DevPilot Review" />
+          </div>
+          <div class="field-group">
+            <label for="projectDescription">Kurzbeschreibung</label>
+            <textarea id="projectDescription" rows="4" placeholder="Kurze Beschreibung des Projektinhalts"></textarea>
+          </div>
+        </section>
+
+        <div class="selection-actions">
+          <button id="projectCancelButton" type="button">Abbrechen</button>
+          <button id="projectCreateButton" class="primary" type="button">Projekt anlegen</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="progress-overlay" id="progressOverlay" hidden>
+      <div class="progress-dialog" role="status" aria-live="polite" aria-labelledby="progressTitle">
+        <div class="progress-heading">
+          <div class="activity-icon" aria-hidden="true">
+            <span></span>
+          </div>
+          <div>
+            <p class="eyebrow">Analyse läuft</p>
+            <h2 id="progressTitle">Requirements werden analysiert</h2>
+          </div>
+        </div>
+        <p id="progressText">Die Analyse wird vorbereitet.</p>
+        <div class="progress-track" aria-hidden="true">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <p class="progress-detail" id="progressDetail">0 von 0 Requirements verarbeitet</p>
+      </div>
+    </div>
+
+    <div class="selection-overlay" id="selectionOverlay" hidden>
+      <div class="selection-dialog" role="dialog" aria-modal="true" aria-labelledby="selectionTitle">
+        <div class="selection-header">
+          <div>
+            <p class="eyebrow">Finalen Requirement-Text auswählen</p>
+            <h2 id="selectionTitle">Text für den finalen Stand festlegen</h2>
+          </div>
+          <button class="icon-button" id="selectionCloseButton" type="button" aria-label="Dialog schließen">×</button>
+        </div>
+
+        <dl class="selection-meta">
+          <div>
+            <dt>ID</dt>
+            <dd id="selectionId">-</dd>
+          </div>
+          <div>
+            <dt>Name</dt>
+            <dd id="selectionName">-</dd>
+          </div>
+          <div>
+            <dt>Gruppe</dt>
+            <dd id="selectionGroup">-</dd>
+          </div>
+          <div>
+            <dt>Score</dt>
+            <dd id="selectionScore">-</dd>
+          </div>
+        </dl>
+
+        <div class="selection-grid">
+          <section class="choice-card">
+            <h3>Originaltext</h3>
+            <textarea id="selectionOriginalText" rows="10"></textarea>
+            <button id="selectOriginalButton" type="button">Original verwenden</button>
+            <button id="resetOriginalTextButton" type="button">Ursprungstext wiederherstellen</button>
+            <button id="selectEditedOriginalButton" type="button">Bearbeiteten Text verwenden</button>
+          </section>
+          <section class="choice-card">
+            <h3>AI-Vorschlag</h3>
+            <p id="selectionAiText"></p>
+            <button id="selectAiButton" type="button">AI-Vorschlag verwenden</button>
+          </section>
+        </div>
+
+        <section class="selection-issues">
+          <h3>Hinweise aus der Analyse</h3>
+          <div id="selectionIssues">Noch keine Analysehinweise vorhanden.</div>
+        </section>
+
+        <div class="selection-actions">
+          <button id="excludeRequirementButton" type="button">Requirement ausschließen</button>
+          <button id="selectionDeferButton" type="button">Auswahl später treffen</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="selection-overlay" id="softwareSelectionOverlay" hidden>
+      <div class="selection-dialog software-selection-dialog" role="dialog" aria-modal="true" aria-labelledby="softwareSelectionTitle">
+        <div class="selection-header">
+          <div>
+            <p class="eyebrow">Software Requirement übernehmen</p>
+            <h2 id="softwareSelectionTitle">SR prüfen und final übernehmen</h2>
+          </div>
+          <button class="icon-button" id="softwareSelectionCloseButton" type="button" aria-label="Dialog schließen">×</button>
+        </div>
+
+        <dl class="selection-meta">
+          <div>
+            <dt>SR-ID</dt>
+            <dd id="softwareSelectionId">-</dd>
+          </div>
+          <div>
+            <dt>Quelle</dt>
+            <dd id="softwareSelectionSource">-</dd>
+          </div>
+          <div>
+            <dt>Score</dt>
+            <dd id="softwareSelectionScore">-</dd>
+          </div>
+        </dl>
+
+        <section class="choice-card">
+          <h3>Software Requirement</h3>
+          <textarea id="softwareSelectionText" rows="12"></textarea>
+          <button id="softwareSelectionAcceptButton" class="primary" type="button">SR übernehmen</button>
+        </section>
+
+        <section class="selection-issues">
+          <h3>Kritische Hinweise</h3>
+          <div id="softwareSelectionIssues">Keine Hinweise vorhanden.</div>
+        </section>
+
+        <div class="selection-actions">
+          <button id="softwareSelectionExcludeButton" type="button">SR ausschließen</button>
+          <button id="softwareSelectionDeferButton" type="button">Auswahl später treffen</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+[Unit]
+Description=Miele.DevPilot web application
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/miele-devpilot
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/env node server.mjs
+Restart=always
+RestartSec=5
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target
