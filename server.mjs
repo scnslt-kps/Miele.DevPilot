@@ -60,7 +60,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && pathname === "/api/runtime") {
       sendJson(res, 200, {
         mock: process.env.OPENAI_MOCK === "true",
-        version: "0.1.0",
+        git: await getGitVersionInfo(),
       });
       return;
     }
@@ -473,6 +473,33 @@ function setCorsHeaders(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+async function getGitVersionInfo() {
+  const [description, commit, branch, date, dirty] = await Promise.all([
+    readGitValue(["describe", "--tags", "--always", "--dirty"]),
+    readGitValue(["rev-parse", "--short", "HEAD"]),
+    readGitValue(["branch", "--show-current"]),
+    readGitValue(["log", "-1", "--format=%cI"]),
+    readGitValue(["status", "--short"]),
+  ]);
+
+  return {
+    version: description || commit || "Nicht verfuegbar",
+    commit: commit || "Nicht verfuegbar",
+    branch: branch || "Nicht verfuegbar",
+    date: date || "",
+    dirty: Boolean(dirty),
+  };
+}
+
+async function readGitValue(args) {
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", root, ...args]);
+    return stdout.trim();
+  } catch {
+    return "";
+  }
 }
 
 async function chooseSavePath(defaultName) {

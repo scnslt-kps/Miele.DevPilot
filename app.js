@@ -20,6 +20,7 @@ const state = {
   productWindchillTransferredAt: "",
   softwareWindchillTransferComplete: false,
   softwareWindchillTransferredAt: "",
+  runtimeInfo: null,
   runtimeMock: false,
   scoreFilterActive: false,
   softwareScoreFilterActive: false,
@@ -32,8 +33,6 @@ const state = {
 
 const PROJECT_FILE_TYPE = "miele-devpilot-project";
 const PROJECT_FILE_VERSION = 1;
-const APP_VERSION = "0.1.0";
-const APP_BUILD = "POC";
 const ANALYSIS_BATCH_SIZE = 5;
 const PRODUCT_STEP_MIN_SCORE = 85;
 const LOCAL_SERVER_APP_URL = "http://localhost:3000/Miele.DevPilot/";
@@ -358,9 +357,15 @@ function closeAboutPage() {
 }
 
 function renderAboutPage() {
-  els.aboutVersion.textContent = `Proof of Concept ${APP_VERSION}`;
-  els.aboutBuild.textContent = APP_BUILD;
-  els.aboutBuildDate.textContent = document.lastModified || "Nicht verfügbar";
+  const gitInfo = state.runtimeInfo?.git || {};
+  const version = gitInfo.version || "Git-Version nicht verfügbar";
+  const commit = gitInfo.commit || "Nicht verfügbar";
+  const branch = gitInfo.branch || "Nicht verfügbar";
+  const dirtyMarker = gitInfo.dirty ? " (lokale Änderungen)" : "";
+
+  els.aboutVersion.textContent = `Git ${version}${dirtyMarker}`;
+  els.aboutBuild.textContent = `${branch} / ${commit}`;
+  els.aboutBuildDate.textContent = formatGitDate(gitInfo.date) || document.lastModified || "Nicht verfügbar";
   els.aboutRuntimePath.textContent = window.location.pathname || "/";
 }
 
@@ -2262,10 +2267,24 @@ async function loadRuntimeInfo() {
     const response = await fetch(getRuntimeEndpoint());
     if (!response.ok) return;
     const data = await response.json();
+    state.runtimeInfo = data;
     state.runtimeMock = Boolean(data.mock);
   } catch {
+    state.runtimeInfo = null;
     state.runtimeMock = false;
   }
+}
+
+function formatGitDate(value) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("de-DE", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
 function showProgress(total) {
