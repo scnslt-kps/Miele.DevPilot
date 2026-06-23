@@ -84,7 +84,7 @@ server.listen(port, () => {
 async function handleAnalyze(req, res) {
   const body = await readJsonBody(req);
   const requirementType = body.requirementType || "product";
-  if (requirementType !== "product" && requirementType !== "software") {
+  if (requirementType !== "product" && requirementType !== "software" && requirementType !== "e2e") {
     sendJson(res, 400, { error: "Unsupported requirement type." });
     return;
   }
@@ -97,6 +97,7 @@ async function handleAnalyze(req, res) {
       rowNumber: Number(item.rowNumber),
       id: String(item.id || "").slice(0, 200),
       text: String(item.text || "").trim().slice(0, 6000),
+      score: Number(item.score),
     }))
     .filter((item) => item.text);
 
@@ -112,6 +113,11 @@ async function handleAnalyze(req, res) {
 
   if (requirementType === "software") {
     await handleSoftwareDerivation(cleaned, res);
+    return;
+  }
+
+  if (requirementType === "e2e") {
+    await handleE2eDerivation(cleaned, res);
     return;
   }
 
@@ -236,7 +242,12 @@ async function handleAnalyze(req, res) {
   }
 
   try {
-    sendJson(res, 200, JSON.parse(outputText));
+    const parsed = JSON.parse(outputText);
+    enforceSoftwareScoreRules(parsed, requirements);
+    sendJson(res, 200, {
+      ...parsed,
+      openAiUsage: buildOpenAiUsageSummary(payload),
+    });
   } catch (error) {
     console.error("OpenAI returned invalid JSON:", error);
     sendJson(res, 502, {
@@ -306,15 +317,15 @@ async function handleSoftwareDerivation(requirements, res) {
           {
             role: "system",
             content:
-              "You are a senior software requirements engineer. Derive precise, testable Software Requirements and concrete acceptance criteria from approved Product Requirements so they can be used later for Use Cases and Test Cases. Consider the main flow, alternative flows, and exception flows. If relevant PR information is missing, ambiguous, not measurable, or not testable, report it as a quality issue. Apply the quality criteria of very good Software Requirements: clear, atomic, consistent, feasible, unambiguous, traceable, verifiable, testable, complete, measurable, implementation-aware where necessary, and not design-overprescriptive. Return only valid JSON that matches the schema.",
+              "You are a senior software requirements engineer. Derive precise, testable Software Requirements and concrete acceptance criteria from approved Product Requirements so they can be used later for Use Cases and Test Cases. Consider the main flow, alternative flows, and exception flows. Apply the quality criteria of very good Software Requirements: clear, atomic, consistent, feasible, unambiguous, traceable, verifiable, testable, complete, measurable, implementation-aware where necessary, and not design-overprescriptive. Improve the derived SR until it reaches the required quality threshold before returning it. Return only valid JSON that matches the schema.",
           },
           {
             role: "user",
             content: JSON.stringify({
               task:
-                "For each Product Requirement, derive one Software Requirement that specifies observable system behavior, inputs, outputs, constraints, quality constraints, and verification-relevant acceptance criteria. Use clear shall-style wording. Preserve traceability to the source Product Requirement. Include main flow, alternative flows, exception flows, and concrete acceptance criteria that can later be used directly as a basis for Use Cases and Test Cases. Score each Software Requirement from 0-100. A score of 85 or higher means the Software Requirement is good enough to be used as a basis for later Use Cases and Test Cases. If the score is below 85, include concrete quality issues and improvement suggestions. If the source PR is not sufficiently testable, include this in issues and reduce the score accordingly.",
+                "For each Product Requirement, derive one Software Requirement that specifies observable system behavior, inputs, outputs, constraints, quality constraints, and verification-relevant acceptance criteria. Use clear shall-style wording. Preserve traceability to the source Product Requirement. Include main flow, alternative flows, exception flows, and concrete acceptance criteria that can later be used directly as a basis for Use Cases and Test Cases. Score each Software Requirement from 85-100. Never return a score below 85. If an initial draft would score below 85, improve the Software Requirement until it reaches at least 85 before returning it. If the source Product Requirement has score 100, the derived Software Requirement must also have score 100. Remaining issues may be reported only when they do not reduce the SR below the minimum threshold.",
               scoring:
-                "Score 0-100. 100 means excellent SR quality. 85 is the minimum acceptable quality threshold. Evaluate clarity, atomicity, traceability, consistency, completeness, feasibility, testability, measurability, unambiguity, flow coverage, exception handling, acceptance-criteria quality, and suitability for deriving Use Cases and Test Cases.",
+                "Score 85-100. 100 means excellent SR quality. 85 is the minimum acceptable quality threshold. A source PR with score 100 requires a derived SR with score 100. Evaluate clarity, atomicity, traceability, consistency, completeness, feasibility, testability, measurability, unambiguity, flow coverage, exception handling, acceptance-criteria quality, and suitability for deriving Use Cases and Test Cases.",
               requirements,
             }),
           },
@@ -351,7 +362,7 @@ async function handleSoftwareDerivation(requirements, res) {
                         type: "array",
                         items: { type: "string" },
                       },
-                      score: { type: "number" },
+                      score: { type: "number", minimum: 85, maximum: 100 },
                       issues: {
                         type: "array",
                         items: {
@@ -412,11 +423,53 @@ async function handleSoftwareDerivation(requirements, res) {
   }
 
   try {
-    sendJson(res, 200, JSON.parse(outputText));
+    sendJson(res, 200, {
+      ...JSON.parse(outputText),
+      openAiUsage: buildOpenAiUsageSummary(payload),
+    });
   } catch (error) {
     console.error("Could not parse OpenAI software output:", outputText, error);
     sendJson(res, 502, { error: "OpenAI returned invalid JSON." });
   }
+}
+
+function enforceSoftwareScoreRules(payload, sourceRequirements) {
+  if (!Array.isArray(payload?.softwareRequirements)) return;
+
+  const sourcesByRow = new Map(sourceRequirements.map((item) => [Number(item.rowNumber), item]));
+  const sourcesById = new Map(sourceRequirements.map((item) => [String(item.id || ""), item]));
+  payload.softwareRequirements.forEach((item, index) => {
+    const source =
+      sourcesByRow.get(Number(item.sourceRowNumber)) ||
+      sourcesById.get(String(item.sourceId || "")) ||
+      sourceRequirements[index] ||
+      {};
+    const sourceScore = Number(source.score);
+    const score = Number(item.score);
+
+    if (sourceScore === 100) {
+      item.score = 100;
+      item.issues = [];
+      return;
+    }
+
+    if (!Number.isFinite(score) || score < 85) {
+      item.score = 85;
+    } else if (score > 100) {
+      item.score = 100;
+    }
+  });
+}
+
+async function handleE2eDerivation(requirements, res) {
+  if (process.env.OPENAI_MOCK === "true") {
+    sendJson(res, 200, {
+      e2eTests: requirements.map((item, index) => mockE2eTest(item, index)),
+    });
+    return;
+  }
+
+  sendJson(res, 501, { error: "Der E2E-Ableitungsprompt ist noch nicht konfiguriert." });
 }
 
 function isAppleScriptCancel(error) {
@@ -541,6 +594,50 @@ function extractOutputText(payload) {
   return "";
 }
 
+function buildOpenAiUsageSummary(payload) {
+  const usage = payload?.usage || {};
+  const inputTokens = Number(usage.input_tokens) || 0;
+  const outputTokens = Number(usage.output_tokens) || 0;
+  const totalTokens = Number(usage.total_tokens) || inputTokens + outputTokens;
+  const cachedInputTokens = Number(usage.input_tokens_details?.cached_tokens) || 0;
+  const reasoningOutputTokens = Number(usage.output_tokens_details?.reasoning_tokens) || 0;
+  const uncachedInputTokens = Math.max(inputTokens - cachedInputTokens, 0);
+  const inputUsdPer1m = envNumber("OPENAI_INPUT_USD_PER_1M_TOKENS");
+  const cachedInputUsdPer1m = envNumber("OPENAI_CACHED_INPUT_USD_PER_1M_TOKENS");
+  const outputUsdPer1m = envNumber("OPENAI_OUTPUT_USD_PER_1M_TOKENS");
+  const pricingConfigured =
+    Number.isFinite(inputUsdPer1m) || Number.isFinite(cachedInputUsdPer1m) || Number.isFinite(outputUsdPer1m);
+  const inputUsd = (uncachedInputTokens / 1_000_000) * (Number.isFinite(inputUsdPer1m) ? inputUsdPer1m : 0);
+  const cachedInputUsd =
+    (cachedInputTokens / 1_000_000) * (Number.isFinite(cachedInputUsdPer1m) ? cachedInputUsdPer1m : Number.isFinite(inputUsdPer1m) ? inputUsdPer1m : 0);
+  const outputUsd = (outputTokens / 1_000_000) * (Number.isFinite(outputUsdPer1m) ? outputUsdPer1m : 0);
+
+  return {
+    model: payload?.model || process.env.OPENAI_MODEL || "gpt-5.5",
+    usage: {
+      inputTokens,
+      cachedInputTokens,
+      outputTokens,
+      reasoningOutputTokens,
+      totalTokens,
+    },
+    cost: {
+      currency: "USD",
+      estimated: true,
+      pricingConfigured,
+      inputUsd,
+      cachedInputUsd,
+      outputUsd,
+      totalUsd: inputUsd + cachedInputUsd + outputUsd,
+    },
+  };
+}
+
+function envNumber(name) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) ? value : NaN;
+}
+
 function mockAnalyzeRequirement(item) {
   const vagueWords = ["schnell", "einfach", "intuitiv", "angemessen", "performant"];
   const lower = item.text.toLowerCase();
@@ -591,7 +688,8 @@ function mockFinalizeRequirement(item) {
 
 function mockSoftwareRequirement(item, index) {
   const sourceId = item.id || `PR-${item.rowNumber || index + 1}`;
-  const isCritical = index % 4 === 3;
+  const sourceScore = Number(item.score);
+  const score = sourceScore === 100 ? 100 : 90;
   return {
     sourceRowNumber: item.rowNumber,
     sourceId,
@@ -612,19 +710,8 @@ function mockSoftwareRequirement(item, index) {
       "Gegeben ungueltige Pflichtangaben, wenn die Verarbeitung gestartet wird, dann verhindert das System die Verarbeitung und zeigt eine konkrete Fehlermeldung.",
       "Gegeben ein technischer Fehler, wenn die Verarbeitung nicht abgeschlossen werden kann, dann bleibt der Bearbeitungsstand nachvollziehbar und der Fehler wird protokolliert.",
     ],
-    score: isCritical ? 78 : 90,
-    issues: isCritical
-      ? [
-          {
-            criterion: "Testbarkeit",
-            severity: "medium",
-            explanation:
-              "Der Mock markiert dieses Software Requirement absichtlich als noch nicht ausreichend konkret, damit die Score-Warnung getestet werden kann.",
-            suggestion:
-              "Ergaenze messbare Akzeptanzkriterien, konkrete Systemreaktionen und eindeutige Fehlerbedingungen.",
-          },
-        ]
-      : [],
+    score,
+    issues: [],
     rationale: `Abgeleitet aus dem finalen Product Requirement: ${item.text.slice(0, 180)}`,
   };
 }
@@ -639,6 +726,59 @@ function buildMockSoftwareRequirementId(sourceId, index) {
   }
 
   return `SR-${String(index + 1).padStart(3, "0")}`;
+}
+
+function mockE2eTest(item, index) {
+  const sourceId = item.id || `SR-${index + 1}`;
+  const isCritical = index % 5 === 4;
+  return {
+    sourceId,
+    id: buildMockE2eTestId(sourceId, index),
+    text: `E2E Test fuer "${sourceId}": Der vollstaendige Nutzerablauf wird von der Startbedingung bis zum sichtbaren Ergebnis ausgefuehrt und gegen die erwarteten Systemreaktionen verifiziert.`,
+    preconditions: [
+      "Ein berechtigter Benutzer ist verfuegbar.",
+      "Das System ist erreichbar und benoetigte Testdaten sind vorbereitet.",
+    ],
+    testData: [
+      "Gueltige Eingaben fuer den Happy Path.",
+      "Ungueltige oder fehlende Pflichtangaben fuer relevante Fehlerpruefungen.",
+    ],
+    steps: [
+      "Benutzer startet den in der Software Requirement beschriebenen Ablauf.",
+      "Benutzer fuehrt die benoetigten Eingaben und Aktionen aus.",
+      "Systemreaktion, Status und sichtbares Ergebnis werden geprueft.",
+    ],
+    expectedResults: [
+      "Das erwartete Ergebnis ist fuer den Benutzer sichtbar und entspricht der Software Requirement.",
+      "Fehlerfaelle werden kontrolliert behandelt und fuehren nicht zu widerspruechlichen Anzeigen.",
+    ],
+    score: isCritical ? 80 : 91,
+    issues: isCritical
+      ? [
+          {
+            criterion: "Ausfuehrbarkeit",
+            severity: "medium",
+            explanation:
+              "Der Mock markiert diesen E2E Test absichtlich als noch nicht ausreichend konkret, damit die Score-Warnung getestet werden kann.",
+            suggestion:
+              "Ergaenze konkrete Testdaten, pruefbare erwartete Ergebnisse und eindeutige Vorbedingungen.",
+          },
+        ]
+      : [],
+    rationale: `Abgeleitet aus dem finalen Software Requirement: ${item.text.slice(0, 180)}`,
+  };
+}
+
+function buildMockE2eTestId(sourceId, index) {
+  if (/^SR(?=[_-])/i.test(sourceId)) {
+    return sourceId.replace(/^SR/i, "E2E");
+  }
+
+  if (/^SR\b/i.test(sourceId)) {
+    return sourceId.replace(/^SR/i, "E2E");
+  }
+
+  return `E2E-${String(index + 1).padStart(3, "0")}`;
 }
 
 async function loadDotEnv() {

@@ -129,7 +129,16 @@ h2 {
   text-align: right;
 }
 
-.project-state span {
+.openai-cost-state {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  max-width: 420px;
+  text-align: right;
+}
+
+.project-state span,
+.openai-cost-state span {
   color: var(--accent);
   font-size: 0.72rem;
   font-weight: 850;
@@ -137,13 +146,15 @@ h2 {
   text-transform: uppercase;
 }
 
-.project-state strong {
+.project-state strong,
+.openai-cost-state strong {
   color: var(--black);
   font-size: 1.18rem;
   line-height: 1.15;
 }
 
-.project-state small {
+.project-state small,
+.openai-cost-state small {
   color: var(--muted);
   font-size: 0.86rem;
   font-weight: 650;
@@ -999,6 +1010,12 @@ tbody tr:hover td {
   color: var(--info);
 }
 
+.decision-icon.empty {
+  border-color: transparent;
+  background: transparent;
+  color: transparent;
+}
+
 .decision-icon.selected {
   border-color: var(--good);
   background: #dcfce7;
@@ -1518,7 +1535,8 @@ tbody tr.group-row:hover td {
   }
 
   .header-state,
-  .project-state {
+  .project-state,
+  .openai-cost-state {
     justify-items: start;
     text-align: left;
   }

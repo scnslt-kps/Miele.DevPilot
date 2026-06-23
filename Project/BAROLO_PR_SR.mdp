@@ -1,7 +1,7 @@
 {
   "type": "miele-devpilot-project",
   "version": 1,
-  "savedAt": "2026-06-22T11:34:35.520Z",
+  "savedAt": "2026-06-23T07:43:49.561Z",
   "project": {
     "name": "Barolo",
     "description": "Das Barolo Weinkühlschrank Projekt"
@@ -870,6 +870,10 @@
     ],
     "analysisComplete": true,
     "generatedIds": true,
-    "activeProcessStep": "software"
+    "activeProcessStep": "software",
+    "productWindchillTransferComplete": true,
+    "productWindchillTransferredAt": "2026-06-23T07:43:35.711Z",
+    "softwareWindchillTransferComplete": true,
+    "softwareWindchillTransferredAt": "2026-06-23T07:43:43.293Z"
   }
 }

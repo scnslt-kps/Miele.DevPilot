@@ -26,10 +26,16 @@ http://localhost:3000/Miele.DevPilot
 
 - `PR` steht fuer Product Requirement bzw. Product Requirements.
 - `SR` steht fuer Software Requirement bzw. Software Requirements.
+- `E2E TestCases` steht fuer End-to-End Test Cases, die aus Software Requirements abgeleitet werden.
 
 Die Prompt-Vorlage fuer die Ableitung von SR aus PR liegt in `software-requirements-prompt.md`.
 
 Die OpenAI-Anfrage laeuft serverseitig ueber `.env.local`, damit der API-Key nicht im Browser landet.
+Die Projektoberflaeche zeigt eine projektspezifische OpenAI-Kostensumme. Die
+Summe wird aus der API-Token-Usage geschaetzt; dafuer koennen die aktuellen
+Modellpreise in `.env.local` als USD pro 1M Tokens gesetzt werden:
+`OPENAI_INPUT_USD_PER_1M_TOKENS`, `OPENAI_CACHED_INPUT_USD_PER_1M_TOKENS` und
+`OPENAI_OUTPUT_USD_PER_1M_TOKENS`.
 
 ## Offline-Test
 

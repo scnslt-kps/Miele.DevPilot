@@ -14,12 +14,14 @@ The derived SR must include:
 - relevant alternative flows;
 - relevant exception flows;
 - concrete acceptance criteria that can later be used directly for Use Cases and Test Cases;
-- a quality score from 0 to 100;
-- concrete issues and suggestions when the score is below 85.
+- a quality score from 85 to 100;
+- concrete issues and suggestions only when useful for improving the SR further.
 
 ## Scoring
 
-Score 0-100. A score of 100 means excellent SR quality. A score of 85 is the minimum acceptable quality threshold.
+Score 85-100. A score of 100 means excellent SR quality. A score of 85 is the minimum acceptable quality threshold. Do not return a Software Requirement with a score below 85. If the first draft would score below 85, improve the Software Requirement until it reaches at least 85 before returning it.
+
+If the source Product Requirement has score 100, the derived Software Requirement must also have score 100. In this case, do not introduce ambiguity, missing acceptance criteria, or quality issues that would lower the derived SR below the source PR quality.
 
 Evaluate:
 
@@ -37,7 +39,7 @@ Evaluate:
 - acceptance-criteria quality;
 - suitability for deriving Use Cases and Test Cases.
 
-If score < 85, provide at least one issue with criterion, severity, explanation, and suggestion. If the source PR is not sufficiently testable, include this in issues and reduce the score accordingly.
+If the source PR still contains minor limitations, address them during SR derivation instead of returning an SR below 85. Report remaining improvement hints only when they do not reduce the SR below the minimum threshold.
 
 ## Expected JSON Shape
 

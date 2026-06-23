@@ -7,10 +7,13 @@ const state = {
   results: [],
   softwareRequirements: [],
   softwareSelections: new Map(),
+  e2eTests: [],
+  e2eSelections: new Map(),
   finalSelections: new Map(),
   finalScoreUpdates: new Set(),
   activeSelectionRow: null,
   activeSoftwareRequirementId: "",
+  activeE2eTestId: "",
   analysisComplete: false,
   generatedIds: false,
   requirementType: "product",
@@ -22,8 +25,10 @@ const state = {
   softwareWindchillTransferredAt: "",
   runtimeInfo: null,
   runtimeMock: false,
+  openAiCostSummary: null,
   scoreFilterActive: false,
   softwareScoreFilterActive: false,
+  e2eScoreFilterActive: false,
   sourceFileName: "",
   projectName: "",
   projectDescription: "",
@@ -47,7 +52,7 @@ const PROCESS_STEP_DEPENDENCIES = {
 const PROCESS_STEP_LABELS = {
   product: "Product Requirement",
   software: "Software Requirement",
-  e2e: "E2E TestCase",
+  e2e: "E2E TestCases",
   usecase: "UseCase",
   userstory: "UserStory",
   "app-test": "App TestCase",
@@ -67,6 +72,8 @@ const els = {
   aboutBuild: document.querySelector("#aboutBuild"),
   aboutBuildDate: document.querySelector("#aboutBuildDate"),
   aboutRuntimePath: document.querySelector("#aboutRuntimePath"),
+  openAiCostTotal: document.querySelector("#openAiCostTotal"),
+  openAiCostDetail: document.querySelector("#openAiCostDetail"),
   openSettingsButton: document.querySelector("#openSettingsButton"),
   fileState: document.querySelector("#fileState"),
   requirementType: document.querySelector("#requirementType"),
@@ -83,6 +90,8 @@ const els = {
   analyzeButton: document.querySelector("#analyzeButton"),
   generateSoftwareButton: document.querySelector("#generateSoftwareButton"),
   generateSoftwareMenuButton: document.querySelector("#generateSoftwareMenuButton"),
+  generateE2eButton: document.querySelector("#generateE2eButton"),
+  generateE2eMenuButton: document.querySelector("#generateE2eMenuButton"),
   exportButton: document.querySelector("#exportButton"),
   settingsOverlay: document.querySelector("#settingsOverlay"),
   settingsCloseButton: document.querySelector("#settingsCloseButton"),
@@ -116,6 +125,23 @@ const els = {
   softwareSelectionScore: document.querySelector("#softwareSelectionScore"),
   softwareSelectionText: document.querySelector("#softwareSelectionText"),
   softwareSelectionIssues: document.querySelector("#softwareSelectionIssues"),
+  e2eTestsBody: document.querySelector("#e2eTestsBody"),
+  e2eDerivedMetric: document.querySelector("#e2eDerivedMetric"),
+  e2eScoreMetric: document.querySelector("#e2eScoreMetric"),
+  e2eIssueMetric: document.querySelector("#e2eIssueMetric"),
+  criticalE2eIssuesButton: document.querySelector("#criticalE2eIssuesButton"),
+  e2eScoreFilterBar: document.querySelector("#e2eScoreFilterBar"),
+  clearE2eScoreFilterButton: document.querySelector("#clearE2eScoreFilterButton"),
+  e2eSelectionOverlay: document.querySelector("#e2eSelectionOverlay"),
+  e2eSelectionCloseButton: document.querySelector("#e2eSelectionCloseButton"),
+  e2eSelectionDeferButton: document.querySelector("#e2eSelectionDeferButton"),
+  e2eSelectionExcludeButton: document.querySelector("#e2eSelectionExcludeButton"),
+  e2eSelectionAcceptButton: document.querySelector("#e2eSelectionAcceptButton"),
+  e2eSelectionId: document.querySelector("#e2eSelectionId"),
+  e2eSelectionSource: document.querySelector("#e2eSelectionSource"),
+  e2eSelectionScore: document.querySelector("#e2eSelectionScore"),
+  e2eSelectionText: document.querySelector("#e2eSelectionText"),
+  e2eSelectionIssues: document.querySelector("#e2eSelectionIssues"),
   selectionOverlay: document.querySelector("#selectionOverlay"),
   selectionCloseButton: document.querySelector("#selectionCloseButton"),
   selectionDeferButton: document.querySelector("#selectionDeferButton"),
@@ -261,6 +287,11 @@ els.generateSoftwareMenuButton.addEventListener("click", async () => {
   closeMenus();
   await generateSoftwareRequirements();
 });
+els.generateE2eButton.addEventListener("click", generateE2eTests);
+els.generateE2eMenuButton.addEventListener("click", async () => {
+  closeMenus();
+  await generateE2eTests();
+});
 els.exportButton.addEventListener("click", simulateActiveWindchillTransfer);
 els.productTransferButton.addEventListener("click", simulateProductWindchillTransfer);
 els.softwareTransferButton.addEventListener("click", simulateSoftwareWindchillTransfer);
@@ -268,6 +299,8 @@ els.criticalIssuesButton.addEventListener("click", activateScoreFilter);
 els.clearScoreFilterButton.addEventListener("click", clearScoreFilter);
 els.criticalSoftwareIssuesButton.addEventListener("click", activateSoftwareScoreFilter);
 els.clearSoftwareScoreFilterButton.addEventListener("click", clearSoftwareScoreFilter);
+els.criticalE2eIssuesButton.addEventListener("click", activateE2eScoreFilter);
+els.clearE2eScoreFilterButton.addEventListener("click", clearE2eScoreFilter);
 els.resultsBody.addEventListener("click", handleResultRowClick);
 els.softwareRequirementsBody.addEventListener("click", handleSoftwareRowClick);
 els.softwareRequirementsBody.addEventListener("keydown", (event) => {
@@ -277,6 +310,15 @@ els.softwareRequirementsBody.addEventListener("keydown", (event) => {
 
   event.preventDefault();
   openSoftwareSelectionDialog(row.dataset.softwareId);
+});
+els.e2eTestsBody.addEventListener("click", handleE2eRowClick);
+els.e2eTestsBody.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const row = event.target.closest(".e2e-derived-row");
+  if (!row) return;
+
+  event.preventDefault();
+  openE2eSelectionDialog(row.dataset.e2eId);
 });
 els.resultsBody.addEventListener("keydown", (event) => {
   if (!state.analysisComplete) return;
@@ -308,6 +350,15 @@ els.softwareSelectionOverlay.addEventListener("click", (event) => {
     closeSoftwareSelectionDialog();
   }
 });
+els.e2eSelectionCloseButton.addEventListener("click", closeE2eSelectionDialog);
+els.e2eSelectionDeferButton.addEventListener("click", deferE2eSelection);
+els.e2eSelectionExcludeButton.addEventListener("click", excludeE2eTest);
+els.e2eSelectionAcceptButton.addEventListener("click", acceptE2eTest);
+els.e2eSelectionOverlay.addEventListener("click", (event) => {
+  if (event.target === els.e2eSelectionOverlay) {
+    closeE2eSelectionDialog();
+  }
+});
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closeMenus();
@@ -327,6 +378,10 @@ window.addEventListener("keydown", (event) => {
 
   if (event.key === "Escape" && !els.softwareSelectionOverlay.hidden) {
     closeSoftwareSelectionDialog();
+  }
+
+  if (event.key === "Escape" && !els.e2eSelectionOverlay.hidden) {
+    closeE2eSelectionDialog();
   }
 });
 document.addEventListener("click", (event) => {
@@ -434,6 +489,7 @@ function renderProcessPages() {
     page.classList.toggle("is-active", isActive);
   });
   renderSoftwarePage();
+  renderE2ePage();
 }
 
 function hasProject() {
@@ -443,6 +499,7 @@ function hasProject() {
 function renderWorkspaceState() {
   const projectOpen = hasProject();
   renderProjectHeader();
+  renderOpenAiCostSummary();
   renderMenuAvailability();
   els.aboutPage.hidden = !state.aboutOpen;
   els.emptyWorkspace.hidden = state.aboutOpen || projectOpen;
@@ -478,6 +535,55 @@ function renderProjectHeader() {
   els.projectHeaderDescription.hidden = !state.projectDescription;
 }
 
+function renderOpenAiCostSummary() {
+  const summary = normalizedOpenAiCostSummary();
+  const cost = Number(summary.totalCostUsd) || 0;
+  const totalTokens = Number(summary.totalTokens) || 0;
+  const isEstimated = summary.estimated !== false;
+  const isConfigured = summary.pricingConfigured === true;
+
+  els.openAiCostTotal.textContent = isConfigured || cost > 0 ? formatUsd(cost) : "$0.0000";
+  els.openAiCostDetail.textContent = `${formatInteger(totalTokens)} Tokens${isEstimated ? " geschätzt" : ""}${isConfigured ? "" : " (Preise nicht konfiguriert)"}`;
+}
+
+function addOpenAiUsage(openAiUsage) {
+  if (!openAiUsage || typeof openAiUsage !== "object") return;
+
+  const usage = openAiUsage.usage || {};
+  const cost = openAiUsage.cost || {};
+  const summary = normalizedOpenAiCostSummary();
+  summary.requestCount += 1;
+  summary.inputTokens += Number(usage.inputTokens) || 0;
+  summary.cachedInputTokens += Number(usage.cachedInputTokens) || 0;
+  summary.outputTokens += Number(usage.outputTokens) || 0;
+  summary.reasoningOutputTokens += Number(usage.reasoningOutputTokens) || 0;
+  summary.totalTokens += Number(usage.totalTokens) || 0;
+  summary.totalCostUsd += Number(cost.totalUsd) || 0;
+  summary.pricingConfigured = summary.pricingConfigured || cost.pricingConfigured === true;
+  summary.estimated = true;
+  summary.lastModel = openAiUsage.model || summary.lastModel || "";
+  summary.updatedAt = new Date().toISOString();
+  state.openAiCostSummary = summary;
+  renderOpenAiCostSummary();
+  updateProjectActions();
+}
+
+function normalizedOpenAiCostSummary(value = state.openAiCostSummary) {
+  return {
+    requestCount: Number(value?.requestCount) || 0,
+    inputTokens: Number(value?.inputTokens) || 0,
+    cachedInputTokens: Number(value?.cachedInputTokens) || 0,
+    outputTokens: Number(value?.outputTokens) || 0,
+    reasoningOutputTokens: Number(value?.reasoningOutputTokens) || 0,
+    totalTokens: Number(value?.totalTokens) || 0,
+    totalCostUsd: Number(value?.totalCostUsd) || 0,
+    pricingConfigured: Boolean(value?.pricingConfigured),
+    estimated: value?.estimated !== false,
+    lastModel: value?.lastModel || "",
+    updatedAt: value?.updatedAt || "",
+  };
+}
+
 function isProcessStepAvailable(processStep) {
   const previousStep = PROCESS_STEP_DEPENDENCIES[processStep];
   return !previousStep || isProcessStepComplete(previousStep);
@@ -486,6 +592,7 @@ function isProcessStepAvailable(processStep) {
 function isProcessStepComplete(processStep) {
   if (processStep === "product") return isProductStepComplete();
   if (processStep === "software") return isSoftwareStepComplete();
+  if (processStep === "e2e") return isE2eQualityReady();
   return false;
 }
 
@@ -679,6 +786,8 @@ function resetProjectState({ projectName, projectDescription }) {
   state.results = [];
   state.softwareRequirements = [];
   state.softwareSelections = new Map();
+  state.e2eTests = [];
+  state.e2eSelections = new Map();
   state.finalSelections = new Map();
   state.finalScoreUpdates = new Set();
   state.activeSelectionRow = null;
@@ -686,8 +795,10 @@ function resetProjectState({ projectName, projectDescription }) {
   state.generatedIds = false;
   state.requirementType = "product";
   state.activeProcessStep = "product";
+  state.openAiCostSummary = null;
   state.scoreFilterActive = false;
   state.softwareScoreFilterActive = false;
+  state.e2eScoreFilterActive = false;
   state.productWindchillTransferComplete = false;
   state.productWindchillTransferredAt = "";
   state.softwareWindchillTransferComplete = false;
@@ -780,10 +891,13 @@ function refreshRequirements() {
   state.results = [];
   state.softwareRequirements = [];
   state.softwareSelections = new Map();
+  state.e2eTests = [];
+  state.e2eSelections = new Map();
   state.finalSelections = new Map();
   state.finalScoreUpdates = new Set();
   state.scoreFilterActive = false;
   state.softwareScoreFilterActive = false;
+  state.e2eScoreFilterActive = false;
   state.productWindchillTransferComplete = false;
   state.productWindchillTransferredAt = "";
   state.softwareWindchillTransferComplete = false;
@@ -867,6 +981,7 @@ async function analyzeRequirements() {
         throw new Error(data.error || "Analyse fehlgeschlagen");
       }
 
+      addOpenAiUsage(data.openAiUsage);
       results.push(...(Array.isArray(data.results) ? data.results : []));
       state.results = results;
       renderTable();
@@ -1024,6 +1139,8 @@ function excludeRequirement() {
   });
   state.softwareRequirements = [];
   state.softwareSelections = new Map();
+  state.e2eTests = [];
+  state.e2eSelections = new Map();
   resetProductWindchillTransfer();
   resetSoftwareWindchillTransfer();
   closeSelectionDialog();
@@ -1062,6 +1179,8 @@ async function selectFinalText(choice) {
   state.finalSelections.set(Number(rowNumber), { choice, text });
   state.softwareRequirements = [];
   state.softwareSelections = new Map();
+  state.e2eTests = [];
+  state.e2eSelections = new Map();
   resetProductWindchillTransfer();
   resetSoftwareWindchillTransfer();
   closeSelectionDialog();
@@ -1144,6 +1263,7 @@ async function recalculateFinalScore(item, finalText, choice) {
       throw new Error(data.error || "Finale Bewertung fehlgeschlagen");
     }
 
+    addOpenAiUsage(data.openAiUsage);
     const updatedResult = Array.isArray(data.results) ? data.results[0] : null;
     if (updatedResult) {
       upsertResult(updatedResult);
@@ -1238,6 +1358,7 @@ function renderMetrics() {
   renderProductTransferState(productReady);
   updateWorkflowState();
   renderSoftwarePage();
+  renderE2ePage();
 }
 
 function renderSoftwarePage() {
@@ -1412,8 +1533,8 @@ function renderSoftwareScoreCell(item, isExcluded = false) {
 function softwareDecisionStatus(item) {
   if (item.pending) {
     return {
-      className: "pending",
-      icon: "?",
+      className: "empty",
+      icon: "",
       label: "Software Requirement noch nicht abgeleitet",
     };
   }
@@ -1519,6 +1640,9 @@ function acceptSoftwareRequirement() {
     excluded: false,
     acceptedAt: new Date().toISOString(),
   });
+  state.e2eTests = [];
+  state.e2eSelections = new Map();
+  state.e2eScoreFilterActive = false;
 
   resetSoftwareWindchillTransfer();
   closeSoftwareSelectionDialog();
@@ -1539,6 +1663,9 @@ function excludeSoftwareRequirement() {
     excluded: true,
     acceptedAt: new Date().toISOString(),
   });
+  state.e2eTests = [];
+  state.e2eSelections = new Map();
+  state.e2eScoreFilterActive = false;
 
   resetSoftwareWindchillTransfer();
   closeSoftwareSelectionDialog();
@@ -1591,6 +1718,7 @@ function getFinalProductRequirements() {
     .map((requirement) => {
       const selection = state.finalSelections.get(Number(requirement.rowNumber));
       if (!selection || selection.excluded) return null;
+      const result = state.results.find((entry) => Number(entry.rowNumber) === Number(requirement.rowNumber));
 
       return {
         rowNumber: Number(requirement.rowNumber),
@@ -1599,6 +1727,7 @@ function getFinalProductRequirements() {
         category: requirement.category,
         subcategory: requirement.subcategory,
         text: selection.text || requirement.text,
+        score: Number(result?.score),
       };
     })
     .filter(Boolean);
@@ -1631,12 +1760,16 @@ async function generateSoftwareRequirements() {
       throw new Error(data.error || "Software Requirements konnten nicht abgeleitet werden");
     }
 
+    addOpenAiUsage(data.openAiUsage);
     state.softwareRequirements = normalizeSoftwareRequirements(
       Array.isArray(data.softwareRequirements) ? data.softwareRequirements : [],
       requirements,
     );
     state.softwareSelections = new Map();
+    state.e2eTests = [];
+    state.e2eSelections = new Map();
     state.softwareScoreFilterActive = false;
+    state.e2eScoreFilterActive = false;
     resetSoftwareWindchillTransfer();
     setStatus("Software Requirements erstellt");
     completeProgress(state.softwareRequirements.length);
@@ -1721,6 +1854,419 @@ function clearSoftwareScoreFilter() {
 function getCriticalSoftwareRequirements() {
   return state.softwareRequirements.filter((item) => {
     const selection = state.softwareSelections.get(String(item.id || ""));
+    return selection && !selection.excluded && isCriticalScore(Number(item.score));
+  });
+}
+
+function renderE2ePage() {
+  if (!els.e2eTestsBody) return;
+
+  const finalSoftwareRequirements = getFinalSoftwareRequirements();
+  const e2eScores = getE2eScores();
+  const criticalE2eCount = getCriticalE2eTests().length;
+  els.e2eDerivedMetric.textContent = `${getE2eDerivedCount()} / ${finalSoftwareRequirements.length}`;
+  els.e2eScoreMetric.textContent = e2eScores.length
+    ? String(Math.round(e2eScores.reduce((sum, score) => sum + score, 0) / e2eScores.length))
+    : "-";
+  els.e2eIssueMetric.textContent = String(criticalE2eCount);
+  els.criticalE2eIssuesButton.disabled = criticalE2eCount === 0;
+  els.criticalE2eIssuesButton.classList.toggle("is-active", state.e2eScoreFilterActive);
+  els.e2eScoreFilterBar.hidden = !state.e2eScoreFilterActive;
+  els.generateE2eButton.disabled = !hasProject() || !isSoftwareStepComplete();
+
+  if (!finalSoftwareRequirements.length) {
+    els.e2eScoreFilterBar.hidden = true;
+    els.e2eTestsBody.innerHTML =
+      `<tr><td colspan="5" class="empty">Schließe Software Requirements ab, um E2E TestCases abzuleiten.</td></tr>`;
+    return;
+  }
+
+  const e2eBySourceId = new Map();
+  state.e2eTests.forEach((item) => {
+    const sourceId = String(item.sourceId || "");
+    const entries = e2eBySourceId.get(sourceId) || [];
+    entries.push(item);
+    e2eBySourceId.set(sourceId, entries);
+  });
+
+  const rows = [];
+  finalSoftwareRequirements.forEach((source) => {
+    const allTests = e2eBySourceId.get(String(source.id || "")) || [];
+    const tests = state.e2eScoreFilterActive
+      ? allTests.filter((item) => isCriticalScore(Number(item.score)))
+      : allTests;
+    if (state.e2eScoreFilterActive && !tests.length) return;
+
+    const displayTests = tests.length
+      ? tests
+      : [
+          {
+            id: buildE2eTestId(source),
+            sourceId: source.id,
+            text: "",
+            score: null,
+            pending: true,
+          },
+        ];
+
+    rows.push(
+      ...displayTests.map((item) => {
+        const status = e2eDecisionStatus(item);
+        const e2eId = item.id || buildE2eTestId(source);
+        const selection = state.e2eSelections.get(String(e2eId));
+        const isExcluded = selection?.excluded === true;
+        return `
+          <tr class="e2e-derived-row${item.pending ? " software-pending-row" : ""} ${isExcluded ? "excluded-row" : ""}" data-e2e-id="${escapeHtml(e2eId)}" tabindex="0">
+            <td class="decision-cell">
+              <span class="decision-icon ${status.className}" aria-label="${escapeHtml(status.label)}">
+                ${status.icon}
+              </span>
+            </td>
+            <td>${escapeHtml(e2eId)}</td>
+            <td>
+              <strong>${escapeHtml(source.id || "Software Requirement")}</strong><br />
+              ${escapeHtml(source.text)}
+            </td>
+            <td>${item.pending ? '<span class="muted-cell">Noch nicht abgeleitet.</span>' : renderE2eContent(item)}</td>
+            <td>${item.pending ? "-" : renderE2eScoreCell(item, isExcluded)}</td>
+          </tr>
+        `;
+      }),
+    );
+  });
+
+  if (!isSoftwareStepComplete() && rows.length) {
+    rows.unshift(`
+      <tr class="group-row">
+        <td colspan="5">
+          <span class="group-title">Gewählte Software Requirements</span>
+          <span class="group-count">SR-Übertragung nach Windchill noch erforderlich</span>
+        </td>
+      </tr>
+    `);
+  }
+
+  const emptyMessage = state.e2eScoreFilterActive
+    ? `Keine E2E TestCases mit Score unter ${PRODUCT_STEP_MIN_SCORE} gefunden.`
+    : "Keine übernommenen Software Requirements vorhanden.";
+  els.e2eTestsBody.innerHTML = rows.length
+    ? rows.join("")
+    : `<tr><td colspan="5" class="empty">${emptyMessage}</td></tr>`;
+}
+
+function getFinalSoftwareRequirements() {
+  return state.softwareRequirements
+    .map((item) => {
+      const selection = state.softwareSelections.get(String(item.id || ""));
+      if (!selection || selection.excluded) return null;
+
+      return {
+        sourceRowNumber: Number(item.sourceRowNumber),
+        sourceId: item.sourceId || "",
+        id: item.id || "",
+        text: selection.text || item.text || "",
+        score: Number(selection.score),
+      };
+    })
+    .filter(Boolean);
+}
+
+function getE2eScores() {
+  return state.e2eTests
+    .filter((item) => {
+      const selection = state.e2eSelections.get(String(item.id || ""));
+      return selection?.excluded !== true;
+    })
+    .map((item) => Number(item.score))
+    .filter(Number.isFinite);
+}
+
+function getE2eDerivedCount() {
+  const sourceIds = state.e2eTests.map((item) => String(item.sourceId || "")).filter(Boolean);
+  return sourceIds.length ? new Set(sourceIds).size : state.e2eTests.length;
+}
+
+function renderE2eContent(item) {
+  return `
+    ${escapeHtml(item.text || "")}
+    ${renderFlowSection("Testschritte", item.steps)}
+    ${renderFlowSection("Erwartete Ergebnisse", item.expectedResults)}
+    ${renderFlowSection("Testdaten", item.testData)}
+    ${renderFlowSection("Vorbedingungen", item.preconditions)}
+  `;
+}
+
+function renderE2eScoreCell(item, isExcluded = false) {
+  if (isExcluded) return "-";
+
+  const score = Number(item.score);
+  if (!Number.isFinite(score)) return "-";
+
+  const issues = Array.isArray(item.issues) ? item.issues : [];
+  return `
+    ${renderScoreValue(score, isCriticalScore(score))}
+    ${item.rationale ? `<p class="score-rationale">${escapeHtml(item.rationale)}</p>` : ""}
+    ${issues.length ? renderIssues(issues) : ""}
+  `;
+}
+
+function e2eDecisionStatus(item) {
+  if (item.pending) {
+    return {
+      className: "empty",
+      icon: "",
+      label: "E2E TestCase noch nicht abgeleitet",
+    };
+  }
+
+  const selection = state.e2eSelections.get(String(item.id || ""));
+  if (!selection) {
+    return {
+      className: "pending",
+      icon: "?",
+      label: "E2E TestCase noch nicht übernommen",
+    };
+  }
+
+  if (selection.excluded) {
+    return {
+      className: "excluded",
+      icon: "×",
+      label: "E2E TestCase ausgeschlossen",
+    };
+  }
+
+  const score = Number(item.score);
+  if (isCriticalScore(score)) {
+    return {
+      className: "critical",
+      icon: "!",
+      label: `E2E TestCase Score unter ${PRODUCT_STEP_MIN_SCORE}`,
+    };
+  }
+
+  return {
+    className: "selected",
+    icon: "&#10003;",
+    label: "E2E TestCase übernommen",
+  };
+}
+
+function handleE2eRowClick(event) {
+  const row = event.target.closest(".e2e-derived-row");
+  if (!row) return;
+
+  openE2eSelectionDialog(row.dataset.e2eId);
+}
+
+function openE2eSelectionDialog(e2eId) {
+  const item = state.e2eTests.find((entry) => String(entry.id || "") === String(e2eId || ""));
+  if (!item) return;
+
+  state.activeE2eTestId = item.id || "";
+  const selection = state.e2eSelections.get(String(item.id || ""));
+  const text = selection?.text || item.text || "";
+
+  els.e2eSelectionId.textContent = item.id || "-";
+  els.e2eSelectionSource.textContent = item.sourceId || "-";
+  els.e2eSelectionScore.textContent = item.score ?? "-";
+  els.e2eSelectionText.value = text;
+  els.e2eSelectionIssues.innerHTML = item.issues?.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
+  els.e2eSelectionOverlay.hidden = false;
+}
+
+function closeE2eSelectionDialog() {
+  state.activeE2eTestId = "";
+  els.e2eSelectionOverlay.hidden = true;
+}
+
+function deferE2eSelection() {
+  const e2eId = state.activeE2eTestId;
+  if (e2eId) {
+    state.e2eSelections.delete(String(e2eId));
+  }
+
+  closeE2eSelectionDialog();
+  renderE2ePage();
+  updateWorkflowState();
+}
+
+function acceptE2eTest() {
+  const e2eId = state.activeE2eTestId;
+  if (!e2eId) return;
+
+  const item = state.e2eTests.find((entry) => String(entry.id || "") === String(e2eId));
+  const text = els.e2eSelectionText.value.trim();
+  if (!item || !text) return;
+
+  const updatedScore = scoreAcceptedE2eTest(item, text);
+  item.text = text;
+  item.score = updatedScore;
+  if (isCriticalScore(updatedScore) && (!Array.isArray(item.issues) || !item.issues.length)) {
+    item.issues = [
+      {
+        criterion: "E2E-Qualität",
+        severity: "medium",
+        explanation: "Der übernommene E2E TestCase erreicht den Mindestscore nicht.",
+        suggestion: "Präzisiere Vorbedingungen, Testschritte, erwartete Ergebnisse und nachvollziehbare Prüfpunkte.",
+      },
+    ];
+  }
+
+  state.e2eSelections.set(String(item.id || ""), {
+    text,
+    score: updatedScore,
+    excluded: false,
+    acceptedAt: new Date().toISOString(),
+  });
+
+  closeE2eSelectionDialog();
+  renderE2ePage();
+  updateWorkflowState();
+}
+
+function excludeE2eTest() {
+  const e2eId = state.activeE2eTestId;
+  if (!e2eId) return;
+
+  const item = state.e2eTests.find((entry) => String(entry.id || "") === String(e2eId));
+  if (!item) return;
+
+  state.e2eSelections.set(String(item.id || ""), {
+    text: item.text || "",
+    score: Number(item.score),
+    excluded: true,
+    acceptedAt: new Date().toISOString(),
+  });
+
+  closeE2eSelectionDialog();
+  renderE2ePage();
+  updateWorkflowState();
+}
+
+function isE2eQualityReady() {
+  if (!state.e2eTests.length) return false;
+
+  return state.e2eTests.every((item) => {
+    const selection = state.e2eSelections.get(String(item.id || ""));
+    if (!selection) return false;
+    if (selection.excluded) return true;
+    return !isCriticalScore(Number(item.score));
+  });
+}
+
+function scoreAcceptedE2eTest(item, text) {
+  if (state.runtimeMock) {
+    return randomInteger(86, 99);
+  }
+
+  const originalText = String(item.text || "").trim();
+  const normalizedText = text.trim();
+  if (normalizedText.length < 40) return 70;
+  if (originalText && normalizedText === originalText) return Number(item.score) || 0;
+
+  const qualitySignals = [
+    /given|gegeben|vorbeding/i,
+    /when|wenn|schritt|step/i,
+    /then|dann|erwart/i,
+    /fehler|exception|invalid|ungueltig/i,
+    /e2e|end.to.end|test/i,
+  ];
+  const signalScore = qualitySignals.filter((pattern) => pattern.test(normalizedText)).length;
+  return signalScore >= 4 ? Math.max(Number(item.score) || 0, 85) : Math.min(Number(item.score) || 84, 84);
+}
+
+async function generateE2eTests() {
+  const endpoint = getAnalyzeEndpoint();
+  if (!endpoint) {
+    setStatus("Server erforderlich");
+    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    return;
+  }
+
+  const requirements = getFinalSoftwareRequirements();
+  if (!requirements.length || !isSoftwareStepComplete()) return;
+
+  setStatus("Leite E2E TestCases ab...");
+  els.generateE2eButton.disabled = true;
+  els.generateE2eMenuButton.disabled = true;
+  showProgress(requirements.length);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requirementType: "e2e", requirements }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "E2E TestCases konnten nicht abgeleitet werden");
+    }
+
+    addOpenAiUsage(data.openAiUsage);
+    state.e2eTests = normalizeE2eTests(Array.isArray(data.e2eTests) ? data.e2eTests : [], requirements);
+    state.e2eSelections = new Map();
+    state.e2eScoreFilterActive = false;
+    setStatus("E2E TestCases erstellt");
+    completeProgress(state.e2eTests.length);
+  } catch (error) {
+    setStatus("Fehler");
+    hideProgress();
+    alert(error.message);
+  } finally {
+    renderE2ePage();
+    updateWorkflowState();
+    updateContextualMenuActions();
+  }
+}
+
+function normalizeE2eTests(e2eTests, sourceRequirements) {
+  const sourcesById = new Map(sourceRequirements.map((item) => [String(item.id || ""), item]));
+
+  return e2eTests.map((item, index) => {
+    const source = sourcesById.get(String(item.sourceId || "")) || sourceRequirements[index] || {};
+
+    return {
+      ...item,
+      sourceId: item.sourceId || source.id || "",
+      id: item.id || buildE2eTestId(source, index),
+    };
+  });
+}
+
+function buildE2eTestId(source, index = 0) {
+  const sourceId = String(source?.id || "").trim();
+  if (sourceId) {
+    if (/^SR(?=[_-])/i.test(sourceId)) {
+      return sourceId.replace(/^SR/i, "E2E");
+    }
+
+    if (/^SR\b/i.test(sourceId)) {
+      return sourceId.replace(/^SR/i, "E2E");
+    }
+  }
+
+  const prefix = normalizeIdPart(els.idPrefix?.value || state.projectName || "REQ") || "REQ";
+  return `E2E_${prefix}_${index + 1}`;
+}
+
+function activateE2eScoreFilter() {
+  if (!getCriticalE2eTests().length) return;
+
+  state.e2eScoreFilterActive = true;
+  renderE2ePage();
+  setStatus(`E2E-Filter: Score < ${PRODUCT_STEP_MIN_SCORE}`);
+}
+
+function clearE2eScoreFilter() {
+  state.e2eScoreFilterActive = false;
+  renderE2ePage();
+  setStatus(state.e2eTests.length ? "E2E TestCases erstellt" : "E2E TestCases");
+}
+
+function getCriticalE2eTests() {
+  return state.e2eTests.filter((item) => {
+    const selection = state.e2eSelections.get(String(item.id || ""));
     return selection && !selection.excluded && isCriticalScore(Number(item.score));
   });
 }
@@ -1870,9 +2416,11 @@ function updateContextualMenuActions() {
   const projectOpen = hasProject();
   const isProductStep = state.activeProcessStep === "product";
   const isSoftwareStep = state.activeProcessStep === "software";
+  const isE2eStep = state.activeProcessStep === "e2e";
   const canUseProductActions = projectOpen && isProductStep;
   const canDeriveSoftware =
     projectOpen && isSoftwareStep && isProductStepComplete() && state.finalScoreUpdates.size === 0;
+  const canDeriveE2e = projectOpen && isE2eStep && isSoftwareStepComplete();
 
   els.openFileButton.disabled = !canUseProductActions;
   els.openFileButton.title = canUseProductActions ? "" : "Dateiimport ist nur im PR-Schritt verfügbar";
@@ -1885,6 +2433,10 @@ function updateContextualMenuActions() {
   els.generateSoftwareMenuButton.title = canDeriveSoftware
     ? ""
     : "Software Requirements können erst im SR-Schritt nach abgeschlossener PR-Zuordnung und Windchill-Übertragung abgeleitet werden";
+  els.generateE2eMenuButton.disabled = !canDeriveE2e;
+  els.generateE2eMenuButton.title = canDeriveE2e
+    ? ""
+    : "E2E TestCases können erst im E2E-Schritt nach abgeschlossener SR-Übernahme und Windchill-Übertragung abgeleitet werden";
 }
 
 async function saveProjectFile() {
@@ -2004,6 +2556,11 @@ function createProjectPayload() {
         id,
         ...selection,
       })),
+      e2eTests: state.e2eTests,
+      e2eSelections: [...state.e2eSelections.entries()].map(([id, selection]) => ({
+        id,
+        ...selection,
+      })),
       finalSelections: [...state.finalSelections.entries()].map(([rowNumber, selection]) => ({
         rowNumber: Number(rowNumber),
         ...selection,
@@ -2011,6 +2568,7 @@ function createProjectPayload() {
       analysisComplete: state.analysisComplete,
       generatedIds: state.generatedIds,
       activeProcessStep: state.activeProcessStep,
+      openAiCostSummary: normalizedOpenAiCostSummary(),
       productWindchillTransferComplete: state.productWindchillTransferComplete,
       productWindchillTransferredAt: state.productWindchillTransferredAt,
       softwareWindchillTransferComplete: state.softwareWindchillTransferComplete,
@@ -2067,6 +2625,18 @@ function loadProjectPayload(payload, fileName, handle = null) {
       },
     ]),
   );
+  state.e2eTests = Array.isArray(payload.state?.e2eTests) ? payload.state.e2eTests : [];
+  state.e2eSelections = new Map(
+    (Array.isArray(payload.state?.e2eSelections) ? payload.state.e2eSelections : []).map((selection) => [
+      String(selection.id || ""),
+      {
+        text: selection.text || "",
+        score: Number(selection.score),
+        excluded: Boolean(selection.excluded),
+        acceptedAt: selection.acceptedAt || "",
+      },
+    ]),
+  );
   state.finalSelections = new Map(
     (Array.isArray(payload.state?.finalSelections) ? payload.state.finalSelections : []).map((selection) => [
       Number(selection.rowNumber),
@@ -2078,8 +2648,10 @@ function loadProjectPayload(payload, fileName, handle = null) {
     ]),
   );
   state.finalScoreUpdates = new Set();
+  state.openAiCostSummary = normalizedOpenAiCostSummary(payload.state?.openAiCostSummary);
   state.scoreFilterActive = false;
   state.softwareScoreFilterActive = false;
+  state.e2eScoreFilterActive = false;
   state.productWindchillTransferComplete = Boolean(payload.state?.productWindchillTransferComplete);
   state.productWindchillTransferredAt = payload.state?.productWindchillTransferredAt || "";
   state.softwareWindchillTransferComplete = Boolean(payload.state?.softwareWindchillTransferComplete);
@@ -2161,6 +2733,22 @@ function delay(ms) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
+}
+
+function formatUsd(value) {
+  const amount = Number(value) || 0;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  }).format(amount);
+}
+
+function formatInteger(value) {
+  return new Intl.NumberFormat("de-DE", {
+    maximumFractionDigits: 0,
+  }).format(Number(value) || 0);
 }
 
 function guessColumn(needles) {

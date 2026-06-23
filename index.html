@@ -27,6 +27,11 @@
               <strong id="projectHeaderName">Kein Projekt geöffnet</strong>
               <small id="projectHeaderDescription"></small>
             </div>
+            <div class="openai-cost-state">
+              <span>OpenAI Kosten</span>
+              <strong id="openAiCostTotal">$0.0000</strong>
+              <small id="openAiCostDetail">0 Tokens</small>
+            </div>
             <div class="status-pill" id="statusPill">Bereit</div>
           </div>
         </header>
@@ -58,6 +63,7 @@
                 <button id="openSettingsButton" type="button" role="menuitem" disabled>Einstellungen</button>
                 <button id="analyzeButton" type="button" role="menuitem" disabled>PR Analysieren</button>
                 <button id="generateSoftwareMenuButton" type="button" role="menuitem" disabled>Software Requirements ableiten</button>
+                <button id="generateE2eMenuButton" type="button" role="menuitem" disabled>E2E TestCases ableiten</button>
               </div>
             </details>
             <details class="menu-dropdown" data-requires-project="true">
@@ -158,7 +164,7 @@
               <small>Step 1 abschließen</small>
             </button>
             <button class="workflow-step" type="button" data-process-step="e2e" disabled>
-              <span>E2E TestCase</span>
+              <span>E2E<br />TestCases</span>
               <small>Step 1 abschließen</small>
             </button>
             <button class="workflow-step" type="button" data-process-step="usecase" disabled>
@@ -306,11 +312,54 @@
         </section>
 
         <section class="process-page" id="page-e2e" data-process-page="e2e" hidden>
-          <div class="page-placeholder">
-            <p class="eyebrow">Prozessschritt</p>
-            <h1>E2E TestCase</h1>
-            <p>E2E-TestCase-Erstellung und Prüfung werden als eigener Arbeitsbereich vorbereitet.</p>
+          <div class="software-toolbar">
+            <div>
+              <p class="eyebrow">E2E TestCases</p>
+              <h1>Aus Software Requirements ableiten</h1>
+            </div>
+            <button id="generateE2eButton" class="primary" type="button">E2E TestCases ableiten</button>
           </div>
+
+          <div class="tool-grid">
+            <section class="panel summary-panel software-summary-panel">
+              <div class="metric">
+                <span>E2E TestCases abgeleitet</span>
+                <strong id="e2eDerivedMetric">0 / 0</strong>
+              </div>
+              <div class="metric">
+                <span>E2E TestCase Durchschnitt</span>
+                <strong id="e2eScoreMetric">-</strong>
+              </div>
+              <button class="metric metric-button" id="criticalE2eIssuesButton" type="button" disabled>
+                <span>Kritische E2E TestCases</span>
+                <strong id="e2eIssueMetric">0</strong>
+              </button>
+            </section>
+          </div>
+
+          <div class="filter-bar" id="e2eScoreFilterBar" hidden>
+            <span>Gefiltert: E2E TestCases mit Score &lt; 85</span>
+            <button id="clearE2eScoreFilterButton" type="button">Filter beenden</button>
+          </div>
+
+          <section class="table-wrap">
+            <table class="results-table software-table analysis-complete">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>E2E-ID</th>
+                  <th>Verwendetes Software Requirement</th>
+                  <th>E2E TestCase</th>
+                  <th>Score</th>
+                </tr>
+              </thead>
+              <tbody id="e2eTestsBody">
+                <tr>
+                  <td colspan="5" class="empty">Schließe Software Requirements ab, um E2E TestCases abzuleiten.</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
         </section>
 
         <section class="process-page" id="page-app-test" data-process-page="app-test" hidden>
@@ -537,6 +586,49 @@
         <div class="selection-actions">
           <button id="softwareSelectionExcludeButton" type="button">SR ausschließen</button>
           <button id="softwareSelectionDeferButton" type="button">Auswahl später treffen</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="selection-overlay" id="e2eSelectionOverlay" hidden>
+      <div class="selection-dialog software-selection-dialog" role="dialog" aria-modal="true" aria-labelledby="e2eSelectionTitle">
+        <div class="selection-header">
+          <div>
+            <p class="eyebrow">E2E TestCase übernehmen</p>
+            <h2 id="e2eSelectionTitle">E2E TestCase prüfen und final übernehmen</h2>
+          </div>
+          <button class="icon-button" id="e2eSelectionCloseButton" type="button" aria-label="Dialog schließen">×</button>
+        </div>
+
+        <dl class="selection-meta">
+          <div>
+            <dt>E2E-ID</dt>
+            <dd id="e2eSelectionId">-</dd>
+          </div>
+          <div>
+            <dt>Quelle</dt>
+            <dd id="e2eSelectionSource">-</dd>
+          </div>
+          <div>
+            <dt>Score</dt>
+            <dd id="e2eSelectionScore">-</dd>
+          </div>
+        </dl>
+
+        <section class="choice-card">
+          <h3>E2E TestCase</h3>
+          <textarea id="e2eSelectionText" rows="12"></textarea>
+          <button id="e2eSelectionAcceptButton" class="primary" type="button">E2E TestCase übernehmen</button>
+        </section>
+
+        <section class="selection-issues">
+          <h3>Kritische Hinweise</h3>
+          <div id="e2eSelectionIssues">Keine Hinweise vorhanden.</div>
+        </section>
+
+        <div class="selection-actions">
+          <button id="e2eSelectionExcludeButton" type="button">E2E TestCase ausschließen</button>
+          <button id="e2eSelectionDeferButton" type="button">Auswahl später treffen</button>
         </div>
       </div>
     </div>
