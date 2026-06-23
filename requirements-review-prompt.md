@@ -8,7 +8,7 @@ Project terminology: PR means Product Requirement or Product Requirements. SR me
 
 ## User Prompt
 
-Assess each Product Requirement for clarity, testability, completeness, atomicity, consistency, solution neutrality, measurability, ambiguity, and suitability as a basis for deriving Software Requirements later. Provide improvement suggestions and a rewritten Product Requirement.
+Assess each Product Requirement for clarity, testability, completeness, atomicity, consistency, solution neutrality, measurability, ambiguity, and suitability as a basis for deriving Software Requirements later. Rewrite the Product Requirement so the generated text already addresses the detected weaknesses.
 
 The rewrittenRequirement must remain a Product Requirement. Do not turn it into a Software Requirement and do not introduce implementation decisions that are not present in or safely inferable from the Product Requirement. It should follow common Product Requirement quality rules so Software Requirements can be derived later:
 
@@ -16,10 +16,10 @@ The rewrittenRequirement must remain a Product Requirement. Do not turn it into 
 - remain solution-neutral and avoid premature architecture, UI, interface, or implementation details;
 - be complete enough to derive one or more Software Requirements in a later step;
 - stay verifiable, measurable, consistent, unambiguous, and as atomic as practical at Product Requirement level;
-- include concrete acceptance criteria in the same rewrittenRequirement text, preferably as short Given/When/Then or bullet-style criteria;
-- define measurable business/user outcomes, constraints, expected behavior, error cases, and verification conditions where they are needed.
+- not include acceptance criteria, Given/When/Then blocks, test steps, or bullet-style verification criteria;
+- define measurable business/user outcomes, constraints, expected behavior, and relevant conditions only as part of the Product Requirement sentence or paragraph.
 
-If acceptance criteria are missing, vague, not testable, or insufficient for deriving later Software Requirements, report that as an issue.
+Return `originalScore` and `originalIssues` for the original input text. Return `score`, `verdict`, and `issues` for the rewrittenRequirement. Use the original text to identify what must be improved. If the rewrittenRequirement addresses all relevant weaknesses, return score 100 and an empty issues array. Report issues only for remaining weaknesses in the rewrittenRequirement.
 
 Score 0-100 where 100 is a high-quality Product Requirement from which high-quality Software Requirements can be derived later. Severity must be low, medium, or high.
 
@@ -29,7 +29,7 @@ The application sends the requirements as JSON:
 
 ```json
 {
-  "task": "Assess each Product Requirement for clarity, testability, completeness, atomicity, consistency, solution neutrality, measurability, ambiguity, and suitability as a basis for deriving Software Requirements later. Provide improvement suggestions and a rewritten Product Requirement with acceptance criteria.",
+  "task": "Assess each Product Requirement for clarity, testability, completeness, atomicity, consistency, solution neutrality, measurability, ambiguity, and suitability as a basis for deriving Software Requirements later. Provide a rewritten Product Requirement without acceptance criteria. The score and issues evaluate the rewrittenRequirement.",
   "scoring": "Score 0-100 where 100 is a high-quality Product Requirement from which high-quality Software Requirements can be derived later. Severity must be low, medium, or high.",
   "requirements": [
     {
@@ -51,17 +51,19 @@ The model must return valid JSON with this structure:
     {
       "rowNumber": 1,
       "id": "REQ-001",
-      "score": 75,
-      "verdict": "Short assessment verdict.",
-      "issues": [
+      "originalScore": 75,
+      "originalIssues": [
         {
           "criterion": "Clarity",
           "severity": "medium",
-          "explanation": "Why this is an issue.",
+          "explanation": "Why this is an issue in the original text.",
           "suggestion": "How to improve it."
         }
       ],
-      "rewrittenRequirement": "Improved Product Requirement text including acceptance criteria."
+      "score": 100,
+      "verdict": "Short assessment verdict.",
+      "issues": [],
+      "rewrittenRequirement": "Improved Product Requirement text without acceptance criteria."
     }
   ]
 }

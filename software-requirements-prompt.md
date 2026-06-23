@@ -6,16 +6,21 @@ Project terminology: PR means Product Requirement or Product Requirements. SR me
 
 ## Task
 
-For each Product Requirement, derive one Software Requirement that specifies observable system behavior, inputs, outputs, constraints, quality constraints, and verification-relevant acceptance criteria. Use clear shall-style wording. Preserve traceability to the source Product Requirement.
+For each Product Requirement, derive one or more Software Requirements that specify observable system behavior, inputs, outputs, constraints, quality constraints, and verification-relevant acceptance criteria. Use clear shall-style wording. Preserve traceability to the source Product Requirement. Actively check whether the PR contains more than one actor goal, system responsibility, observable behavior, condition, business rule, data object, alternative flow, exception flow, or quality constraint. If it does, split it into multiple atomic SRs. Prefer multiple SRs whenever this is needed to preserve atomicity, clarity, testability, flow coverage, or separation of concerns. Derive only one SR when the PR is truly atomic.
 
 The derived SR must include:
 
 - the main system behavior for the main flow;
 - relevant alternative flows;
 - relevant exception flows;
-- concrete acceptance criteria that can later be used directly for Use Cases and Test Cases;
+- concrete acceptance criteria that belong directly to the SR and can later be used directly for Use Cases and Test Cases;
 - a quality score from 85 to 100;
 - concrete issues and suggestions only when useful for improving the SR further.
+
+When multiple SRs are derived from one PR, each SR must cover a distinct atomic responsibility and preserve the same sourceRowNumber and sourceId. Use this ID pattern for multiple SRs:
+
+- source PR `PR_BAROLO_1.1` becomes `SR_BAROLO_1.1.1`, `SR_BAROLO_1.1.2`, and so on.
+- source PR `PR-001` becomes `SR-001.1`, `SR-001.2`, and so on.
 
 ## Scoring
 
@@ -41,6 +46,10 @@ Evaluate:
 
 If the source PR still contains minor limitations, address them during SR derivation instead of returning an SR below 85. Report remaining improvement hints only when they do not reduce the SR below the minimum threshold.
 
+Keep the SR itself concise. Use happyFlow, alternativeFlows, and exceptionFlows only as structured derivation context. Do not duplicate flow prose in the SR text. Put verifiable conditions into acceptanceCriteria.
+
+Use the same language for each SR and its acceptanceCriteria. If the SR text is German, write the acceptanceCriteria in German. If the SR text is English, write the acceptanceCriteria in English.
+
 ## Expected JSON Shape
 
 ```json
@@ -48,8 +57,8 @@ If the source PR still contains minor limitations, address them during SR deriva
   "softwareRequirements": [
     {
       "sourceRowNumber": 1,
-      "sourceId": "PR-001",
-      "id": "SWR-001",
+      "sourceId": "PR_BAROLO_1.1",
+      "id": "SR_BAROLO_1.1.1",
       "text": "The system shall ...",
       "happyFlow": "...",
       "alternativeFlows": ["..."],

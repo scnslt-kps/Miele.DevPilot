@@ -158,12 +158,12 @@ async function handleAnalyze(req, res) {
             content: JSON.stringify({
               task:
                 analysisMode === "final"
-                  ? "Re-assess the selected final Product Requirement text for clarity, testability, completeness, atomicity, consistency, solution neutrality, measurability, ambiguity, concrete acceptance criteria, and suitability as a basis for deriving Software Requirements later. Score the final text as it stands. If it is production-ready as a Product Requirement, return score 100 and no issues. Keep rewrittenRequirement identical to the selected final text unless a concrete correction is still required."
-                  : "Assess each Product Requirement for clarity, testability, completeness, atomicity, consistency, solution neutrality, measurability, ambiguity, and suitability as a basis for deriving Software Requirements later. Provide improvement suggestions and a rewritten Product Requirement with concrete acceptance criteria.",
+                  ? "Re-assess the selected final Product Requirement text for clarity, testability, completeness, atomicity, consistency, solution neutrality, measurability, ambiguity, and suitability as a basis for deriving Software Requirements later. Score the final text as it stands. Do not require or add acceptance criteria. If it is production-ready as a Product Requirement, return score 100 and no issues. Keep rewrittenRequirement identical to the selected final text unless a concrete correction is still required. For final reassessment, set originalScore equal to score and originalIssues equal to issues."
+                  : "Assess each Product Requirement for clarity, testability, completeness, atomicity, consistency, solution neutrality, measurability, ambiguity, and suitability as a basis for deriving Software Requirements later. Rewrite the Product Requirement so the generated text addresses the detected weaknesses. Do not include acceptance criteria, Given/When/Then blocks, test steps, or bullet-style verification criteria.",
               scoring:
-                "Score 0-100 where 100 is a high-quality Product Requirement from which high-quality Software Requirements can be derived later. Severity must be low, medium, or high.",
+                "Return originalScore and originalIssues for the original input Product Requirement. Return score, verdict, and issues for the rewrittenRequirement. Score 0-100 where 100 is a high-quality Product Requirement from which high-quality Software Requirements can be derived later. If the rewrittenRequirement addresses all relevant weaknesses, return score 100 and no issues. Severity must be low, medium, or high.",
               rewritingRules:
-                "The rewrittenRequirement must remain a Product Requirement. Do not turn it into a Software Requirement and do not introduce implementation decisions that are not present in or safely inferable from the Product Requirement. It should describe the user or business need, outcome, scope, and relevant context clearly; remain solution-neutral; be complete enough to derive one or more Software Requirements in a later step; stay verifiable, measurable, consistent, unambiguous, and as atomic as practical at Product Requirement level; and include concrete acceptance criteria in the same text, preferably as short Given/When/Then or bullet-style criteria. If acceptance criteria are missing, vague, not testable, or insufficient for deriving later Software Requirements, report that as an issue.",
+                "The rewrittenRequirement must remain a Product Requirement. Do not turn it into a Software Requirement and do not introduce implementation decisions that are not present in or safely inferable from the Product Requirement. It should describe the user or business need, outcome, scope, and relevant context clearly; remain solution-neutral; be complete enough to derive one or more Software Requirements in a later step; and stay verifiable, measurable, consistent, unambiguous, and as atomic as practical at Product Requirement level. It must not include acceptance criteria, Given/When/Then blocks, test steps, or bullet-style verification criteria. Apply the improvement suggestions internally while rewriting. Report issues only for remaining weaknesses in the rewrittenRequirement.",
               requirements: cleaned,
             }),
           },
@@ -185,6 +185,21 @@ async function handleAnalyze(req, res) {
                     properties: {
                       rowNumber: { type: "number" },
                       id: { type: "string" },
+                      originalScore: { type: "number" },
+                      originalIssues: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          additionalProperties: false,
+                          properties: {
+                            criterion: { type: "string" },
+                            severity: { type: "string", enum: ["low", "medium", "high"] },
+                            explanation: { type: "string" },
+                            suggestion: { type: "string" },
+                          },
+                          required: ["criterion", "severity", "explanation", "suggestion"],
+                        },
+                      },
                       score: { type: "number" },
                       verdict: { type: "string" },
                       issues: {
@@ -203,7 +218,7 @@ async function handleAnalyze(req, res) {
                       },
                       rewrittenRequirement: { type: "string" },
                     },
-                    required: ["rowNumber", "id", "score", "verdict", "issues", "rewrittenRequirement"],
+                    required: ["rowNumber", "id", "originalScore", "originalIssues", "score", "verdict", "issues", "rewrittenRequirement"],
                   },
                 },
               },
@@ -323,7 +338,7 @@ async function handleSoftwareDerivation(requirements, res) {
             role: "user",
             content: JSON.stringify({
               task:
-                "For each Product Requirement, derive one Software Requirement that specifies observable system behavior, inputs, outputs, constraints, quality constraints, and verification-relevant acceptance criteria. Use clear shall-style wording. Preserve traceability to the source Product Requirement. Include main flow, alternative flows, exception flows, and concrete acceptance criteria that can later be used directly as a basis for Use Cases and Test Cases. Score each Software Requirement from 85-100. Never return a score below 85. If an initial draft would score below 85, improve the Software Requirement until it reaches at least 85 before returning it. If the source Product Requirement has score 100, the derived Software Requirement must also have score 100. Remaining issues may be reported only when they do not reduce the SR below the minimum threshold.",
+                "For each Product Requirement, derive one or more Software Requirements that specify observable system behavior, inputs, outputs, constraints, quality constraints, and verification-relevant acceptance criteria. Actively check whether the PR contains more than one actor goal, system responsibility, observable behavior, condition, business rule, data object, alternative flow, exception flow, or quality constraint. If it does, split it into multiple atomic SRs. Prefer multiple SRs whenever this is needed to preserve atomicity, clarity, testability, flow coverage, or separation of concerns. Derive only one SR when the PR is truly atomic. Use clear shall-style wording. Preserve traceability to the source Product Requirement. Keep the SR text concise and do not duplicate flow prose in the SR text. Include concrete acceptance criteria that belong directly to the SR and can later be used directly as a basis for Use Cases and Test Cases. Write each SR and its acceptanceCriteria in the same language: German SRs require German acceptance criteria, English SRs require English acceptance criteria. Use happyFlow, alternativeFlows, and exceptionFlows only as structured derivation context. Score each Software Requirement from 85-100. Never return a score below 85. If an initial draft would score below 85, improve the Software Requirement until it reaches at least 85 before returning it. If the source Product Requirement has score 100, every derived Software Requirement for that PR must also have score 100. When deriving multiple SRs from source PR PR_BAROLO_1.1, use IDs such as SR_BAROLO_1.1.1 and SR_BAROLO_1.1.2. Remaining issues may be reported only when they do not reduce the SR below the minimum threshold.",
               scoring:
                 "Score 85-100. 100 means excellent SR quality. 85 is the minimum acceptable quality threshold. A source PR with score 100 requires a derived SR with score 100. Evaluate clarity, atomicity, traceability, consistency, completeness, feasibility, testability, measurability, unambiguity, flow coverage, exception handling, acceptance-criteria quality, and suitability for deriving Use Cases and Test Cases.",
               requirements,
@@ -641,11 +656,11 @@ function envNumber(name) {
 function mockAnalyzeRequirement(item) {
   const vagueWords = ["schnell", "einfach", "intuitiv", "angemessen", "performant"];
   const lower = item.text.toLowerCase();
-  const issues = [];
+  const detectedIssues = [];
 
   for (const word of vagueWords) {
     if (lower.includes(word)) {
-      issues.push({
+      detectedIssues.push({
         criterion: "Eindeutigkeit",
         severity: "medium",
         explanation: `Der Begriff "${word}" ist ohne messbaren Grenzwert interpretierbar.`,
@@ -655,7 +670,7 @@ function mockAnalyzeRequirement(item) {
   }
 
   if (!lower.includes("wenn") && !lower.includes("falls") && !lower.includes("bei ")) {
-    issues.push({
+    detectedIssues.push({
       criterion: "Vollstaendigkeit",
       severity: "low",
       explanation: "Der ausloesende Kontext oder die Bedingung ist nicht klar beschrieben.",
@@ -663,15 +678,19 @@ function mockAnalyzeRequirement(item) {
     });
   }
 
+  const rewrittenRequirement = detectedIssues.length
+    ? `${item.text} Der relevante Nutzer- oder Geschaeftskontext, das erwartete Ergebnis und die messbare fachliche Zielsetzung sind so beschrieben, dass daraus spaeter konkrete Software Requirements ohne zusaetzliche Interpretation abgeleitet werden koennen.`
+    : item.text;
+
   return {
     rowNumber: item.rowNumber,
     id: item.id,
-    score: Math.max(45, 90 - issues.length * 18),
-    verdict: issues.length ? "Verbesserungsbedarf" : "Solide formuliert",
-    issues,
-    rewrittenRequirement: issues.length
-      ? `${item.text} Akzeptanzkriterien: 1. Der relevante Nutzer- oder Geschaeftskontext ist beschrieben. 2. Das erwartete Ergebnis ist messbar und pruefbar. 3. Aus dem Product Requirement koennen spaeter konkrete Software Requirements ohne zusaetzliche Interpretation abgeleitet werden.`
-      : item.text,
+    originalScore: Math.max(45, 90 - detectedIssues.length * 18),
+    originalIssues: detectedIssues,
+    score: 100,
+    verdict: detectedIssues.length ? "Verbesserter Product-Requirement-Vorschlag ohne verbleibende Hinweise" : "Solide formuliert",
+    issues: [],
+    rewrittenRequirement,
   };
 }
 

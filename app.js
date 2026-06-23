@@ -34,6 +34,15 @@ const state = {
   projectDescription: "",
   projectFileHandle: null,
   projectFileName: "",
+  progressStartedAt: 0,
+  progressProcessed: 0,
+  progressTotal: 0,
+  progressBatchNumber: 0,
+  progressTotalBatches: 0,
+  progressEstimatedRemainingMs: null,
+  progressInitialEstimatedMs: null,
+  progressTimerId: null,
+  progressMode: "",
 };
 
 const PROJECT_FILE_TYPE = "miele-devpilot-project";
@@ -41,6 +50,9 @@ const PROJECT_FILE_VERSION = 1;
 const ANALYSIS_BATCH_SIZE = 5;
 const PRODUCT_STEP_MIN_SCORE = 85;
 const LOCAL_SERVER_APP_URL = "http://localhost:3000/Miele.DevPilot/";
+const PR_ANALYSIS_TIMING_STORAGE_KEY = "mieleDevPilot.prAnalysisTiming";
+const DEFAULT_PR_ANALYSIS_MS_PER_REQUIREMENT = 4500;
+const DEFAULT_PR_ANALYSIS_MS_PER_1000_CHARS = 650;
 const PROCESS_STEP_DEPENDENCIES = {
   product: null,
   software: "product",
@@ -88,6 +100,7 @@ const els = {
   autoIdGroup: document.querySelector("#autoIdGroup"),
   idPrefix: document.querySelector("#idPrefix"),
   analyzeButton: document.querySelector("#analyzeButton"),
+  analyzeProductButton: document.querySelector("#analyzeProductButton"),
   generateSoftwareButton: document.querySelector("#generateSoftwareButton"),
   generateSoftwareMenuButton: document.querySelector("#generateSoftwareMenuButton"),
   generateE2eButton: document.querySelector("#generateE2eButton"),
@@ -124,6 +137,8 @@ const els = {
   softwareSelectionSource: document.querySelector("#softwareSelectionSource"),
   softwareSelectionScore: document.querySelector("#softwareSelectionScore"),
   softwareSelectionText: document.querySelector("#softwareSelectionText"),
+  softwareSelectionAcceptanceCriteriaTitle: document.querySelector("#softwareSelectionAcceptanceCriteriaTitle"),
+  softwareSelectionAcceptanceCriteria: document.querySelector("#softwareSelectionAcceptanceCriteria"),
   softwareSelectionIssues: document.querySelector("#softwareSelectionIssues"),
   e2eTestsBody: document.querySelector("#e2eTestsBody"),
   e2eDerivedMetric: document.querySelector("#e2eDerivedMetric"),
@@ -178,6 +193,8 @@ const els = {
   progressTitle: document.querySelector("#progressTitle"),
   progressText: document.querySelector("#progressText"),
   progressBar: document.querySelector("#progressBar"),
+  progressTimeBar: document.querySelector("#progressTimeBar"),
+  progressTimeText: document.querySelector("#progressTimeText"),
   progressDetail: document.querySelector("#progressDetail"),
   workflowSteps: [...document.querySelectorAll("[data-process-step]")],
   processPages: [...document.querySelectorAll("[data-process-page]")],
@@ -282,6 +299,7 @@ els.idColumn.addEventListener("change", () => {
 });
 els.idPrefix.addEventListener("input", refreshRequirements);
 els.analyzeButton.addEventListener("click", analyzeRequirements);
+els.analyzeProductButton.addEventListener("click", analyzeRequirements);
 els.generateSoftwareButton.addEventListener("click", generateSoftwareRequirements);
 els.generateSoftwareMenuButton.addEventListener("click", async () => {
   closeMenus();
@@ -669,7 +687,7 @@ function getExcludedRows() {
 function getIncludedScores(excludedRows = getExcludedRows()) {
   return state.results
     .filter((result) => !excludedRows.has(Number(result.rowNumber)))
-    .map((result) => Number(result.score))
+    .map((result) => Number(displayProductScore(result, state.finalSelections.get(Number(result.rowNumber)))))
     .filter(Number.isFinite);
 }
 
@@ -819,6 +837,7 @@ function resetProjectState({ projectName, projectDescription }) {
   state.headers = [];
   fillColumnSelects();
   els.analyzeButton.disabled = true;
+  els.analyzeProductButton.disabled = true;
   updateProjectActions();
   updateExportAvailability();
   renderWorkspaceState();
@@ -904,6 +923,7 @@ function refreshRequirements() {
   state.softwareWindchillTransferredAt = "";
   state.analysisComplete = false;
   els.analyzeButton.disabled = state.requirements.length === 0;
+  els.analyzeProductButton.disabled = state.requirements.length === 0;
   updateProjectActions();
   updateExportAvailability();
   renderTable();
@@ -948,12 +968,13 @@ async function analyzeRequirements() {
 
   setStatus("Analysiere...");
   els.analyzeButton.disabled = true;
+  els.analyzeProductButton.disabled = true;
   state.finalSelections = new Map();
   state.finalScoreUpdates = new Set();
   state.scoreFilterActive = false;
   state.analysisComplete = false;
   updateExportAvailability();
-  showProgress(state.requirements.length);
+  await showProgress(state.requirements.length, { requirements: state.requirements, mode: "pr-analysis" });
 
   try {
     const results = [];
@@ -1043,9 +1064,10 @@ function renderTable() {
 
       const item = entry.item;
       const result = resultByRow.get(item.rowNumber);
-      const score = result ? Number(result.score) : null;
       const selection = state.finalSelections.get(Number(item.rowNumber));
       const isUpdatingFinalScore = state.finalScoreUpdates.has(Number(item.rowNumber));
+      const score = result ? displayProductScore(result, selection, { usePreviousScore: isUpdatingFinalScore }) : null;
+      const issues = result ? displayProductIssues(result, selection) : [];
       const isSelected = Boolean(selection);
       const isExcluded = selection?.choice === "excluded";
       const status = decisionStatus(selection, score, isUpdatingFinalScore);
@@ -1061,7 +1083,7 @@ function renderTable() {
           <td>${escapeHtml(item.name || item.id || "-")}</td>
           <td class="${selection?.choice === "original" || selection?.choice === "edited-original" ? "selected-text" : ""} ${isExcluded ? "excluded-text" : ""}">${escapeHtml(item.text)}</td>
           <td>${renderScoreCell(result, score, isSelected, isExcluded, isUpdatingFinalScore)}</td>
-          <td>${result ? renderIssues(result.issues) : "-"}</td>
+          <td>${result ? renderIssues(issues) : "-"}</td>
           <td class="${selection?.choice === "ai" ? "selected-text" : ""} ${isExcluded ? "excluded-text" : ""}">${result ? escapeHtml(result.rewrittenRequirement || "") : "-"}</td>
         </tr>
       `;
@@ -1115,11 +1137,13 @@ function openSelectionDialog(rowNumber) {
   els.selectionId.textContent = item.id || "-";
   els.selectionName.textContent = item.name || item.id || "-";
   els.selectionGroup.textContent = `${item.category || "Ohne Kategorie"} / ${item.subcategory || "Ohne Subkategorie"}`;
-  els.selectionScore.textContent = result?.score ?? "-";
+  els.selectionScore.textContent = result ? displayProductScore(result, state.finalSelections.get(rowNumber)) : "-";
   els.selectionOriginalText.value = item.text;
   els.selectionAiText.textContent = result?.rewrittenRequirement || "Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen.";
   els.selectAiButton.disabled = !result?.rewrittenRequirement;
-  els.selectionIssues.innerHTML = result ? renderIssues(result.issues) : "Noch keine Analysehinweise vorhanden.";
+  els.selectionIssues.innerHTML = result
+    ? renderIssues(displayProductIssues(result, state.finalSelections.get(rowNumber)))
+    : "Noch keine Analysehinweise vorhanden.";
   els.selectionOverlay.hidden = false;
 }
 
@@ -1176,7 +1200,11 @@ async function selectFinalText(choice) {
 
   if (!item || !text) return;
 
-  state.finalSelections.set(Number(rowNumber), { choice, text });
+  state.finalSelections.set(Number(rowNumber), {
+    choice,
+    text,
+    previousScore: result ? displayProductScore(result, state.finalSelections.get(Number(rowNumber))) : null,
+  });
   state.softwareRequirements = [];
   state.softwareSelections = new Map();
   state.e2eTests = [];
@@ -1277,6 +1305,10 @@ async function recalculateFinalScore(item, finalText, choice) {
     alert(error.message);
   } finally {
     state.finalScoreUpdates.delete(rowNumber);
+    const selection = state.finalSelections.get(rowNumber);
+    if (selection && "previousScore" in selection) {
+      delete selection.previousScore;
+    }
     renderTable();
     renderMetrics();
     updateExportAvailability();
@@ -1338,6 +1370,30 @@ function renderScoreValue(score, isSelected, extraClass = "") {
       ${critical ? `<span class="score-alert" title="Score unter ${PRODUCT_STEP_MIN_SCORE}" aria-label="Score unter ${PRODUCT_STEP_MIN_SCORE}">!</span>` : ""}
     </span>
   `;
+}
+
+function displayProductScore(result, selection = null, options = {}) {
+  if (!result) return null;
+  if (options.usePreviousScore) {
+    const previousScore = Number(selection?.previousScore);
+    if (Number.isFinite(previousScore)) return previousScore;
+  }
+
+  if (!selection) {
+    const originalScore = Number(result.originalScore);
+    return Number.isFinite(originalScore) ? originalScore : Number(result.score);
+  }
+
+  return Number(result.score);
+}
+
+function displayProductIssues(result, selection = null) {
+  if (!result) return [];
+  if (!selection) {
+    return Array.isArray(result.originalIssues) ? result.originalIssues : Array.isArray(result.issues) ? result.issues : [];
+  }
+
+  return Array.isArray(result.issues) ? result.issues : [];
 }
 
 function renderMetrics() {
@@ -1490,15 +1546,10 @@ function getSoftwareDerivedCount() {
 }
 
 function renderSoftwareRequirementContent(item) {
+  const acceptanceCriteriaLabel = acceptanceCriteriaLabelForSoftwareRequirement(item);
   return `
-    ${escapeHtml(item.text || "")}
-    ${renderFlowSection("Akzeptanzkriterien", item.acceptanceCriteria)}
-    <div class="informal-flow-block">
-      <span>Informeller Flow-Kontext</span>
-      ${renderFlowSection("Main Flow", item.happyFlow)}
-      ${renderFlowSection("Alternative Flows", item.alternativeFlows)}
-      ${renderFlowSection("Exception Flows", item.exceptionFlows)}
-    </div>
+    <p class="software-requirement-text">${escapeHtml(item.text || "")}</p>
+    ${renderFlowSection(acceptanceCriteriaLabel, item.acceptanceCriteria)}
   `;
 }
 
@@ -1514,6 +1565,33 @@ function renderFlowSection(title, value) {
       </ul>
     </div>
   `;
+}
+
+function renderAcceptanceCriteriaList(value, label = "Akzeptanzkriterien") {
+  const items = Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
+  if (!items.length) {
+    return label === "Acceptance criteria" ? "No acceptance criteria available." : "Keine Akzeptanzkriterien vorhanden.";
+  }
+
+  return `
+    <ul class="acceptance-criteria-list">
+      ${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+    </ul>
+  `;
+}
+
+function acceptanceCriteriaLabelForSoftwareRequirement(item) {
+  const criteria = Array.isArray(item?.acceptanceCriteria) ? item.acceptanceCriteria.join(" ") : String(item?.acceptanceCriteria || "");
+  return isLikelyEnglishText(`${item?.text || ""} ${criteria}`)
+    ? "Acceptance criteria"
+    : "Akzeptanzkriterien";
+}
+
+function isLikelyEnglishText(value) {
+  const text = String(value || "").toLowerCase();
+  const englishHits = (text.match(/\b(the|shall|must|when|then|given|user|system|if|and|or|not|available|display|select|enter)\b/g) || []).length;
+  const germanHits = (text.match(/\b(der|die|das|muss|soll|wenn|dann|gegeben|benutzer|system|nicht|und|oder|verfügbar|anzeigen|auswählen|eingeben)\b/g) || []).length;
+  return englishHits > germanHits;
 }
 
 function renderSoftwareScoreCell(item, isExcluded = false) {
@@ -1591,6 +1669,9 @@ function openSoftwareSelectionDialog(softwareId) {
   els.softwareSelectionSource.textContent = item.sourceId || "-";
   els.softwareSelectionScore.textContent = item.score ?? "-";
   els.softwareSelectionText.value = text;
+  const acceptanceCriteriaLabel = acceptanceCriteriaLabelForSoftwareRequirement(item);
+  els.softwareSelectionAcceptanceCriteriaTitle.textContent = acceptanceCriteriaLabel;
+  els.softwareSelectionAcceptanceCriteria.innerHTML = renderAcceptanceCriteriaList(item.acceptanceCriteria, acceptanceCriteriaLabel);
   els.softwareSelectionIssues.innerHTML = item.issues?.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
   els.softwareSelectionOverlay.hidden = false;
 }
@@ -1804,8 +1885,7 @@ function activateSoftwareScoreFilter() {
 function normalizeSoftwareRequirements(softwareRequirements, sourceRequirements) {
   const sourcesByRow = new Map(sourceRequirements.map((item) => [Number(item.rowNumber), item]));
   const sourcesById = new Map(sourceRequirements.map((item) => [String(item.id || ""), item]));
-
-  return softwareRequirements.map((item, index) => {
+  const normalized = softwareRequirements.map((item, index) => {
     const source =
       sourcesByRow.get(Number(item.sourceRowNumber)) ||
       sourcesById.get(String(item.sourceId || "")) ||
@@ -1816,26 +1896,61 @@ function normalizeSoftwareRequirements(softwareRequirements, sourceRequirements)
       ...item,
       sourceRowNumber: Number(item.sourceRowNumber) || Number(source.rowNumber) || index + 1,
       sourceId: item.sourceId || source.id || "",
-      id: buildSoftwareRequirementId(source, index),
+      source,
+    };
+  });
+  const countBySource = new Map();
+  normalized.forEach((item) => {
+    const sourceKey = softwareSourceKey(item);
+    countBySource.set(sourceKey, (countBySource.get(sourceKey) || 0) + 1);
+  });
+
+  const indexBySource = new Map();
+  return normalized.map((item, index) => {
+    const sourceKey = softwareSourceKey(item);
+    const sourceIndex = (indexBySource.get(sourceKey) || 0) + 1;
+    indexBySource.set(sourceKey, sourceIndex);
+    const source =
+      sourcesByRow.get(Number(item.sourceRowNumber)) ||
+      sourcesById.get(String(item.sourceId || "")) ||
+      item.source ||
+      {};
+
+    const { source: _source, ...softwareRequirement } = item;
+    return {
+      ...softwareRequirement,
+      id: buildSoftwareRequirementId(source, {
+        fallbackIndex: index,
+        sourceIndex,
+        sourceCount: countBySource.get(sourceKey) || 1,
+      }),
     };
   });
 }
 
-function buildSoftwareRequirementId(source, index = 0) {
+function softwareSourceKey(item) {
+  return String(item.sourceRowNumber || item.sourceId || item.source?.rowNumber || item.source?.id || "");
+}
+
+function buildSoftwareRequirementId(source, options = {}) {
+  const fallbackIndex = Number(options.fallbackIndex) || 0;
+  const sourceIndex = Number(options.sourceIndex) || 1;
+  const sourceCount = Number(options.sourceCount) || 1;
   const sourceId = String(source?.id || "").trim();
+  const suffix = sourceCount > 1 ? `.${sourceIndex}` : "";
   if (sourceId) {
     if (/^PR(?=[_-])/i.test(sourceId)) {
-      return sourceId.replace(/^PR/i, "SR");
+      return `${sourceId.replace(/^PR/i, "SR")}${suffix}`;
     }
 
     if (/^PR\b/i.test(sourceId)) {
-      return sourceId.replace(/^PR/i, "SR");
+      return `${sourceId.replace(/^PR/i, "SR")}${suffix}`;
     }
   }
 
   const prefix = normalizeIdPart(els.idPrefix?.value || state.projectName || "REQ") || "REQ";
   const rowNumber = Number(source?.rowNumber);
-  return `SR_${prefix}_${Number.isFinite(rowNumber) ? rowNumber : index + 1}`;
+  return `SR_${prefix}_${Number.isFinite(rowNumber) ? rowNumber : fallbackIndex + 1}${suffix}`;
 }
 
 function clearScoreFilter() {
@@ -2276,7 +2391,7 @@ function getCriticalScoreRows(excludedRows = getExcludedRows()) {
     state.results
       .filter((result) => !excludedRows.has(Number(result.rowNumber)))
       .filter((result) => state.finalSelections.has(Number(result.rowNumber)))
-      .filter((result) => isCriticalScore(Number(result.score)))
+      .filter((result) => isCriticalScore(Number(displayProductScore(result, state.finalSelections.get(Number(result.rowNumber))))))
       .map((result) => Number(result.rowNumber)),
   );
 }
@@ -2429,6 +2544,8 @@ function updateContextualMenuActions() {
   els.analyzeButton.textContent = "PR Analysieren";
   els.analyzeButton.disabled = !canUseProductActions || state.requirements.length === 0;
   els.analyzeButton.title = canUseProductActions ? "" : "PR-Analyse ist nur im PR-Schritt verfügbar";
+  els.analyzeProductButton.disabled = !canUseProductActions || state.requirements.length === 0;
+  els.analyzeProductButton.title = canUseProductActions ? "" : "PR-Analyse ist nur im PR-Schritt verfügbar";
   els.generateSoftwareMenuButton.disabled = !canDeriveSoftware;
   els.generateSoftwareMenuButton.title = canDeriveSoftware
     ? ""
@@ -2674,6 +2791,7 @@ function loadProjectPayload(payload, fileName, handle = null) {
   state.generatedIds = Boolean(payload.state?.generatedIds);
   setAutoIdVisible(state.generatedIds);
   els.analyzeButton.disabled = state.requirements.length === 0;
+  els.analyzeProductButton.disabled = state.requirements.length === 0;
   updateProjectActions();
   updateExportAvailability();
   renderWorkspaceState();
@@ -2875,31 +2993,169 @@ function formatGitDate(value) {
   }).format(date);
 }
 
-function showProgress(total) {
+async function showProgress(total, options = {}) {
+  clearProgressTimer();
+  state.progressStartedAt = Date.now();
+  state.progressProcessed = 0;
+  state.progressTotal = total;
+  state.progressBatchNumber = 0;
+  state.progressTotalBatches = 0;
+  state.progressEstimatedRemainingMs = null;
+  state.progressInitialEstimatedMs = null;
+  state.progressMode = options.mode || "";
   els.progressOverlay.hidden = false;
   els.progressTitle.textContent = "Requirements werden analysiert";
-  els.progressText.textContent = "Die Analyse wird vorbereitet.";
+  els.progressText.textContent = "Berechne voraussichtliche Bearbeitungszeit...";
   els.progressBar.style.width = "0%";
-  els.progressDetail.textContent = `0 von ${total} Requirements verarbeitet`;
+  els.progressTimeBar.style.width = "0%";
+  els.progressTimeText.textContent = "Restzeit wird berechnet";
+  renderProgressDetail();
+  state.progressEstimatedRemainingMs = await calculateInitialProgressEstimate(total, options);
+  state.progressInitialEstimatedMs = state.progressEstimatedRemainingMs;
+  renderProgressDetail();
+  els.progressText.textContent = "Die Analyse wird vorbereitet.";
+  state.progressTimerId = window.setInterval(tickProgressCountdown, 1000);
 }
 
 function updateProgress({ processed, total, batchNumber, totalBatches }) {
+  state.progressProcessed = processed;
+  state.progressTotal = total;
+  state.progressBatchNumber = batchNumber;
+  state.progressTotalBatches = totalBatches;
+  const measuredRemainingMs = estimateRemainingMs(processed, total);
+  if (measuredRemainingMs != null) {
+    state.progressEstimatedRemainingMs = measuredRemainingMs;
+  }
   const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
   els.progressText.textContent = `Batch ${batchNumber} von ${totalBatches} wird verarbeitet.`;
   els.progressBar.style.width = `${percent}%`;
-  els.progressDetail.textContent = `${processed} von ${total} Requirements verarbeitet`;
+  renderProgressDetail();
 }
 
 function completeProgress(processed) {
+  clearProgressTimer();
+  if (state.progressMode === "pr-analysis") {
+    rememberProgressTiming(processed, Date.now() - state.progressStartedAt);
+  }
   els.progressTitle.textContent = "Analyse abgeschlossen";
   els.progressText.textContent = "Alle verfügbaren Ergebnisse wurden verarbeitet.";
   els.progressBar.style.width = "100%";
-  els.progressDetail.textContent = `${processed} Requirements analysiert`;
+  els.progressTimeBar.style.width = "100%";
+  els.progressTimeText.textContent = "Abgeschlossen";
+  els.progressDetail.textContent = `${processed} Requirements analysiert · Dauer ${formatDuration(Date.now() - state.progressStartedAt)}`;
   window.setTimeout(hideProgress, 900);
 }
 
 function hideProgress() {
+  clearProgressTimer();
   els.progressOverlay.hidden = true;
+}
+
+function tickProgressCountdown() {
+  if (els.progressOverlay.hidden) return;
+  if (state.progressEstimatedRemainingMs == null) return;
+
+  state.progressEstimatedRemainingMs = Math.max(state.progressEstimatedRemainingMs - 1000, 0);
+  renderProgressDetail();
+}
+
+function renderProgressDetail() {
+  const processed = Number(state.progressProcessed) || 0;
+  const total = Number(state.progressTotal) || 0;
+  const elapsed = state.progressStartedAt ? Date.now() - state.progressStartedAt : 0;
+  const remaining = state.progressEstimatedRemainingMs;
+  const remainingText = remaining == null ? "Restzeit wird berechnet" : `Restzeit ca. ${formatDuration(remaining)}`;
+  els.progressDetail.textContent = `${processed} von ${total} Requirements verarbeitet · Laufzeit ${formatDuration(elapsed)} · ${remainingText}`;
+  renderProgressTimeBar(elapsed, remaining);
+}
+
+function renderProgressTimeBar(elapsed, remaining) {
+  if (remaining == null || !state.progressInitialEstimatedMs) {
+    els.progressTimeBar.style.width = "0%";
+    els.progressTimeText.textContent = "Restzeit wird berechnet";
+    return;
+  }
+
+  const totalTime = Math.max(elapsed + remaining, state.progressInitialEstimatedMs, 1);
+  const percent = Math.max(0, Math.min(100, Math.round((elapsed / totalTime) * 100)));
+  els.progressTimeBar.style.width = `${percent}%`;
+  els.progressTimeText.textContent = `${percent}% · ${formatDuration(remaining)} verbleibend`;
+}
+
+function estimateRemainingMs(processed, total) {
+  if (!state.progressStartedAt || processed <= 0 || total <= 0 || processed >= total) return processed >= total ? 0 : null;
+
+  const elapsed = Date.now() - state.progressStartedAt;
+  const averageMsPerItem = elapsed / processed;
+  return Math.max(Math.round(averageMsPerItem * (total - processed)), 0);
+}
+
+function calculateInitialProgressEstimate(total, options = {}) {
+  const requirements = Array.isArray(options.requirements) ? options.requirements : [];
+  const storedTiming = readStoredProgressTiming();
+  const totalChars = requirements.reduce((sum, item) => sum + String(item.text || "").length, 0);
+  const msPerRequirement = storedTiming?.msPerRequirement || DEFAULT_PR_ANALYSIS_MS_PER_REQUIREMENT;
+  const msPer1000Chars = storedTiming?.msPer1000Chars || DEFAULT_PR_ANALYSIS_MS_PER_1000_CHARS;
+  const batchOverheadMs = Math.ceil(Math.max(total, 1) / ANALYSIS_BATCH_SIZE) * 1200;
+  const estimatedMs = Math.round(total * msPerRequirement + (totalChars / 1000) * msPer1000Chars + batchOverheadMs);
+
+  return new Promise((resolve) => {
+    window.setTimeout(() => {
+      resolve(Math.max(estimatedMs, total > 0 ? 1000 : 0));
+    }, 250);
+  });
+}
+
+function rememberProgressTiming(processed, elapsedMs) {
+  if (!processed || !elapsedMs || processed <= 0 || elapsedMs <= 0) return;
+
+  const current = readStoredProgressTiming();
+  const measuredMsPerRequirement = elapsedMs / processed;
+  const previousMsPerRequirement = current?.msPerRequirement || measuredMsPerRequirement;
+  const msPerRequirement = Math.round(previousMsPerRequirement * 0.65 + measuredMsPerRequirement * 0.35);
+
+  try {
+    window.localStorage.setItem(
+      PR_ANALYSIS_TIMING_STORAGE_KEY,
+      JSON.stringify({
+        msPerRequirement,
+        msPer1000Chars: current?.msPer1000Chars || DEFAULT_PR_ANALYSIS_MS_PER_1000_CHARS,
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+  } catch {
+    // Timing history is only a convenience for future estimates.
+  }
+}
+
+function readStoredProgressTiming() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PR_ANALYSIS_TIMING_STORAGE_KEY) || "null");
+    if (!parsed || typeof parsed !== "object") return null;
+
+    return {
+      msPerRequirement: Number(parsed.msPerRequirement) || 0,
+      msPer1000Chars: Number(parsed.msPer1000Chars) || 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function clearProgressTimer() {
+  if (!state.progressTimerId) return;
+
+  window.clearInterval(state.progressTimerId);
+  state.progressTimerId = null;
+}
+
+function formatDuration(ms) {
+  const totalSeconds = Math.max(Math.ceil((Number(ms) || 0) / 1000), 0);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) return `${seconds}s`;
+
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 }
 
 function escapeHtml(value) {

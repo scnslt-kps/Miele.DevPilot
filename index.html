@@ -183,6 +183,14 @@
         </nav>
 
         <section class="process-page is-active" id="page-product" data-process-page="product">
+          <div class="software-toolbar">
+            <div>
+              <p class="eyebrow">Product Requirements</p>
+              <h1>Product Requirements analysieren</h1>
+            </div>
+            <button id="analyzeProductButton" class="primary" type="button" disabled>PR analysieren</button>
+          </div>
+
           <div class="tool-grid">
             <section class="panel summary-panel">
               <div class="metric">
@@ -487,6 +495,15 @@
         <div class="progress-track" aria-hidden="true">
           <div class="progress-bar" id="progressBar"></div>
         </div>
+        <div class="progress-time">
+          <div class="progress-time-label">
+            <span>Zeitfortschritt</span>
+            <span id="progressTimeText">Restzeit wird berechnet</span>
+          </div>
+          <div class="progress-track progress-time-track" aria-hidden="true">
+            <div class="progress-bar progress-time-bar" id="progressTimeBar"></div>
+          </div>
+        </div>
         <p class="progress-detail" id="progressDetail">0 von 0 Requirements verarbeitet</p>
       </div>
     </div>
@@ -575,6 +592,10 @@
         <section class="choice-card">
           <h3>Software Requirement</h3>
           <textarea id="softwareSelectionText" rows="12"></textarea>
+          <section class="acceptance-criteria-panel">
+            <h3 id="softwareSelectionAcceptanceCriteriaTitle">Akzeptanzkriterien</h3>
+            <div id="softwareSelectionAcceptanceCriteria">Keine Akzeptanzkriterien vorhanden.</div>
+          </section>
           <button id="softwareSelectionAcceptButton" class="primary" type="button">SR übernehmen</button>
         </section>
 
