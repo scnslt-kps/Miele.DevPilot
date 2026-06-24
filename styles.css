@@ -1460,6 +1460,80 @@ tbody tr.group-row:hover td {
   word-break: break-word;
 }
 
+.techtype-panel {
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  background: #fafafa;
+  padding: 14px;
+}
+
+.techtype-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.techtype-panel h3 {
+  margin: 0;
+}
+
+.techtype-panel p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.techtype-panel-header button {
+  width: auto;
+  white-space: nowrap;
+}
+
+.techtype-selection-list {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.techtype-group {
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.techtype-group summary {
+  cursor: pointer;
+  padding: 9px 10px;
+}
+
+.techtype-group summary label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.techtype-group summary small {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.techtype-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px 12px;
+  border-top: 1px solid var(--line);
+  padding: 10px;
+}
+
+.techtype-options label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.3;
+}
+
 .selection-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

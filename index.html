@@ -443,7 +443,18 @@
             </div>
           </div>
 
-          <p class="hint">Nach dem Upload koennen Tabellenblatt und Requirement-Spalte frei gewaehlt werden.</p>
+          <div class="field-row">
+            <div class="field-group">
+              <label for="techTypeValueClassColumn">TechType Gruppen-Spalte</label>
+              <select id="techTypeValueClassColumn" disabled></select>
+            </div>
+            <div class="field-group">
+              <label for="techTypeDesignationColumn">TechType Designation-Spalte</label>
+              <select id="techTypeDesignationColumn" disabled></select>
+            </div>
+          </div>
+
+          <p class="hint">Nach dem Upload koennen Tabellenblatt, Requirement-Spalten und TechType-Spalten frei gewaehlt werden.</p>
         </section>
 
         <div class="selection-actions">
@@ -536,6 +547,17 @@
             <dd id="selectionScore">-</dd>
           </div>
         </dl>
+
+        <section class="techtype-panel" id="techTypeSelectionPanel" hidden>
+          <div class="techtype-panel-header">
+            <div>
+              <h3>TechTypes</h3>
+              <p id="techTypeSelectionSummary">Alle TechTypes ausgewählt</p>
+            </div>
+            <button id="selectAllTechTypesButton" type="button">Alle auswählen</button>
+          </div>
+          <div id="techTypeSelectionList" class="techtype-selection-list"></div>
+        </section>
 
         <div class="selection-grid">
           <section class="choice-card">

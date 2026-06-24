@@ -3,6 +3,7 @@ const state = {
   sheetName: "",
   rows: [],
   headers: [],
+  techTypes: [],
   requirements: [],
   results: [],
   softwareRequirements: [],
@@ -105,6 +106,8 @@ const els = {
   idFieldRow: document.querySelector("#idFieldRow"),
   autoIdGroup: document.querySelector("#autoIdGroup"),
   idPrefix: document.querySelector("#idPrefix"),
+  techTypeValueClassColumn: document.querySelector("#techTypeValueClassColumn"),
+  techTypeDesignationColumn: document.querySelector("#techTypeDesignationColumn"),
   analyzeButton: document.querySelector("#analyzeButton"),
   analyzeProductButton: document.querySelector("#analyzeProductButton"),
   generateSoftwareButton: document.querySelector("#generateSoftwareButton"),
@@ -182,6 +185,10 @@ const els = {
   selectionScore: document.querySelector("#selectionScore"),
   selectionOriginalText: document.querySelector("#selectionOriginalText"),
   selectionAiText: document.querySelector("#selectionAiText"),
+  techTypeSelectionPanel: document.querySelector("#techTypeSelectionPanel"),
+  techTypeSelectionSummary: document.querySelector("#techTypeSelectionSummary"),
+  techTypeSelectionList: document.querySelector("#techTypeSelectionList"),
+  selectAllTechTypesButton: document.querySelector("#selectAllTechTypesButton"),
   prImprovementInstruction: document.querySelector("#prImprovementInstruction"),
   prImproveButton: document.querySelector("#prImproveButton"),
   selectionIssues: document.querySelector("#selectionIssues"),
@@ -311,6 +318,8 @@ els.idColumn.addEventListener("change", () => {
   refreshRequirements();
 });
 els.idPrefix.addEventListener("input", refreshRequirements);
+els.techTypeValueClassColumn.addEventListener("change", refreshTechTypesFromSettings);
+els.techTypeDesignationColumn.addEventListener("change", refreshTechTypesFromSettings);
 els.analyzeButton.addEventListener("click", analyzeRequirements);
 els.analyzeProductButton.addEventListener("click", analyzeRequirements);
 els.generateSoftwareButton.addEventListener("click", generateSoftwareRequirements);
@@ -368,6 +377,8 @@ els.selectEditedOriginalButton.addEventListener("click", () => selectFinalText("
 els.resetOriginalTextButton.addEventListener("click", resetOriginalText);
 els.selectAiButton.addEventListener("click", () => selectFinalText("ai"));
 els.prImproveButton.addEventListener("click", improveProductRequirementWithAi);
+els.selectAllTechTypesButton.addEventListener("click", selectAllTechTypesForActiveRequirement);
+els.techTypeSelectionList.addEventListener("change", handleTechTypeSelectionChange);
 els.selectionOverlay.addEventListener("click", (event) => {
   if (event.target === els.selectionOverlay) {
     closeSelectionDialog();
@@ -716,16 +727,21 @@ async function handleFile(event) {
   state.sourceFileName = file.name;
   const buffer = await file.arrayBuffer();
   state.workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+  fillTechTypeColumnSelects();
+  state.techTypes = extractTechTypesFromWorkbook(state.workbook);
 
   els.sheetSelect.innerHTML = "";
-  for (const name of state.workbook.SheetNames) {
+  const requirementSheetNames = state.workbook.SheetNames.filter((name) => String(name || "").trim().toLowerCase() !== "techtype");
+  const selectableSheetNames = requirementSheetNames.length ? requirementSheetNames : state.workbook.SheetNames;
+  for (const name of selectableSheetNames) {
     els.sheetSelect.append(new Option(name, name));
   }
 
   els.sheetSelect.disabled = false;
   els.headerRow.disabled = false;
-  els.sheetSelect.value = state.workbook.SheetNames[0];
-  loadSheet(state.workbook.SheetNames[0]);
+  const requirementSheetName = selectableSheetNames[0];
+  els.sheetSelect.value = requirementSheetName;
+  loadSheet(requirementSheetName);
   openSettingsDialog();
 }
 
@@ -816,6 +832,7 @@ function resetProjectState({ projectName, projectDescription }) {
   state.sheetName = "Projekt";
   state.rows = [];
   state.headers = [];
+  state.techTypes = [];
   state.requirements = [];
   state.results = [];
   state.softwareRequirements = [];
@@ -851,7 +868,9 @@ function resetProjectState({ projectName, projectDescription }) {
   els.headerRow.value = "1";
   els.headerRow.disabled = true;
   state.headers = [];
+  state.techTypes = [];
   fillColumnSelects();
+  fillTechTypeColumnSelects();
   els.analyzeButton.disabled = true;
   els.analyzeProductButton.disabled = true;
   updateProjectActions();
@@ -878,6 +897,93 @@ function loadSheet(sheetName) {
 
   fillColumnSelects();
   refreshRequirements();
+}
+
+function extractTechTypesFromWorkbook(workbook) {
+  const sheetName = workbook?.SheetNames?.find((name) => String(name || "").trim().toLowerCase() === "techtype");
+  if (!sheetName) return [];
+
+  const worksheet = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+  const headerIndex = techTypeHeaderIndex(rows);
+  if (headerIndex < 0) return [];
+
+  const headers = rows[headerIndex].map(normalizeHeaderName);
+  const valueClassIndex = techTypeColumnIndex(els.techTypeValueClassColumn.value, headers, "valueclass");
+  const designationIndex = techTypeColumnIndex(els.techTypeDesignationColumn.value, headers, "appliancedesignation");
+  if (valueClassIndex < 0 || designationIndex < 0) return [];
+  const seen = new Set();
+
+  return rows
+    .slice(headerIndex + 1)
+    .map((row) => ({
+      valueClass: String(row[valueClassIndex] || "").trim() || "Ohne Gruppe",
+      designation: String(row[designationIndex] || "").trim(),
+    }))
+    .filter((item) => item.designation)
+    .filter((item) => {
+      const key = `${item.valueClass}\u0000${item.designation}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function fillTechTypeColumnSelects() {
+  els.techTypeValueClassColumn.innerHTML = "";
+  els.techTypeDesignationColumn.innerHTML = "";
+  els.techTypeValueClassColumn.append(new Option("Automatisch erkennen", ""));
+  els.techTypeDesignationColumn.append(new Option("Automatisch erkennen", ""));
+
+  const sheetName = state.workbook?.SheetNames?.find((name) => String(name || "").trim().toLowerCase() === "techtype");
+  const worksheet = sheetName ? state.workbook.Sheets[sheetName] : null;
+  const rows = worksheet ? XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" }) : [];
+  const headerIndex = techTypeHeaderIndex(rows);
+  const headers = headerIndex >= 0 ? rows[headerIndex] : [];
+
+  headers.forEach((header, index) => {
+    const label = `${columnName(index)} - ${String(header || "").trim() || `Spalte ${columnName(index)}`}`;
+    els.techTypeValueClassColumn.append(new Option(label, String(index)));
+    els.techTypeDesignationColumn.append(new Option(label, String(index)));
+  });
+
+  const hasTechTypeColumns = headers.length > 0;
+  els.techTypeValueClassColumn.disabled = !hasTechTypeColumns;
+  els.techTypeDesignationColumn.disabled = !hasTechTypeColumns;
+}
+
+function techTypeHeaderIndex(rows) {
+  if (!Array.isArray(rows) || !rows.length) return -1;
+
+  const detectedIndex = rows.findIndex((row) =>
+    row.some((cell) => normalizeHeaderName(cell) === "valueclass") ||
+    row.some((cell) => normalizeHeaderName(cell) === "appliancedesignation"),
+  );
+  return detectedIndex >= 0 ? detectedIndex : 0;
+}
+
+function techTypeColumnIndex(selectedValue, headers, fallbackHeaderName) {
+  if (selectedValue !== "") {
+    const index = Number(selectedValue);
+    return Number.isInteger(index) ? index : -1;
+  }
+
+  return headers.indexOf(fallbackHeaderName);
+}
+
+function refreshTechTypesFromSettings() {
+  if (!state.workbook) return;
+
+  state.techTypes = extractTechTypesFromWorkbook(state.workbook);
+  refreshRequirements();
+}
+
+function normalizeHeaderName(value) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function allTechTypeDesignations() {
+  return state.techTypes.map((item) => item.designation);
 }
 
 function fillColumnSelects() {
@@ -965,6 +1071,7 @@ function buildRequirementsFromCurrentConfig() {
       name: nameIndex >= 0 ? String(row[nameIndex] || "").trim() : "",
       id: idIndex >= 0 ? String(row[idIndex] || "").trim() : "",
       text: String(row[textIndex] || "").trim(),
+      techTypes: allTechTypeDesignations(),
     }))
     .filter((item) => item.text);
 
@@ -1157,6 +1264,7 @@ function openSelectionDialog(rowNumber) {
   els.selectionOriginalText.value = item.text;
   els.selectionAiText.textContent = result?.rewrittenRequirement || "Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen.";
   els.prImprovementInstruction.value = "";
+  renderTechTypeSelection(item, state.finalSelections.get(rowNumber));
   els.selectAiButton.disabled = !result?.rewrittenRequirement;
   els.selectionIssues.innerHTML = result
     ? renderIssues(displayProductIssues(result, state.finalSelections.get(rowNumber)))
@@ -1167,6 +1275,151 @@ function openSelectionDialog(rowNumber) {
 function closeSelectionDialog() {
   state.activeSelectionRow = null;
   els.selectionOverlay.hidden = true;
+}
+
+function renderTechTypeSelection(requirement, selection) {
+  if (!state.techTypes.length) {
+    els.techTypeSelectionPanel.hidden = true;
+    els.techTypeSelectionList.innerHTML = "";
+    return;
+  }
+
+  els.techTypeSelectionPanel.hidden = false;
+  const selected = new Set(selectedTechTypesForRequirement(requirement, selection));
+  const groups = groupedTechTypes();
+  els.techTypeSelectionList.innerHTML = groups
+    .map((group) => {
+      const groupSelectedCount = group.items.filter((item) => selected.has(item.designation)).length;
+      const groupChecked = groupSelectedCount === group.items.length;
+      return `
+        <details class="techtype-group" open>
+          <summary>
+            <label>
+              <input type="checkbox" data-techtype-group="${escapeHtml(group.valueClass)}" ${groupChecked ? "checked" : ""} />
+              <span>${escapeHtml(group.valueClass)}</span>
+              <small>${groupSelectedCount} / ${group.items.length}</small>
+            </label>
+          </summary>
+          <div class="techtype-options">
+            ${group.items
+              .map(
+                (item) => `
+                  <label>
+                    <input type="checkbox" data-techtype-designation="${escapeHtml(item.designation)}" data-techtype-designation-group="${escapeHtml(item.valueClass)}" ${selected.has(item.designation) ? "checked" : ""} />
+                    <span>${escapeHtml(item.designation)}</span>
+                  </label>
+                `,
+              )
+              .join("")}
+          </div>
+        </details>
+      `;
+    })
+    .join("");
+  syncTechTypeGroupCheckboxes();
+  renderTechTypeSummary(selected.size);
+}
+
+function groupedTechTypes() {
+  const groups = new Map();
+  state.techTypes.forEach((item) => {
+    const entries = groups.get(item.valueClass) || [];
+    entries.push(item);
+    groups.set(item.valueClass, entries);
+  });
+
+  return [...groups.entries()].map(([valueClass, items]) => ({ valueClass, items }));
+}
+
+function selectedTechTypesForRequirement(requirement, selection) {
+  const selected = Array.isArray(selection?.techTypes)
+    ? selection.techTypes
+    : Array.isArray(requirement?.techTypes)
+      ? requirement.techTypes
+      : allTechTypeDesignations();
+  const available = new Set(allTechTypeDesignations());
+  return selected.filter((item) => available.has(item));
+}
+
+function currentTechTypeSelection() {
+  if (!state.techTypes.length) return [];
+
+  return [...els.techTypeSelectionList.querySelectorAll("[data-techtype-designation]")]
+    .filter((input) => input.checked)
+    .map((input) => input.dataset.techtypeDesignation)
+    .filter(Boolean);
+}
+
+function renderTechTypeSummary(selectedCount = currentTechTypeSelection().length) {
+  const total = state.techTypes.length;
+  els.techTypeSelectionSummary.textContent =
+    selectedCount === total
+      ? `Alle ${total} TechTypes ausgewählt`
+      : `${selectedCount} von ${total} TechTypes ausgewählt`;
+}
+
+function handleTechTypeSelectionChange(event) {
+  const groupInput = event.target.closest("[data-techtype-group]");
+  if (groupInput) {
+    const group = groupInput.dataset.techtypeGroup;
+    els.techTypeSelectionList
+      .querySelectorAll("[data-techtype-designation]")
+      .forEach((input) => {
+        if (input.dataset.techtypeDesignationGroup === group) {
+          input.checked = groupInput.checked;
+        }
+      });
+  }
+
+  syncTechTypeGroupCheckboxes();
+  renderTechTypeSummary();
+  persistActiveRequirementTechTypes();
+}
+
+function syncTechTypeGroupCheckboxes() {
+  els.techTypeSelectionList.querySelectorAll("[data-techtype-group]").forEach((groupInput) => {
+    const group = groupInput.dataset.techtypeGroup;
+    const items = [...els.techTypeSelectionList.querySelectorAll("[data-techtype-designation]")].filter((input) => {
+      return input.dataset.techtypeDesignationGroup === group;
+    });
+    const selectedCount = items.filter((input) => input.checked).length;
+    groupInput.checked = items.length > 0 && selectedCount === items.length;
+    groupInput.indeterminate = selectedCount > 0 && selectedCount < items.length;
+    const count = groupInput.closest("summary")?.querySelector("small");
+    if (count) count.textContent = `${selectedCount} / ${items.length}`;
+  });
+}
+
+function selectAllTechTypesForActiveRequirement() {
+  els.techTypeSelectionList.querySelectorAll("input[type='checkbox']").forEach((input) => {
+    input.checked = true;
+    input.indeterminate = false;
+  });
+  syncTechTypeGroupCheckboxes();
+  renderTechTypeSummary(state.techTypes.length);
+  persistActiveRequirementTechTypes();
+}
+
+function persistActiveRequirementTechTypes() {
+  const rowNumber = state.activeSelectionRow;
+  if (!rowNumber) return;
+
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
+  if (!item) return;
+
+  const techTypes = currentTechTypeSelection();
+  item.techTypes = techTypes;
+  const selection = state.finalSelections.get(Number(rowNumber));
+  if (!selection) return;
+
+  selection.techTypes = techTypes;
+  state.softwareRequirements = [];
+  state.softwareSelections = new Map();
+  state.e2eTests = [];
+  state.e2eSelections = new Map();
+  resetProductWindchillTransfer();
+  resetSoftwareWindchillTransfer();
+  updateExportAvailability();
 }
 
 function excludeRequirement() {
@@ -1290,10 +1543,15 @@ async function selectFinalText(choice) {
         : item?.text;
 
   if (!item || !text) return;
+  if (state.techTypes.length && !currentTechTypeSelection().length) {
+    alert("Bitte wähle mindestens einen TechType aus.");
+    return;
+  }
 
   state.finalSelections.set(Number(rowNumber), {
     choice,
     text,
+    techTypes: currentTechTypeSelection(),
     previousScore: result ? displayProductScore(result, state.finalSelections.get(Number(rowNumber))) : null,
   });
   state.softwareRequirements = [];
@@ -1991,6 +2249,7 @@ function getFinalProductRequirements() {
         category: requirement.category,
         subcategory: requirement.subcategory,
         text: selection.text || requirement.text,
+        techTypes: selectedTechTypesForRequirement(requirement, selection),
         score: Number(result?.score),
       };
     })
@@ -3106,6 +3365,7 @@ function createProjectPayload() {
       sheetName: state.sheetName,
       rows: state.rows,
       headers: state.headers,
+      techTypes: state.techTypes,
     },
     config: getCurrentImportConfig(),
     state: {
@@ -3166,6 +3426,7 @@ function loadProjectPayload(payload, fileName, handle = null) {
   state.workbook = null;
   state.rows = source.rows;
   state.headers = source.headers.map((header) => String(header || ""));
+  state.techTypes = Array.isArray(source.techTypes) ? source.techTypes : [];
   state.sheetName = source.sheetName || "Projekt";
   state.sourceFileName = source.fileName || fileName;
   state.projectName = payload.project?.name || projectNameFromFile(fileName);
@@ -3204,6 +3465,7 @@ function loadProjectPayload(payload, fileName, handle = null) {
       {
         choice: selection.choice,
         text: selection.text || "",
+        ...(Array.isArray(selection.techTypes) ? { techTypes: selection.techTypes } : {}),
         excluded: Boolean(selection.excluded),
       },
     ]),
@@ -3227,6 +3489,7 @@ function loadProjectPayload(payload, fileName, handle = null) {
   els.sheetSelect.disabled = false;
   els.headerRow.disabled = false;
   fillColumnSelects();
+  fillTechTypeColumnSelects();
   applyImportConfig(payload.config || {});
 
   state.requirements = Array.isArray(payload.state?.requirements)
@@ -3255,6 +3518,8 @@ function getCurrentImportConfig() {
     requirementColumn: els.requirementColumn.value,
     idColumn: els.idColumn.value,
     idPrefix: els.idPrefix.value,
+    techTypeValueClassColumn: els.techTypeValueClassColumn.value,
+    techTypeDesignationColumn: els.techTypeDesignationColumn.value,
   };
 }
 
@@ -3268,6 +3533,8 @@ function applyImportConfig(config) {
   setSelectValue(els.requirementColumn, config.requirementColumn);
   setSelectValue(els.idColumn, config.idColumn);
   els.idPrefix.value = config.idPrefix || "REQ";
+  setSelectValue(els.techTypeValueClassColumn, config.techTypeValueClassColumn);
+  setSelectValue(els.techTypeDesignationColumn, config.techTypeDesignationColumn);
   updateAutoIdControls();
 }
 
