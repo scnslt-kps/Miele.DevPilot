@@ -933,6 +933,22 @@ td:nth-child(6) {
   white-space: pre-wrap;
 }
 
+.e2e-group-label {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.e2e-group-label span {
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
 .flow-section {
   margin-top: 10px;
 }
@@ -966,8 +982,36 @@ td:nth-child(6) {
   padding: 12px;
 }
 
+.ai-improvement-panel {
+  border: 1px solid var(--line);
+  background: #fafafa;
+  padding: 12px;
+}
+
 .acceptance-criteria-panel h3 {
   margin: 0 0 8px;
+}
+
+.ai-improvement-panel h3 {
+  margin: 0 0 8px;
+}
+
+.ai-improvement-panel label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.ai-improvement-panel textarea {
+  min-height: 88px;
+  margin-bottom: 10px;
+}
+
+.ai-improvement-panel button {
+  width: 100%;
 }
 
 .acceptance-criteria-list {
@@ -977,6 +1021,68 @@ td:nth-child(6) {
 
 .acceptance-criteria-list li + li {
   margin-top: 6px;
+}
+
+.e2e-testcase-table-panel {
+  border: 1px solid var(--line);
+  background: #fafafa;
+  padding: 12px;
+}
+
+.e2e-testcase-table-panel h3 {
+  margin: 0 0 8px;
+}
+
+.e2e-table-scroll {
+  overflow-x: auto;
+}
+
+.e2e-testcase-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  table-layout: fixed;
+}
+
+.e2e-testcase-table th,
+.e2e-testcase-table td {
+  border: 1px solid var(--line);
+  padding: 8px 10px;
+  vertical-align: top;
+}
+
+.e2e-testcase-table th {
+  width: 52px;
+  max-width: 52px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 0.62rem;
+  line-height: 1.25;
+  padding-left: 5px;
+  padding-right: 5px;
+  text-align: left;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.e2e-testcase-table td {
+  overflow-wrap: anywhere;
+}
+
+.e2e-step-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.e2e-step-list li + li {
+  margin-top: 8px;
+}
+
+.e2e-step-list span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
 }
 
 .score-rationale {
@@ -1329,6 +1435,10 @@ tbody tr.group-row:hover td {
   margin: 0 0 14px;
   background: var(--line);
   border: 1px solid var(--line);
+}
+
+.software-selection-dialog .selection-meta {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .selection-meta div {

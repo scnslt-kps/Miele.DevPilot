@@ -43,6 +43,7 @@ const state = {
   progressInitialEstimatedMs: null,
   progressTimerId: null,
   progressMode: "",
+  progressInputCharCount: 0,
 };
 
 const PROJECT_FILE_TYPE = "miele-devpilot-project";
@@ -50,9 +51,14 @@ const PROJECT_FILE_VERSION = 1;
 const ANALYSIS_BATCH_SIZE = 5;
 const PRODUCT_STEP_MIN_SCORE = 85;
 const LOCAL_SERVER_APP_URL = "http://localhost:3000/Miele.DevPilot/";
-const PR_ANALYSIS_TIMING_STORAGE_KEY = "mieleDevPilot.prAnalysisTiming";
-const DEFAULT_PR_ANALYSIS_MS_PER_REQUIREMENT = 4500;
-const DEFAULT_PR_ANALYSIS_MS_PER_1000_CHARS = 650;
+const LEGACY_PR_ANALYSIS_TIMING_STORAGE_KEY = "mieleDevPilot.prAnalysisTiming";
+const PROGRESS_TIMING_STORAGE_KEY = "mieleDevPilot.progressTiming";
+const PROGRESS_TIMING_DEFAULTS = {
+  default: { msPerRequirement: 4500, msPer1000Chars: 650, batchOverheadMs: 1200 },
+  "pr-analysis": { msPerRequirement: 4500, msPer1000Chars: 650, batchOverheadMs: 1200 },
+  "sr-derivation": { msPerRequirement: 7000, msPer1000Chars: 900, batchOverheadMs: 1200 },
+  "e2e-derivation": { msPerRequirement: 6500, msPer1000Chars: 850, batchOverheadMs: 1200 },
+};
 const PROCESS_STEP_DEPENDENCIES = {
   product: null,
   software: "product",
@@ -137,6 +143,8 @@ const els = {
   softwareSelectionSource: document.querySelector("#softwareSelectionSource"),
   softwareSelectionScore: document.querySelector("#softwareSelectionScore"),
   softwareSelectionText: document.querySelector("#softwareSelectionText"),
+  softwareImprovementInstruction: document.querySelector("#softwareImprovementInstruction"),
+  softwareImproveButton: document.querySelector("#softwareImproveButton"),
   softwareSelectionAcceptanceCriteriaTitle: document.querySelector("#softwareSelectionAcceptanceCriteriaTitle"),
   softwareSelectionAcceptanceCriteria: document.querySelector("#softwareSelectionAcceptanceCriteria"),
   softwareSelectionIssues: document.querySelector("#softwareSelectionIssues"),
@@ -156,6 +164,9 @@ const els = {
   e2eSelectionSource: document.querySelector("#e2eSelectionSource"),
   e2eSelectionScore: document.querySelector("#e2eSelectionScore"),
   e2eSelectionText: document.querySelector("#e2eSelectionText"),
+  e2eImprovementInstruction: document.querySelector("#e2eImprovementInstruction"),
+  e2eImproveButton: document.querySelector("#e2eImproveButton"),
+  e2eSelectionTable: document.querySelector("#e2eSelectionTable"),
   e2eSelectionIssues: document.querySelector("#e2eSelectionIssues"),
   selectionOverlay: document.querySelector("#selectionOverlay"),
   selectionCloseButton: document.querySelector("#selectionCloseButton"),
@@ -171,6 +182,8 @@ const els = {
   selectionScore: document.querySelector("#selectionScore"),
   selectionOriginalText: document.querySelector("#selectionOriginalText"),
   selectionAiText: document.querySelector("#selectionAiText"),
+  prImprovementInstruction: document.querySelector("#prImprovementInstruction"),
+  prImproveButton: document.querySelector("#prImproveButton"),
   selectionIssues: document.querySelector("#selectionIssues"),
   statusPill: document.querySelector("#statusPill"),
   projectHeaderName: document.querySelector("#projectHeaderName"),
@@ -354,6 +367,7 @@ els.selectOriginalButton.addEventListener("click", () => selectFinalText("origin
 els.selectEditedOriginalButton.addEventListener("click", () => selectFinalText("edited-original"));
 els.resetOriginalTextButton.addEventListener("click", resetOriginalText);
 els.selectAiButton.addEventListener("click", () => selectFinalText("ai"));
+els.prImproveButton.addEventListener("click", improveProductRequirementWithAi);
 els.selectionOverlay.addEventListener("click", (event) => {
   if (event.target === els.selectionOverlay) {
     closeSelectionDialog();
@@ -363,6 +377,7 @@ els.softwareSelectionCloseButton.addEventListener("click", closeSoftwareSelectio
 els.softwareSelectionDeferButton.addEventListener("click", deferSoftwareRequirementSelection);
 els.softwareSelectionExcludeButton.addEventListener("click", excludeSoftwareRequirement);
 els.softwareSelectionAcceptButton.addEventListener("click", acceptSoftwareRequirement);
+els.softwareImproveButton.addEventListener("click", improveSoftwareRequirementWithAi);
 els.softwareSelectionOverlay.addEventListener("click", (event) => {
   if (event.target === els.softwareSelectionOverlay) {
     closeSoftwareSelectionDialog();
@@ -372,6 +387,7 @@ els.e2eSelectionCloseButton.addEventListener("click", closeE2eSelectionDialog);
 els.e2eSelectionDeferButton.addEventListener("click", deferE2eSelection);
 els.e2eSelectionExcludeButton.addEventListener("click", excludeE2eTest);
 els.e2eSelectionAcceptButton.addEventListener("click", acceptE2eTest);
+els.e2eImproveButton.addEventListener("click", improveE2eTestWithAi);
 els.e2eSelectionOverlay.addEventListener("click", (event) => {
   if (event.target === els.e2eSelectionOverlay) {
     closeE2eSelectionDialog();
@@ -1140,6 +1156,7 @@ function openSelectionDialog(rowNumber) {
   els.selectionScore.textContent = result ? displayProductScore(result, state.finalSelections.get(rowNumber)) : "-";
   els.selectionOriginalText.value = item.text;
   els.selectionAiText.textContent = result?.rewrittenRequirement || "Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen.";
+  els.prImprovementInstruction.value = "";
   els.selectAiButton.disabled = !result?.rewrittenRequirement;
   els.selectionIssues.innerHTML = result
     ? renderIssues(displayProductIssues(result, state.finalSelections.get(rowNumber)))
@@ -1183,6 +1200,80 @@ function resetOriginalText() {
 
   els.selectionOriginalText.value = item.text;
   els.selectionOriginalText.focus();
+}
+
+async function improveProductRequirementWithAi() {
+  const endpoint = getAnalyzeEndpoint();
+  if (!endpoint) {
+    setStatus("Server erforderlich");
+    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    return;
+  }
+
+  const rowNumber = state.activeSelectionRow;
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
+  const result = state.results.find((entry) => Number(entry.rowNumber) === Number(rowNumber));
+  const instruction = els.prImprovementInstruction.value.trim();
+  if (!item || !instruction) {
+    alert("Bitte beschreibe, was die AI am Product Requirement verbessern soll.");
+    return;
+  }
+
+  const currentText = result?.rewrittenRequirement || els.selectionOriginalText.value.trim() || item.text;
+  const previousStatus = els.prImproveButton.textContent;
+  els.prImproveButton.disabled = true;
+  els.selectAiButton.disabled = true;
+  els.prImproveButton.textContent = "AI verbessert...";
+  setStatus("AI verbessert Product Requirement...");
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requirementType: "product-improvement",
+        improvementInstruction: instruction,
+        requirements: [
+          {
+            ...item,
+            text: currentText,
+            score: result?.score,
+          },
+        ],
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Product Requirement konnte nicht verbessert werden");
+    }
+
+    addOpenAiUsage(data.openAiUsage);
+    const improved = data.result || data.results?.[0];
+    if (!improved) return;
+
+    upsertResult({
+      ...improved,
+      rowNumber: Number(rowNumber),
+      id: item.id || improved.id || "",
+      originalScore: result?.originalScore ?? improved.originalScore ?? improved.score,
+      originalIssues: result?.originalIssues || improved.originalIssues || [],
+    });
+    els.selectionAiText.textContent = improved.rewrittenRequirement || currentText;
+    els.selectionScore.textContent = displayProductScore(improved, state.finalSelections.get(Number(rowNumber)));
+    els.selectionIssues.innerHTML = renderIssues(displayProductIssues(improved, state.finalSelections.get(Number(rowNumber))));
+    els.selectAiButton.disabled = false;
+    els.prImprovementInstruction.value = "";
+    renderTable();
+    renderMetrics();
+    setStatus("Product Requirement verbessert");
+  } catch (error) {
+    setStatus("Fehler");
+    alert(error.message);
+  } finally {
+    els.prImproveButton.disabled = false;
+    els.selectAiButton.disabled = !state.results.find((entry) => Number(entry.rowNumber) === Number(rowNumber))?.rewrittenRequirement;
+    els.prImproveButton.textContent = previousStatus;
+  }
 }
 
 async function selectFinalText(choice) {
@@ -1669,6 +1760,7 @@ function openSoftwareSelectionDialog(softwareId) {
   els.softwareSelectionSource.textContent = item.sourceId || "-";
   els.softwareSelectionScore.textContent = item.score ?? "-";
   els.softwareSelectionText.value = text;
+  els.softwareImprovementInstruction.value = "";
   const acceptanceCriteriaLabel = acceptanceCriteriaLabelForSoftwareRequirement(item);
   els.softwareSelectionAcceptanceCriteriaTitle.textContent = acceptanceCriteriaLabel;
   els.softwareSelectionAcceptanceCriteria.innerHTML = renderAcceptanceCriteriaList(item.acceptanceCriteria, acceptanceCriteriaLabel);
@@ -1691,6 +1783,97 @@ function deferSoftwareRequirementSelection() {
   closeSoftwareSelectionDialog();
   renderSoftwarePage();
   updateExportAvailability();
+}
+
+async function improveSoftwareRequirementWithAi() {
+  const endpoint = getAnalyzeEndpoint();
+  if (!endpoint) {
+    setStatus("Server erforderlich");
+    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    return;
+  }
+
+  const softwareId = state.activeSoftwareRequirementId;
+  const item = state.softwareRequirements.find((entry) => String(entry.id || "") === String(softwareId || ""));
+  const instruction = els.softwareImprovementInstruction.value.trim();
+  if (!item || !instruction) {
+    alert("Bitte beschreibe, was die AI am Software Requirement verbessern soll.");
+    return;
+  }
+
+  const sourceRequirement = getFinalProductRequirements().find(
+    (requirement) =>
+      Number(requirement.rowNumber) === Number(item.sourceRowNumber) ||
+      String(requirement.id || "") === String(item.sourceId || ""),
+  );
+  if (!sourceRequirement) {
+    alert("Das zugehörige Product Requirement wurde nicht gefunden.");
+    return;
+  }
+
+  const previousStatus = els.softwareImproveButton.textContent;
+  els.softwareImproveButton.disabled = true;
+  els.softwareSelectionAcceptButton.disabled = true;
+  els.softwareImproveButton.textContent = "AI verbessert...";
+  setStatus("AI verbessert Software Requirement...");
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requirementType: "software-improvement",
+        improvementInstruction: instruction,
+        requirements: [sourceRequirement],
+        softwareRequirement: {
+          ...item,
+          text: els.softwareSelectionText.value.trim() || item.text || "",
+        },
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Software Requirement konnte nicht verbessert werden");
+    }
+
+    addOpenAiUsage(data.openAiUsage);
+    const improved = data.softwareRequirement || {};
+    Object.assign(item, {
+      ...improved,
+      id: item.id,
+      sourceRowNumber: Number(item.sourceRowNumber),
+      sourceId: item.sourceId,
+      category: item.category,
+      subcategory: item.subcategory,
+      text: improved.text || item.text || "",
+      acceptanceCriteria: Array.isArray(improved.acceptanceCriteria) ? improved.acceptanceCriteria : item.acceptanceCriteria || [],
+      score: Number(improved.score),
+      issues: Array.isArray(improved.issues) ? improved.issues : [],
+    });
+
+    els.softwareSelectionScore.textContent = item.score ?? "-";
+    els.softwareSelectionText.value = item.text || "";
+    const acceptanceCriteriaLabel = acceptanceCriteriaLabelForSoftwareRequirement(item);
+    els.softwareSelectionAcceptanceCriteriaTitle.textContent = acceptanceCriteriaLabel;
+    els.softwareSelectionAcceptanceCriteria.innerHTML = renderAcceptanceCriteriaList(item.acceptanceCriteria, acceptanceCriteriaLabel);
+    els.softwareSelectionIssues.innerHTML = item.issues.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
+    els.softwareImprovementInstruction.value = "";
+    state.e2eTests = [];
+    state.e2eSelections = new Map();
+    state.e2eScoreFilterActive = false;
+    resetSoftwareWindchillTransfer();
+    renderSoftwarePage();
+    renderE2ePage();
+    updateWorkflowState();
+    setStatus("Software Requirement verbessert");
+  } catch (error) {
+    setStatus("Fehler");
+    alert(error.message);
+  } finally {
+    els.softwareImproveButton.disabled = false;
+    els.softwareSelectionAcceptButton.disabled = false;
+    els.softwareImproveButton.textContent = previousStatus;
+  }
 }
 
 function acceptSoftwareRequirement() {
@@ -1787,7 +1970,7 @@ function scoreAcceptedSoftwareRequirement(item, text) {
     /pruef|test|verifiz|verify/i,
   ];
   const signalScore = qualitySignals.filter((pattern) => pattern.test(normalizedText)).length;
-  return signalScore >= 4 ? Math.max(Number(item.score) || 0, 85) : Math.min(Number(item.score) || 84, 84);
+  return signalScore >= 4 ? Math.max(Number(item.score) || 0, 86) : Math.min(Number(item.score) || 84, 84);
 }
 
 function randomInteger(min, max) {
@@ -1828,7 +2011,7 @@ async function generateSoftwareRequirements() {
   setStatus("Leite Software Requirements ab...");
   els.generateSoftwareButton.disabled = true;
   els.generateSoftwareMenuButton.disabled = true;
-  showProgress(requirements.length);
+  await showProgress(requirements.length, { requirements, mode: "sr-derivation" });
 
   try {
     const response = await fetch(endpoint, {
@@ -1896,6 +2079,8 @@ function normalizeSoftwareRequirements(softwareRequirements, sourceRequirements)
       ...item,
       sourceRowNumber: Number(item.sourceRowNumber) || Number(source.rowNumber) || index + 1,
       sourceId: item.sourceId || source.id || "",
+      category: item.category || source.category || "",
+      subcategory: item.subcategory || source.subcategory || "",
       source,
     };
   });
@@ -1935,9 +2120,8 @@ function softwareSourceKey(item) {
 function buildSoftwareRequirementId(source, options = {}) {
   const fallbackIndex = Number(options.fallbackIndex) || 0;
   const sourceIndex = Number(options.sourceIndex) || 1;
-  const sourceCount = Number(options.sourceCount) || 1;
   const sourceId = String(source?.id || "").trim();
-  const suffix = sourceCount > 1 ? `.${sourceIndex}` : "";
+  const suffix = `.${sourceIndex}`;
   if (sourceId) {
     if (/^PR(?=[_-])/i.test(sourceId)) {
       return `${sourceId.replace(/^PR/i, "SR")}${suffix}`;
@@ -2005,7 +2189,15 @@ function renderE2ePage() {
   });
 
   const rows = [];
-  finalSoftwareRequirements.forEach((source) => {
+  let pendingGroup = null;
+
+  groupedRequirements(finalSoftwareRequirements).forEach((entry) => {
+    if (entry.type === "group") {
+      pendingGroup = entry;
+      return;
+    }
+
+    const source = entry.item;
     const allTests = e2eBySourceId.get(String(source.id || "")) || [];
     const tests = state.e2eScoreFilterActive
       ? allTests.filter((item) => isCriticalScore(Number(item.score)))
@@ -2023,6 +2215,20 @@ function renderE2ePage() {
             pending: true,
           },
         ];
+
+    if (pendingGroup) {
+      rows.push(`
+        <tr class="group-row">
+          <td colspan="5">
+            <span class="group-title">${escapeHtml(pendingGroup.category)}</span>
+            <span class="group-separator">/</span>
+            <span>${escapeHtml(pendingGroup.subcategory)}</span>
+            <span class="group-count">${pendingGroup.count} Software Requirements</span>
+          </td>
+        </tr>
+      `);
+      pendingGroup = null;
+    }
 
     rows.push(
       ...displayTests.map((item) => {
@@ -2074,12 +2280,20 @@ function getFinalSoftwareRequirements() {
     .map((item) => {
       const selection = state.softwareSelections.get(String(item.id || ""));
       if (!selection || selection.excluded) return null;
+      const sourceProductRequirement = state.requirements.find(
+        (requirement) =>
+          Number(requirement.rowNumber) === Number(item.sourceRowNumber) ||
+          String(requirement.id || "") === String(item.sourceId || ""),
+      );
 
       return {
         sourceRowNumber: Number(item.sourceRowNumber),
         sourceId: item.sourceId || "",
         id: item.id || "",
+        category: item.category || sourceProductRequirement?.category || "",
+        subcategory: item.subcategory || sourceProductRequirement?.subcategory || "",
         text: selection.text || item.text || "",
+        acceptanceCriteria: Array.isArray(item.acceptanceCriteria) ? item.acceptanceCriteria : [],
         score: Number(selection.score),
       };
     })
@@ -2103,11 +2317,8 @@ function getE2eDerivedCount() {
 
 function renderE2eContent(item) {
   return `
-    ${escapeHtml(item.text || "")}
-    ${renderFlowSection("Testschritte", item.steps)}
-    ${renderFlowSection("Erwartete Ergebnisse", item.expectedResults)}
-    ${renderFlowSection("Testdaten", item.testData)}
-    ${renderFlowSection("Vorbedingungen", item.preconditions)}
+    ${item.group ? `<p class="e2e-group-label"><span>Gruppierung</span>${escapeHtml(item.group)}</p>` : ""}
+    <p class="software-requirement-text">${escapeHtml(item.description || item.text || "")}</p>
   `;
 }
 
@@ -2122,6 +2333,84 @@ function renderE2eScoreCell(item, isExcluded = false) {
     ${renderScoreValue(score, isCriticalScore(score))}
     ${item.rationale ? `<p class="score-rationale">${escapeHtml(item.rationale)}</p>` : ""}
     ${issues.length ? renderIssues(issues) : ""}
+  `;
+}
+
+function renderE2eTestCaseTable(item) {
+  return `
+    <div class="e2e-table-scroll">
+      <table class="e2e-testcase-table">
+        <tbody>
+          <tr>
+            <th>E2E-ID</th>
+            <td>${escapeHtml(item.id || "-")}</td>
+          </tr>
+          <tr>
+            <th>Gruppierung</th>
+            <td>${escapeHtml(item.group || "-")}</td>
+          </tr>
+          <tr>
+            <th>Beschreibung</th>
+            <td>${escapeHtml(item.description || item.text || "-")}</td>
+          </tr>
+          <tr>
+            <th>Akzeptanzkriterien</th>
+            <td>${renderPlainList(item.coveredAcceptanceCriteria || item.acceptanceCriteria)}</td>
+          </tr>
+          <tr>
+            <th>SR-Referenz</th>
+            <td>${escapeHtml(item.sourceId || "-")}</td>
+          </tr>
+          <tr>
+            <th>PR-Referenz</th>
+            <td>${escapeHtml(item.sourcePrId || "-")}</td>
+          </tr>
+          <tr>
+            <th>Vorbedingungen</th>
+            <td>${renderPlainList(item.preconditions)}</td>
+          </tr>
+          <tr>
+            <th>Testdaten</th>
+            <td>${renderPlainList(item.testData)}</td>
+          </tr>
+          <tr>
+            <th>Testschritte</th>
+            <td>${renderE2eSteps(item.steps)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderPlainList(value) {
+  const items = Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
+  if (!items.length) return "-";
+
+  return `<ul class="acceptance-criteria-list">${items.map((entry) => `<li>${escapeHtml(entry)}</li>`).join("")}</ul>`;
+}
+
+function renderE2eSteps(steps) {
+  const items = Array.isArray(steps) ? steps.filter(Boolean) : [];
+  if (!items.length) return "-";
+
+  return `
+    <ol class="e2e-step-list">
+      ${items
+        .map((step, index) => {
+          if (typeof step === "string") {
+            return `<li>${escapeHtml(step)}</li>`;
+          }
+
+          return `
+            <li>
+              <strong>${escapeHtml(step.action || `Schritt ${step.stepNumber || index + 1}`)}</strong>
+              <span>${escapeHtml(step.expectedResult || "")}</span>
+            </li>
+          `;
+        })
+        .join("")}
+    </ol>
   `;
 }
 
@@ -2180,12 +2469,14 @@ function openE2eSelectionDialog(e2eId) {
 
   state.activeE2eTestId = item.id || "";
   const selection = state.e2eSelections.get(String(item.id || ""));
-  const text = selection?.text || item.text || "";
+  const text = selection?.text || item.description || item.text || "";
 
   els.e2eSelectionId.textContent = item.id || "-";
   els.e2eSelectionSource.textContent = item.sourceId || "-";
   els.e2eSelectionScore.textContent = item.score ?? "-";
   els.e2eSelectionText.value = text;
+  els.e2eImprovementInstruction.value = "";
+  els.e2eSelectionTable.innerHTML = renderE2eTestCaseTable(item);
   els.e2eSelectionIssues.innerHTML = item.issues?.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
   els.e2eSelectionOverlay.hidden = false;
 }
@@ -2206,6 +2497,84 @@ function deferE2eSelection() {
   updateWorkflowState();
 }
 
+async function improveE2eTestWithAi() {
+  const endpoint = getAnalyzeEndpoint();
+  if (!endpoint) {
+    setStatus("Server erforderlich");
+    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    return;
+  }
+
+  const e2eId = state.activeE2eTestId;
+  const item = state.e2eTests.find((entry) => String(entry.id || "") === String(e2eId || ""));
+  const instruction = els.e2eImprovementInstruction.value.trim();
+  if (!item || !instruction) {
+    alert("Bitte beschreibe, was die AI am E2E TestCase verbessern soll.");
+    return;
+  }
+
+  const sourceRequirement = getFinalSoftwareRequirements().find((requirement) => String(requirement.id || "") === String(item.sourceId || ""));
+  if (!sourceRequirement) {
+    alert("Das zugehörige Software Requirement wurde nicht gefunden.");
+    return;
+  }
+
+  const previousStatus = els.e2eImproveButton.textContent;
+  els.e2eImproveButton.disabled = true;
+  els.e2eSelectionAcceptButton.disabled = true;
+  els.e2eImproveButton.textContent = "AI verbessert...";
+  setStatus("AI verbessert E2E TestCase...");
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requirementType: "e2e-improvement",
+        improvementInstruction: instruction,
+        requirements: [sourceRequirement],
+        testCase: {
+          ...item,
+          description: els.e2eSelectionText.value.trim() || item.description || item.text || "",
+        },
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "E2E TestCase konnte nicht verbessert werden");
+    }
+
+    addOpenAiUsage(data.openAiUsage);
+    const improved = data.e2eTest || {};
+    Object.assign(item, {
+      ...improved,
+      id: item.id,
+      sourceId: item.sourceId,
+      sourcePrId: improved.sourcePrId || item.sourcePrId,
+      description: improved.description || improved.text || item.description || item.text || "",
+      text: improved.description || improved.text || item.text || "",
+      score: Number(improved.score),
+      issues: Array.isArray(improved.issues) ? improved.issues : [],
+    });
+
+    els.e2eSelectionScore.textContent = item.score ?? "-";
+    els.e2eSelectionText.value = item.description || item.text || "";
+    els.e2eSelectionTable.innerHTML = renderE2eTestCaseTable(item);
+    els.e2eSelectionIssues.innerHTML = item.issues.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
+    els.e2eImprovementInstruction.value = "";
+    renderE2ePage();
+    updateWorkflowState();
+    setStatus("E2E TestCase verbessert");
+  } catch (error) {
+    setStatus("Fehler");
+    alert(error.message);
+  } finally {
+    els.e2eImproveButton.disabled = false;
+    els.e2eSelectionAcceptButton.disabled = false;
+    els.e2eImproveButton.textContent = previousStatus;
+  }
+}
+
 function acceptE2eTest() {
   const e2eId = state.activeE2eTestId;
   if (!e2eId) return;
@@ -2215,6 +2584,7 @@ function acceptE2eTest() {
   if (!item || !text) return;
 
   const updatedScore = scoreAcceptedE2eTest(item, text);
+  item.description = text;
   item.text = text;
   item.score = updatedScore;
   if (isCriticalScore(updatedScore) && (!Array.isArray(item.issues) || !item.issues.length)) {
@@ -2226,10 +2596,13 @@ function acceptE2eTest() {
         suggestion: "Präzisiere Vorbedingungen, Testschritte, erwartete Ergebnisse und nachvollziehbare Prüfpunkte.",
       },
     ];
+  } else if (!isCriticalScore(updatedScore) && Array.isArray(item.issues)) {
+    item.issues = item.issues.filter((issue) => issue.criterion !== "E2E-Qualität");
   }
 
   state.e2eSelections.set(String(item.id || ""), {
     text,
+    description: text,
     score: updatedScore,
     excluded: false,
     acceptedAt: new Date().toISOString(),
@@ -2248,7 +2621,8 @@ function excludeE2eTest() {
   if (!item) return;
 
   state.e2eSelections.set(String(item.id || ""), {
-    text: item.text || "",
+    text: item.description || item.text || "",
+    description: item.description || item.text || "",
     score: Number(item.score),
     excluded: true,
     acceptedAt: new Date().toISOString(),
@@ -2275,20 +2649,56 @@ function scoreAcceptedE2eTest(item, text) {
     return randomInteger(86, 99);
   }
 
-  const originalText = String(item.text || "").trim();
   const normalizedText = text.trim();
-  if (normalizedText.length < 40) return 70;
-  if (originalText && normalizedText === originalText) return Number(item.score) || 0;
+  const assessmentText = buildE2eQualityAssessmentText({ ...item, description: normalizedText, text: normalizedText });
+  if (assessmentText.length < 160) return 70;
 
-  const qualitySignals = [
-    /given|gegeben|vorbeding/i,
-    /when|wenn|schritt|step/i,
-    /then|dann|erwart/i,
-    /fehler|exception|invalid|ungueltig/i,
-    /e2e|end.to.end|test/i,
+  const steps = Array.isArray(item.steps) ? item.steps : [];
+  const preconditions = Array.isArray(item.preconditions) ? item.preconditions : [];
+  const testData = Array.isArray(item.testData) ? item.testData : [];
+  const coveredAcceptanceCriteria = Array.isArray(item.coveredAcceptanceCriteria) ? item.coveredAcceptanceCriteria : [];
+  const completeSteps = steps.filter((step) => String(step?.action || "").trim().length >= 18 && String(step?.expectedResult || "").trim().length >= 18);
+  const hasNegativeCoverage = /negative|invalid|ungueltig|ungültig|fehler|error|exception|nicht verfuegbar|nicht verfügbar|permission|berechtigung/i.test(assessmentText);
+  const hasCheckpoints = /akzeptanzkriter|acceptance criter|prüfpunkt|pruefpunkt|checkpoint|verifiz|verify|expected result|erwart/i.test(assessmentText);
+  const hasReferences = Boolean(item.sourceId) && Boolean(item.sourcePrId);
+  const structureScore = [
+    normalizedText.length >= 60,
+    Boolean(item.group),
+    hasReferences,
+    coveredAcceptanceCriteria.length > 0,
+    preconditions.length > 0,
+    testData.length > 0,
+    steps.length >= 2,
+    completeSteps.length === steps.length && steps.length > 0,
+    hasCheckpoints,
+    hasNegativeCoverage,
+  ].filter(Boolean).length;
+
+  const currentScore = Number(item.score) || 0;
+  if (structureScore >= 10) return 100;
+  if (structureScore >= 8) return Math.max(Math.min(currentScore, 99), 95);
+  if (structureScore >= 6) return Math.max(Math.min(currentScore, 94), 86);
+  return Math.min(currentScore || 84, 84);
+}
+
+function buildE2eQualityAssessmentText(item) {
+  const stepText = (Array.isArray(item.steps) ? item.steps : [])
+    .map((step) => `${step?.stepNumber || ""} ${step?.action || step || ""} ${step?.expectedResult || ""}`)
+    .join(" ");
+  const listText = [
+    item.id,
+    item.sourceId,
+    item.sourcePrId,
+    item.group,
+    item.description || item.text,
+    ...(Array.isArray(item.coveredAcceptanceCriteria) ? item.coveredAcceptanceCriteria : []),
+    ...(Array.isArray(item.preconditions) ? item.preconditions : []),
+    ...(Array.isArray(item.testData) ? item.testData : []),
+    stepText,
+    item.rationale,
   ];
-  const signalScore = qualitySignals.filter((pattern) => pattern.test(normalizedText)).length;
-  return signalScore >= 4 ? Math.max(Number(item.score) || 0, 85) : Math.min(Number(item.score) || 84, 84);
+
+  return listText.map((entry) => String(entry || "")).join(" ").trim();
 }
 
 async function generateE2eTests() {
@@ -2305,7 +2715,7 @@ async function generateE2eTests() {
   setStatus("Leite E2E TestCases ab...");
   els.generateE2eButton.disabled = true;
   els.generateE2eMenuButton.disabled = true;
-  showProgress(requirements.length);
+  await showProgress(requirements.length, { requirements, mode: "e2e-derivation" });
 
   try {
     const response = await fetch(endpoint, {
@@ -2337,32 +2747,65 @@ async function generateE2eTests() {
 
 function normalizeE2eTests(e2eTests, sourceRequirements) {
   const sourcesById = new Map(sourceRequirements.map((item) => [String(item.id || ""), item]));
-
-  return e2eTests.map((item, index) => {
+  const normalized = e2eTests.map((item, index) => {
     const source = sourcesById.get(String(item.sourceId || "")) || sourceRequirements[index] || {};
 
     return {
       ...item,
       sourceId: item.sourceId || source.id || "",
-      id: item.id || buildE2eTestId(source, index),
+      sourcePrId: item.sourcePrId || source.sourceId || "",
+      coveredAcceptanceCriteria:
+        Array.isArray(item.coveredAcceptanceCriteria) && item.coveredAcceptanceCriteria.length
+          ? item.coveredAcceptanceCriteria
+          : Array.isArray(source.acceptanceCriteria)
+            ? source.acceptanceCriteria
+            : [],
+      description: item.description || item.text || "",
+      source,
+    };
+  });
+  const countBySource = new Map();
+  normalized.forEach((item) => {
+    const key = String(item.sourceId || item.source?.id || "");
+    countBySource.set(key, (countBySource.get(key) || 0) + 1);
+  });
+  const indexBySource = new Map();
+
+  return normalized.map((item, index) => {
+    const key = String(item.sourceId || item.source?.id || "");
+    const source = sourcesById.get(String(item.sourceId || "")) || item.source || sourceRequirements[index] || {};
+    const sourceIndex = (indexBySource.get(key) || 0) + 1;
+    indexBySource.set(key, sourceIndex);
+    const { source: _source, ...testCase } = item;
+    return {
+      ...testCase,
+      id: buildE2eTestId(source, {
+        fallbackIndex: index,
+        sourceIndex,
+        sourceCount: countBySource.get(key) || 1,
+      }),
     };
   });
 }
 
-function buildE2eTestId(source, index = 0) {
+function buildE2eTestId(source, options = {}) {
+  const fallbackIndex = Number(options.fallbackIndex) || 0;
+  const sourceIndex = Number(options.sourceIndex) || 1;
+  const sourceCount = Number(options.sourceCount) || 1;
   const sourceId = String(source?.id || "").trim();
+  const suffix = sourceCount > 1 ? `.${sourceIndex}` : "";
   if (sourceId) {
     if (/^SR(?=[_-])/i.test(sourceId)) {
-      return sourceId.replace(/^SR/i, "E2E");
+      return `${sourceId.replace(/^SR/i, "E2E")}${suffix}`;
     }
 
     if (/^SR\b/i.test(sourceId)) {
-      return sourceId.replace(/^SR/i, "E2E");
+      return `${sourceId.replace(/^SR/i, "E2E")}${suffix}`;
     }
   }
 
   const prefix = normalizeIdPart(els.idPrefix?.value || state.projectName || "REQ") || "REQ";
-  return `E2E_${prefix}_${index + 1}`;
+  return `E2E_${prefix}_${fallbackIndex + 1}${suffix}`;
 }
 
 function activateE2eScoreFilter() {
@@ -2736,6 +3179,7 @@ function loadProjectPayload(payload, fileName, handle = null) {
       String(selection.id || ""),
       {
         text: selection.text || "",
+        description: selection.description || selection.text || "",
         score: Number(selection.score),
         excluded: Boolean(selection.excluded),
         acceptedAt: selection.acceptedAt || "",
@@ -3003,6 +3447,7 @@ async function showProgress(total, options = {}) {
   state.progressEstimatedRemainingMs = null;
   state.progressInitialEstimatedMs = null;
   state.progressMode = options.mode || "";
+  state.progressInputCharCount = countProgressInputChars(options.requirements);
   els.progressOverlay.hidden = false;
   els.progressTitle.textContent = "Requirements werden analysiert";
   els.progressText.textContent = "Berechne voraussichtliche Bearbeitungszeit...";
@@ -3034,9 +3479,7 @@ function updateProgress({ processed, total, batchNumber, totalBatches }) {
 
 function completeProgress(processed) {
   clearProgressTimer();
-  if (state.progressMode === "pr-analysis") {
-    rememberProgressTiming(processed, Date.now() - state.progressStartedAt);
-  }
+  rememberProgressTiming(Date.now() - state.progressStartedAt);
   els.progressTitle.textContent = "Analyse abgeschlossen";
   els.progressText.textContent = "Alle verfügbaren Ergebnisse wurden verarbeitet.";
   els.progressBar.style.width = "100%";
@@ -3092,12 +3535,22 @@ function estimateRemainingMs(processed, total) {
 
 function calculateInitialProgressEstimate(total, options = {}) {
   const requirements = Array.isArray(options.requirements) ? options.requirements : [];
-  const storedTiming = readStoredProgressTiming();
-  const totalChars = requirements.reduce((sum, item) => sum + String(item.text || "").length, 0);
-  const msPerRequirement = storedTiming?.msPerRequirement || DEFAULT_PR_ANALYSIS_MS_PER_REQUIREMENT;
-  const msPer1000Chars = storedTiming?.msPer1000Chars || DEFAULT_PR_ANALYSIS_MS_PER_1000_CHARS;
-  const batchOverheadMs = Math.ceil(Math.max(total, 1) / ANALYSIS_BATCH_SIZE) * 1200;
-  const estimatedMs = Math.round(total * msPerRequirement + (totalChars / 1000) * msPer1000Chars + batchOverheadMs);
+  const mode = options.mode || "default";
+  const defaults = getProgressTimingDefaults(mode);
+  const storedTiming = readStoredProgressTiming(mode);
+  const totalChars = countProgressInputChars(requirements);
+  const msPerRequirement = storedTiming?.msPerRequirement || defaults.msPerRequirement;
+  const msPer1000Chars = storedTiming?.msPer1000Chars || defaults.msPer1000Chars;
+  const batchOverheadMs = Math.ceil(Math.max(total, 1) / ANALYSIS_BATCH_SIZE) * defaults.batchOverheadMs;
+  const countEstimate = total * msPerRequirement;
+  const charEstimate = (totalChars / 1000) * msPer1000Chars;
+  const historicalEstimate =
+    storedTiming?.averageTotalMs && storedTiming?.averageRequirementCount
+      ? storedTiming.averageTotalMs * (Math.max(total, 1) / Math.max(storedTiming.averageRequirementCount, 1))
+      : null;
+  const learnedEstimate =
+    historicalEstimate == null ? countEstimate + charEstimate : (countEstimate + charEstimate) * 0.7 + historicalEstimate * 0.3;
+  const estimatedMs = Math.round(learnedEstimate + batchOverheadMs);
 
   return new Promise((resolve) => {
     window.setTimeout(() => {
@@ -3106,40 +3559,96 @@ function calculateInitialProgressEstimate(total, options = {}) {
   });
 }
 
-function rememberProgressTiming(processed, elapsedMs) {
-  if (!processed || !elapsedMs || processed <= 0 || elapsedMs <= 0) return;
+function rememberProgressTiming(elapsedMs) {
+  const mode = state.progressMode || "default";
+  const requirementCount = Number(state.progressTotal) || 0;
+  if (!mode || !requirementCount || !elapsedMs || requirementCount <= 0 || elapsedMs <= 0) return;
 
-  const current = readStoredProgressTiming();
-  const measuredMsPerRequirement = elapsedMs / processed;
+  const charCount = Number(state.progressInputCharCount) || 0;
+  const defaults = getProgressTimingDefaults(mode);
+  const current = readStoredProgressTiming(mode);
+  const measuredMsPerRequirement = elapsedMs / requirementCount;
   const previousMsPerRequirement = current?.msPerRequirement || measuredMsPerRequirement;
   const msPerRequirement = Math.round(previousMsPerRequirement * 0.65 + measuredMsPerRequirement * 0.35);
+  const measuredMsPer1000Chars = charCount > 0 ? elapsedMs / Math.max(charCount / 1000, 1) : defaults.msPer1000Chars;
+  const previousMsPer1000Chars = current?.msPer1000Chars || defaults.msPer1000Chars;
+  const msPer1000Chars = Math.round(previousMsPer1000Chars * 0.85 + measuredMsPer1000Chars * 0.15);
+  const averageTotalMs = Math.round((current?.averageTotalMs || elapsedMs) * 0.65 + elapsedMs * 0.35);
+  const averageRequirementCount = Number(((current?.averageRequirementCount || requirementCount) * 0.65 + requirementCount * 0.35).toFixed(2));
+  const samples = Math.min((Number(current?.samples) || 0) + 1, 9999);
 
   try {
+    const allTimings = readStoredProgressTimings();
+    allTimings[mode] = {
+      samples,
+      msPerRequirement,
+      msPer1000Chars,
+      averageTotalMs,
+      averageRequirementCount,
+      updatedAt: new Date().toISOString(),
+    };
     window.localStorage.setItem(
-      PR_ANALYSIS_TIMING_STORAGE_KEY,
-      JSON.stringify({
-        msPerRequirement,
-        msPer1000Chars: current?.msPer1000Chars || DEFAULT_PR_ANALYSIS_MS_PER_1000_CHARS,
-        updatedAt: new Date().toISOString(),
-      }),
+      PROGRESS_TIMING_STORAGE_KEY,
+      JSON.stringify(allTimings),
     );
   } catch {
     // Timing history is only a convenience for future estimates.
   }
 }
 
-function readStoredProgressTiming() {
+function readStoredProgressTiming(mode = "default") {
+  const timings = readStoredProgressTimings();
+  const timing = timings[mode] || timings.default || migrateLegacyProgressTiming(mode);
+  if (!timing || typeof timing !== "object") return null;
+
+  return {
+    samples: Number(timing.samples) || 0,
+    msPerRequirement: Number(timing.msPerRequirement) || 0,
+    msPer1000Chars: Number(timing.msPer1000Chars) || 0,
+    averageTotalMs: Number(timing.averageTotalMs) || 0,
+    averageRequirementCount: Number(timing.averageRequirementCount) || 0,
+  };
+}
+
+function readStoredProgressTimings() {
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(PR_ANALYSIS_TIMING_STORAGE_KEY) || "null");
+    const parsed = JSON.parse(window.localStorage.getItem(PROGRESS_TIMING_STORAGE_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function migrateLegacyProgressTiming(mode) {
+  if (mode !== "pr-analysis") return null;
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(LEGACY_PR_ANALYSIS_TIMING_STORAGE_KEY) || "null");
     if (!parsed || typeof parsed !== "object") return null;
 
     return {
+      samples: 1,
       msPerRequirement: Number(parsed.msPerRequirement) || 0,
       msPer1000Chars: Number(parsed.msPer1000Chars) || 0,
     };
   } catch {
     return null;
   }
+}
+
+function getProgressTimingDefaults(mode) {
+  return PROGRESS_TIMING_DEFAULTS[mode] || PROGRESS_TIMING_DEFAULTS.default;
+}
+
+function countProgressInputChars(requirements) {
+  if (!Array.isArray(requirements)) return 0;
+
+  return requirements.reduce((sum, item) => {
+    const acceptanceCriteria = Array.isArray(item.acceptanceCriteria) ? item.acceptanceCriteria.join(" ") : item.acceptanceCriteria || "";
+    return sum + String(item.text || "").length + String(item.description || "").length + String(acceptanceCriteria).length;
+  }, 0);
 }
 
 function clearProgressTimer() {

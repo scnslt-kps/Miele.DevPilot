@@ -548,6 +548,12 @@
           <section class="choice-card">
             <h3>AI-Vorschlag</h3>
             <p id="selectionAiText"></p>
+            <section class="ai-improvement-panel">
+              <h3>AI Verbesserung</h3>
+              <label for="prImprovementInstruction">Was soll verbessert werden?</label>
+              <textarea id="prImprovementInstruction" rows="4" placeholder="z. B. klarer formulieren, messbarer machen, atomarer schneiden"></textarea>
+              <button id="prImproveButton" type="button">AI Verbesserung</button>
+            </section>
             <button id="selectAiButton" type="button">AI-Vorschlag verwenden</button>
           </section>
         </div>
@@ -596,6 +602,12 @@
             <h3 id="softwareSelectionAcceptanceCriteriaTitle">Akzeptanzkriterien</h3>
             <div id="softwareSelectionAcceptanceCriteria">Keine Akzeptanzkriterien vorhanden.</div>
           </section>
+          <section class="ai-improvement-panel">
+            <h3>AI Verbesserung</h3>
+            <label for="softwareImprovementInstruction">Was soll verbessert werden?</label>
+            <textarea id="softwareImprovementInstruction" rows="4" placeholder="z. B. atomarer formulieren, Akzeptanzkriterien präzisieren, Fehlerfall ergänzen"></textarea>
+            <button id="softwareImproveButton" type="button">AI Verbesserung</button>
+          </section>
           <button id="softwareSelectionAcceptButton" class="primary" type="button">SR übernehmen</button>
         </section>
 
@@ -639,6 +651,16 @@
         <section class="choice-card">
           <h3>E2E TestCase</h3>
           <textarea id="e2eSelectionText" rows="12"></textarea>
+          <section class="e2e-testcase-table-panel">
+            <h3>TestCase-Tabelle</h3>
+            <div id="e2eSelectionTable"></div>
+          </section>
+          <section class="ai-improvement-panel">
+            <h3>AI Verbesserung</h3>
+            <label for="e2eImprovementInstruction">Was soll verbessert werden?</label>
+            <textarea id="e2eImprovementInstruction" rows="4" placeholder="z. B. präzisere Vorbedingungen, konkretere erwartete Ergebnisse, negative Tests ergänzen"></textarea>
+            <button id="e2eImproveButton" type="button">AI Verbesserung</button>
+          </section>
           <button id="e2eSelectionAcceptButton" class="primary" type="button">E2E TestCase übernehmen</button>
         </section>
 

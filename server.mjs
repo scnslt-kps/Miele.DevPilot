@@ -84,7 +84,14 @@ server.listen(port, () => {
 async function handleAnalyze(req, res) {
   const body = await readJsonBody(req);
   const requirementType = body.requirementType || "product";
-  if (requirementType !== "product" && requirementType !== "software" && requirementType !== "e2e") {
+  if (
+    requirementType !== "product" &&
+    requirementType !== "software" &&
+    requirementType !== "software-improvement" &&
+    requirementType !== "e2e" &&
+    requirementType !== "e2e-improvement" &&
+    requirementType !== "product-improvement"
+  ) {
     sendJson(res, 400, { error: "Unsupported requirement type." });
     return;
   }
@@ -96,8 +103,12 @@ async function handleAnalyze(req, res) {
     .map((item) => ({
       rowNumber: Number(item.rowNumber),
       id: String(item.id || "").slice(0, 200),
+      sourceId: String(item.sourceId || "").slice(0, 200),
       text: String(item.text || "").trim().slice(0, 6000),
       score: Number(item.score),
+      acceptanceCriteria: Array.isArray(item.acceptanceCriteria)
+        ? item.acceptanceCriteria.map((criterion) => String(criterion || "").trim().slice(0, 2000)).filter(Boolean)
+        : [],
     }))
     .filter((item) => item.text);
 
@@ -111,13 +122,28 @@ async function handleAnalyze(req, res) {
     return;
   }
 
+  if (requirementType === "product-improvement") {
+    await handleProductImprovement(cleaned[0], String(body.improvementInstruction || "").trim(), res);
+    return;
+  }
+
   if (requirementType === "software") {
     await handleSoftwareDerivation(cleaned, res);
     return;
   }
 
+  if (requirementType === "software-improvement") {
+    await handleSoftwareImprovement(cleaned[0], cleanSoftwareRequirement(body.softwareRequirement), String(body.improvementInstruction || "").trim(), res);
+    return;
+  }
+
   if (requirementType === "e2e") {
     await handleE2eDerivation(cleaned, res);
+    return;
+  }
+
+  if (requirementType === "e2e-improvement") {
+    await handleE2eImprovement(cleaned[0], cleanE2eTestCase(body.testCase), String(body.improvementInstruction || "").trim(), res);
     return;
   }
 
@@ -269,6 +295,196 @@ async function handleAnalyze(req, res) {
       error: "OpenAI returned invalid JSON, likely because the response was too long. Please retry with fewer or shorter requirements.",
     });
   }
+}
+
+async function handleProductImprovement(requirement, improvementInstruction, res) {
+  if (!requirement?.text) {
+    sendJson(res, 400, { error: "Product Requirement is required." });
+    return;
+  }
+
+  if (!improvementInstruction) {
+    sendJson(res, 400, { error: "Improvement instruction is required." });
+    return;
+  }
+
+  if (process.env.OPENAI_MOCK === "true") {
+    sendJson(res, 200, {
+      result: {
+        rowNumber: requirement.rowNumber,
+        id: requirement.id,
+        originalScore: Number(requirement.score) || 90,
+        originalIssues: [],
+        score: 100,
+        verdict: "AI-Verbesserung angewendet",
+        issues: [],
+        rewrittenRequirement: `${requirement.text} Verbesserungsfokus: ${improvementInstruction}`,
+      },
+    });
+    return;
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    sendJson(res, 500, { error: "OPENAI_API_KEY is not configured on the server." });
+    return;
+  }
+
+  let response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-5.5",
+        input: [
+          {
+            role: "system",
+            content:
+              "You are a senior product requirements engineer. Improve one Product Requirement according to the user's instruction. Return only valid JSON that matches the schema.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              task:
+                "Improve the Product Requirement according to the improvement instruction. Preserve the intent, scope, product level, and solution neutrality. Do not turn it into a Software Requirement. Do not add acceptance criteria, Given/When/Then blocks, test steps, or implementation details. Make it clearer, more atomic, measurable, unambiguous, complete, and suitable for deriving Software Requirements. Return no issues when the rewritten requirement is production-ready.",
+              improvementInstruction,
+              requirement,
+            }),
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "product_requirement_improvement",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                result: requirementQualityResultSchema(),
+              },
+              required: ["result"],
+            },
+          },
+        },
+        max_output_tokens: 8000,
+      }),
+    });
+  } catch (error) {
+    console.error("OpenAI product improvement failed:", error);
+    sendJson(res, 502, { error: "OpenAI request could not be completed. Check network connectivity and try again." });
+    return;
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    sendJson(res, response.status, { error: payload.error?.message || "OpenAI request failed." });
+    return;
+  }
+
+  const outputText = extractOutputText(payload);
+  if (!outputText) {
+    sendJson(res, 502, { error: "OpenAI returned no parseable output." });
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(outputText);
+    sendJson(res, 200, {
+      ...parsed,
+      openAiUsage: buildOpenAiUsageSummary(payload),
+    });
+  } catch (error) {
+    console.error("Could not parse OpenAI product improvement output:", outputText, error);
+    sendJson(res, 502, { error: "OpenAI returned invalid JSON." });
+  }
+}
+
+function issueSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      criterion: { type: "string" },
+      severity: { type: "string", enum: ["low", "medium", "high"] },
+      explanation: { type: "string" },
+      suggestion: { type: "string" },
+    },
+    required: ["criterion", "severity", "explanation", "suggestion"],
+  };
+}
+
+function requirementQualityResultSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      rowNumber: { type: "number" },
+      id: { type: "string" },
+      originalScore: { type: "number" },
+      originalIssues: {
+        type: "array",
+        items: issueSchema(),
+      },
+      score: { type: "number" },
+      verdict: { type: "string" },
+      issues: {
+        type: "array",
+        items: issueSchema(),
+      },
+      rewrittenRequirement: { type: "string" },
+    },
+    required: ["rowNumber", "id", "originalScore", "originalIssues", "score", "verdict", "issues", "rewrittenRequirement"],
+  };
+}
+
+function softwareRequirementSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      sourceRowNumber: { type: "number" },
+      sourceId: { type: "string" },
+      id: { type: "string" },
+      text: { type: "string" },
+      happyFlow: { type: "string" },
+      alternativeFlows: {
+        type: "array",
+        items: { type: "string" },
+      },
+      exceptionFlows: {
+        type: "array",
+        items: { type: "string" },
+      },
+      acceptanceCriteria: {
+        type: "array",
+        items: { type: "string" },
+      },
+      score: { type: "number", minimum: 85, maximum: 100 },
+      issues: {
+        type: "array",
+        items: issueSchema(),
+      },
+      rationale: { type: "string" },
+    },
+    required: [
+      "sourceRowNumber",
+      "sourceId",
+      "id",
+      "text",
+      "happyFlow",
+      "alternativeFlows",
+      "exceptionFlows",
+      "acceptanceCriteria",
+      "score",
+      "issues",
+      "rationale",
+    ],
+  };
 }
 
 async function handleSaveProject(req, res) {
@@ -448,6 +664,114 @@ async function handleSoftwareDerivation(requirements, res) {
   }
 }
 
+async function handleSoftwareImprovement(sourceRequirement, softwareRequirement, improvementInstruction, res) {
+  if (!sourceRequirement?.text || !softwareRequirement?.id) {
+    sendJson(res, 400, { error: "Product Requirement and Software Requirement are required." });
+    return;
+  }
+
+  if (!improvementInstruction) {
+    sendJson(res, 400, { error: "Improvement instruction is required." });
+    return;
+  }
+
+  if (process.env.OPENAI_MOCK === "true") {
+    const improved = {
+      ...softwareRequirement,
+      text: `${softwareRequirement.text || "Das System muss das Verhalten pruefbar bereitstellen."} Verbesserungsfokus: ${improvementInstruction}`,
+      acceptanceCriteria: Array.isArray(softwareRequirement.acceptanceCriteria) && softwareRequirement.acceptanceCriteria.length
+        ? softwareRequirement.acceptanceCriteria
+        : ["Gegeben gueltige Ausgangsbedingungen, wenn der Ablauf ausgefuehrt wird, dann ist das erwartete Systemverhalten eindeutig pruefbar."],
+      score: Number(sourceRequirement.score) === 100 ? 100 : 96,
+      issues: [],
+      rationale: "Mock-Verbesserung anhand der angegebenen AI-Vorgabe.",
+    };
+    sendJson(res, 200, { softwareRequirement: improved });
+    return;
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    sendJson(res, 500, { error: "OPENAI_API_KEY is not configured on the server." });
+    return;
+  }
+
+  let response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-5.5",
+        input: [
+          {
+            role: "system",
+            content:
+              "You are a senior software requirements engineer. Improve one Software Requirement and its acceptance criteria according to the user's instruction. Return only valid JSON that matches the schema.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              task:
+                "Improve the provided Software Requirement according to the improvement instruction while preserving traceability to the source Product Requirement. Keep the SR concise, atomic, measurable, unambiguous, feasible, and testable. Improve acceptance criteria so they are concrete, directly assigned to the SR, and written in the same language as the SR. Do not add informal flow prose into the SR text. Score 85-100. If the source Product Requirement has score 100, improve the SR until it is excellent and return score 100 with no remaining quality issues.",
+              improvementInstruction,
+              sourceRequirement,
+              softwareRequirement,
+            }),
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "software_requirement_improvement",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                softwareRequirement: softwareRequirementSchema(),
+              },
+              required: ["softwareRequirement"],
+            },
+          },
+        },
+        max_output_tokens: 10000,
+      }),
+    });
+  } catch (error) {
+    console.error("OpenAI software improvement failed:", error);
+    sendJson(res, 502, { error: "OpenAI request could not be completed. Check network connectivity and try again." });
+    return;
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    sendJson(res, response.status, { error: payload.error?.message || "OpenAI request failed." });
+    return;
+  }
+
+  const outputText = extractOutputText(payload);
+  if (!outputText) {
+    sendJson(res, 502, { error: "OpenAI returned no parseable output." });
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(outputText);
+    enforceSoftwareScoreRules({ softwareRequirements: [parsed.softwareRequirement] }, [sourceRequirement]);
+    sendJson(res, 200, {
+      ...parsed,
+      openAiUsage: buildOpenAiUsageSummary(payload),
+    });
+  } catch (error) {
+    console.error("Could not parse OpenAI software improvement output:", outputText, error);
+    sendJson(res, 502, { error: "OpenAI returned invalid JSON." });
+  }
+}
+
 function enforceSoftwareScoreRules(payload, sourceRequirements) {
   if (!Array.isArray(payload?.softwareRequirements)) return;
 
@@ -476,6 +800,29 @@ function enforceSoftwareScoreRules(payload, sourceRequirements) {
   });
 }
 
+function enforceE2eScoreRules(payload, sourceRequirements) {
+  if (!Array.isArray(payload?.e2eTests)) return;
+
+  const sourcesById = new Map(sourceRequirements.map((item) => [String(item.id || ""), item]));
+  payload.e2eTests.forEach((item) => {
+    const source = sourcesById.get(String(item.sourceId || "")) || {};
+    const sourceScore = Number(source.score);
+    const score = Number(item.score);
+
+    if (sourceScore === 100) {
+      item.score = 100;
+      item.issues = [];
+      return;
+    }
+
+    if (!Number.isFinite(score) || score <= 85) {
+      item.score = 86;
+    } else if (score > 100) {
+      item.score = 100;
+    }
+  });
+}
+
 async function handleE2eDerivation(requirements, res) {
   if (process.env.OPENAI_MOCK === "true") {
     sendJson(res, 200, {
@@ -484,7 +831,398 @@ async function handleE2eDerivation(requirements, res) {
     return;
   }
 
-  sendJson(res, 501, { error: "Der E2E-Ableitungsprompt ist noch nicht konfiguriert." });
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    sendJson(res, 500, { error: "OPENAI_API_KEY is not configured on the server." });
+    return;
+  }
+
+  let response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-5.5",
+        input: [
+          {
+            role: "system",
+            content:
+              "You are a senior E2E test engineer. Derive formal, executable E2E TestCases from approved Software Requirements. Return only valid JSON that matches the schema.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              task:
+                "For each Software Requirement, derive one or more E2E TestCases. Use the SR text and all SR acceptanceCriteria as the main derivation basis. Each TestCase must include E2E-ID, grouping information, a unique concise description, all acceptance criteria that led to this TestCase, reference to the source SR, reference to the source PR, and formal test steps. Prefer more than one TestCase when this improves coverage, independence, positive/negative coverage, or scenario separation. Include positive tests and, where meaningful, negative tests for invalid input, unavailable data, unavailable services, unsupported capabilities, permission problems, or failed state changes. Each TestCase must be production-ready: preconditions must precisely describe user role, system state, data state, permissions, connected devices, services, and feature flags required for execution; each action must be atomic and executable; each expectedResult must contain observable and verifiable outcomes such as UI state, data persistence, API/system response, error handling, or state transition. Include nachvollziehbare Prüfpunkte by making it clear which acceptance criteria are verified by the steps. Never return an issue that asks to precise preconditions, test steps, expected results, or verifiable checkpoints; fix the TestCase before returning it. Score each TestCase from 86-100, prefer 95-100, and never return a score of 85 or lower. Assign score 100 only when the returned JSON objectively contains a specific description, group, source SR, source PR, covered acceptance criteria, concrete preconditions, concrete test data, at least two executable steps with precise actions and expected results, clear verifiable checkpoints, and positive/negative behavior or relevant error handling. If the source Software Requirement has score 100, every derived E2E TestCase for that SR must be improved until it satisfies these 100-point criteria, then receive score 100 and no remaining quality issues.",
+              idRules:
+                "Use this pattern: source SR SR_BAROLO_1.1.1 becomes E2E_BAROLO_1.1.1.1, E2E_BAROLO_1.1.1.2, and so on. Source SR SR-001.1 becomes E2E-001.1.1, E2E-001.1.2, and so on.",
+              scoring:
+                "Score 86-100. A score of 100 means excellent E2E TestCase quality and must be calculable from the returned structure, not merely asserted. Prefer scores from 95 to 100. Use 86-94 only when the source SR or acceptance criteria are incomplete and the remaining limitation cannot be resolved by better TestCase design. Never return a TestCase with score 85 or lower; improve the TestCase until it reaches at least 86. If the source SR has score 100, improve the derived E2E TestCase until it is complete enough to receive a calculable score of 100. Evaluate traceability to SR and PR, coverage of relevant acceptance criteria, precise preconditions, executable step quality, observable expected results, verifiable checkpoints, positive and negative scenario coverage, realistic preconditions and test data, independence, repeatability, automation suitability, clarity, and unambiguity.",
+              requirements,
+            }),
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "e2e_testcases_derivation",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                e2eTests: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      sourceId: { type: "string" },
+                      sourcePrId: { type: "string" },
+                      id: { type: "string" },
+                      group: { type: "string" },
+                      description: { type: "string" },
+                      coveredAcceptanceCriteria: {
+                        type: "array",
+                        items: { type: "string" },
+                      },
+                      preconditions: {
+                        type: "array",
+                        items: { type: "string" },
+                      },
+                      testData: {
+                        type: "array",
+                        items: { type: "string" },
+                      },
+                      steps: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          additionalProperties: false,
+                          properties: {
+                            stepNumber: { type: "number" },
+                            action: { type: "string" },
+                            expectedResult: { type: "string" },
+                          },
+                          required: ["stepNumber", "action", "expectedResult"],
+                        },
+                      },
+                      score: { type: "number", minimum: 86, maximum: 100 },
+                      issues: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          additionalProperties: false,
+                          properties: {
+                            criterion: { type: "string" },
+                            severity: { type: "string", enum: ["low", "medium", "high"] },
+                            explanation: { type: "string" },
+                            suggestion: { type: "string" },
+                          },
+                          required: ["criterion", "severity", "explanation", "suggestion"],
+                        },
+                      },
+                      rationale: { type: "string" },
+                    },
+                    required: [
+                      "sourceId",
+                      "sourcePrId",
+                      "id",
+                      "group",
+                      "description",
+                      "coveredAcceptanceCriteria",
+                      "preconditions",
+                      "testData",
+                      "steps",
+                      "score",
+                      "issues",
+                      "rationale",
+                    ],
+                  },
+                },
+              },
+              required: ["e2eTests"],
+            },
+          },
+        },
+        max_output_tokens: 20000,
+      }),
+    });
+  } catch (error) {
+    console.error("OpenAI E2E derivation failed:", error);
+    sendJson(res, 502, { error: "OpenAI request could not be completed. Check network connectivity and try again." });
+    return;
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    sendJson(res, response.status, {
+      error: payload.error?.message || "OpenAI request failed.",
+    });
+    return;
+  }
+
+  const outputText = extractOutputText(payload);
+  if (!outputText) {
+    sendJson(res, 502, { error: "OpenAI returned no parseable output." });
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(outputText);
+    enforceE2eScoreRules(parsed, requirements);
+    sendJson(res, 200, {
+      ...parsed,
+      openAiUsage: buildOpenAiUsageSummary(payload),
+    });
+  } catch (error) {
+    console.error("Could not parse OpenAI E2E output:", outputText, error);
+    sendJson(res, 502, { error: "OpenAI returned invalid JSON." });
+  }
+}
+
+async function handleE2eImprovement(sourceRequirement, testCase, improvementInstruction, res) {
+  if (!sourceRequirement?.text || !testCase?.id) {
+    sendJson(res, 400, { error: "Software Requirement and E2E TestCase are required." });
+    return;
+  }
+
+  if (!improvementInstruction) {
+    sendJson(res, 400, { error: "Improvement instruction is required." });
+    return;
+  }
+
+  if (process.env.OPENAI_MOCK === "true") {
+    const improved = {
+      ...testCase,
+      description: `${testCase.description || testCase.text || "E2E TestCase"} Verbesserungsfokus: ${improvementInstruction}`,
+      preconditions: [
+        ...(Array.isArray(testCase.preconditions) ? testCase.preconditions : []),
+        "Alle benoetigten Testdaten, Berechtigungen und Systemdienste sind eindeutig vorbereitet.",
+      ],
+      steps: Array.isArray(testCase.steps) && testCase.steps.length
+        ? testCase.steps
+        : [
+            {
+              stepNumber: 1,
+              action: "Fuehre den beschriebenen E2E Ablauf mit vorbereiteten Testdaten aus.",
+              expectedResult: "Das erwartete Ergebnis ist beobachtbar, pruefbar und dem Akzeptanzkriterium eindeutig zugeordnet.",
+            },
+          ],
+      score: Number(sourceRequirement.score) === 100 ? 100 : 96,
+      issues: [],
+      rationale: "Mock-Verbesserung anhand der angegebenen AI-Vorgabe.",
+    };
+    sendJson(res, 200, { e2eTest: improved });
+    return;
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    sendJson(res, 500, { error: "OPENAI_API_KEY is not configured on the server." });
+    return;
+  }
+
+  let response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-5.5",
+        input: [
+          {
+            role: "system",
+            content:
+              "You are a senior E2E test engineer. Improve an existing E2E TestCase according to the user's instruction. Return only valid JSON that matches the schema.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              task:
+                "Improve the provided E2E TestCase while preserving its ID, source SR reference, source PR reference, and traceability. Apply the improvement instruction fully. The returned TestCase must be production-ready: precise preconditions, atomic executable actions, observable expected results, clear verifiable checkpoints, realistic test data, and direct coverage of the relevant acceptance criteria. If the instruction asks for additional coverage, split or enrich steps only within this TestCase when it remains coherent; otherwise improve clarity and completeness. Never return an issue asking for more precise preconditions, test steps, expected results, or checkpoints; fix the TestCase instead. Score 86-100, prefer 95-100. Assign score 100 only when the returned JSON objectively contains a specific description, group, source SR, source PR, covered acceptance criteria, concrete preconditions, concrete test data, at least two executable steps with precise actions and expected results, clear verifiable checkpoints, and positive/negative behavior or relevant error handling. If the source SR has score 100, improve the E2E TestCase until it satisfies these 100-point criteria, then return score 100 and no remaining quality issues.",
+              improvementInstruction,
+              sourceRequirement,
+              testCase,
+            }),
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "e2e_testcase_improvement",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                e2eTest: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    sourceId: { type: "string" },
+                    sourcePrId: { type: "string" },
+                    id: { type: "string" },
+                    group: { type: "string" },
+                    description: { type: "string" },
+                    coveredAcceptanceCriteria: {
+                      type: "array",
+                      items: { type: "string" },
+                    },
+                    preconditions: {
+                      type: "array",
+                      items: { type: "string" },
+                    },
+                    testData: {
+                      type: "array",
+                      items: { type: "string" },
+                    },
+                    steps: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        additionalProperties: false,
+                        properties: {
+                          stepNumber: { type: "number" },
+                          action: { type: "string" },
+                          expectedResult: { type: "string" },
+                        },
+                        required: ["stepNumber", "action", "expectedResult"],
+                      },
+                    },
+                    score: { type: "number", minimum: 86, maximum: 100 },
+                    issues: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        additionalProperties: false,
+                        properties: {
+                          criterion: { type: "string" },
+                          severity: { type: "string", enum: ["low", "medium", "high"] },
+                          explanation: { type: "string" },
+                          suggestion: { type: "string" },
+                        },
+                        required: ["criterion", "severity", "explanation", "suggestion"],
+                      },
+                    },
+                    rationale: { type: "string" },
+                  },
+                  required: [
+                    "sourceId",
+                    "sourcePrId",
+                    "id",
+                    "group",
+                    "description",
+                    "coveredAcceptanceCriteria",
+                    "preconditions",
+                    "testData",
+                    "steps",
+                    "score",
+                    "issues",
+                    "rationale",
+                  ],
+                },
+              },
+              required: ["e2eTest"],
+            },
+          },
+        },
+        max_output_tokens: 12000,
+      }),
+    });
+  } catch (error) {
+    console.error("OpenAI E2E improvement failed:", error);
+    sendJson(res, 502, { error: "OpenAI request could not be completed. Check network connectivity and try again." });
+    return;
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    sendJson(res, response.status, {
+      error: payload.error?.message || "OpenAI request failed.",
+    });
+    return;
+  }
+
+  const outputText = extractOutputText(payload);
+  if (!outputText) {
+    sendJson(res, 502, { error: "OpenAI returned no parseable output." });
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(outputText);
+    enforceE2eScoreRules({ e2eTests: [parsed.e2eTest] }, [sourceRequirement]);
+    sendJson(res, 200, {
+      ...parsed,
+      openAiUsage: buildOpenAiUsageSummary(payload),
+    });
+  } catch (error) {
+    console.error("Could not parse OpenAI E2E improvement output:", outputText, error);
+    sendJson(res, 502, { error: "OpenAI returned invalid JSON." });
+  }
+}
+
+function cleanE2eTestCase(value) {
+  const item = value && typeof value === "object" ? value : {};
+  return {
+    sourceId: String(item.sourceId || "").slice(0, 200),
+    sourcePrId: String(item.sourcePrId || "").slice(0, 200),
+    id: String(item.id || "").slice(0, 200),
+    group: String(item.group || "").trim().slice(0, 500),
+    description: String(item.description || item.text || "").trim().slice(0, 6000),
+    coveredAcceptanceCriteria: Array.isArray(item.coveredAcceptanceCriteria)
+      ? item.coveredAcceptanceCriteria.map((entry) => String(entry || "").trim().slice(0, 2000)).filter(Boolean)
+      : [],
+    preconditions: Array.isArray(item.preconditions)
+      ? item.preconditions.map((entry) => String(entry || "").trim().slice(0, 2000)).filter(Boolean)
+      : [],
+    testData: Array.isArray(item.testData)
+      ? item.testData.map((entry) => String(entry || "").trim().slice(0, 2000)).filter(Boolean)
+      : [],
+    steps: Array.isArray(item.steps)
+      ? item.steps
+          .map((step, index) => ({
+            stepNumber: Number(step?.stepNumber) || index + 1,
+            action: String(step?.action || step || "").trim().slice(0, 2000),
+            expectedResult: String(step?.expectedResult || "").trim().slice(0, 2000),
+          }))
+          .filter((step) => step.action || step.expectedResult)
+      : [],
+    score: Number(item.score),
+    issues: Array.isArray(item.issues) ? item.issues.slice(0, 20) : [],
+    rationale: String(item.rationale || "").trim().slice(0, 3000),
+  };
+}
+
+function cleanSoftwareRequirement(value) {
+  const item = value && typeof value === "object" ? value : {};
+  return {
+    sourceRowNumber: Number(item.sourceRowNumber),
+    sourceId: String(item.sourceId || "").slice(0, 200),
+    id: String(item.id || "").slice(0, 200),
+    text: String(item.text || "").trim().slice(0, 6000),
+    happyFlow: String(item.happyFlow || "").trim().slice(0, 3000),
+    alternativeFlows: Array.isArray(item.alternativeFlows)
+      ? item.alternativeFlows.map((entry) => String(entry || "").trim().slice(0, 2000)).filter(Boolean)
+      : [],
+    exceptionFlows: Array.isArray(item.exceptionFlows)
+      ? item.exceptionFlows.map((entry) => String(entry || "").trim().slice(0, 2000)).filter(Boolean)
+      : [],
+    acceptanceCriteria: Array.isArray(item.acceptanceCriteria)
+      ? item.acceptanceCriteria.map((entry) => String(entry || "").trim().slice(0, 2000)).filter(Boolean)
+      : [],
+    score: Number(item.score),
+    issues: Array.isArray(item.issues) ? item.issues.slice(0, 20) : [],
+    rationale: String(item.rationale || "").trim().slice(0, 3000),
+  };
 }
 
 function isAppleScriptCancel(error) {
@@ -749,11 +1487,17 @@ function buildMockSoftwareRequirementId(sourceId, index) {
 
 function mockE2eTest(item, index) {
   const sourceId = item.id || `SR-${index + 1}`;
-  const isCritical = index % 5 === 4;
+  const sourcePrId = item.sourceId || "";
   return {
     sourceId,
+    sourcePrId,
     id: buildMockE2eTestId(sourceId, index),
-    text: `E2E Test fuer "${sourceId}": Der vollstaendige Nutzerablauf wird von der Startbedingung bis zum sichtbaren Ergebnis ausgefuehrt und gegen die erwarteten Systemreaktionen verifiziert.`,
+    group: "E2E / Mock-Szenario",
+    description: `Vollstaendigen Nutzerablauf fuer ${sourceId} pruefen`,
+    text: `Vollstaendigen Nutzerablauf fuer ${sourceId} pruefen`,
+    coveredAcceptanceCriteria: Array.isArray(item.acceptanceCriteria) && item.acceptanceCriteria.length
+      ? item.acceptanceCriteria
+      : ["Das erwartete Systemverhalten ist anhand des Software Requirements verifizierbar."],
     preconditions: [
       "Ein berechtigter Benutzer ist verfuegbar.",
       "Das System ist erreichbar und benoetigte Testdaten sind vorbereitet.",
@@ -763,41 +1507,39 @@ function mockE2eTest(item, index) {
       "Ungueltige oder fehlende Pflichtangaben fuer relevante Fehlerpruefungen.",
     ],
     steps: [
-      "Benutzer startet den in der Software Requirement beschriebenen Ablauf.",
-      "Benutzer fuehrt die benoetigten Eingaben und Aktionen aus.",
-      "Systemreaktion, Status und sichtbares Ergebnis werden geprueft.",
+      {
+        stepNumber: 1,
+        action: "Benutzer startet den im Software Requirement beschriebenen Ablauf.",
+        expectedResult: "Der Ablauf wird gestartet und die benoetigte Ausgangssituation ist sichtbar.",
+      },
+      {
+        stepNumber: 2,
+        action: "Benutzer fuehrt die benoetigten Eingaben und Aktionen aus.",
+        expectedResult: "Das System verarbeitet die Eingaben und zeigt das erwartete Ergebnis nachvollziehbar an.",
+      },
+      {
+        stepNumber: 3,
+        action: "Benutzer fuehrt eine ungueltige oder nicht verfuegbare Variante aus, sofern diese fachlich relevant ist.",
+        expectedResult: "Das System behandelt den negativen Fall kontrolliert und zeigt keine widerspruechlichen Ergebnisse.",
+      },
     ],
-    expectedResults: [
-      "Das erwartete Ergebnis ist fuer den Benutzer sichtbar und entspricht der Software Requirement.",
-      "Fehlerfaelle werden kontrolliert behandelt und fuehren nicht zu widerspruechlichen Anzeigen.",
-    ],
-    score: isCritical ? 80 : 91,
-    issues: isCritical
-      ? [
-          {
-            criterion: "Ausfuehrbarkeit",
-            severity: "medium",
-            explanation:
-              "Der Mock markiert diesen E2E Test absichtlich als noch nicht ausreichend konkret, damit die Score-Warnung getestet werden kann.",
-            suggestion:
-              "Ergaenze konkrete Testdaten, pruefbare erwartete Ergebnisse und eindeutige Vorbedingungen.",
-          },
-        ]
-      : [],
+    score: 91,
+    issues: [],
     rationale: `Abgeleitet aus dem finalen Software Requirement: ${item.text.slice(0, 180)}`,
   };
 }
 
 function buildMockE2eTestId(sourceId, index) {
+  const suffix = ".1";
   if (/^SR(?=[_-])/i.test(sourceId)) {
-    return sourceId.replace(/^SR/i, "E2E");
+    return `${sourceId.replace(/^SR/i, "E2E")}${suffix}`;
   }
 
   if (/^SR\b/i.test(sourceId)) {
-    return sourceId.replace(/^SR/i, "E2E");
+    return `${sourceId.replace(/^SR/i, "E2E")}${suffix}`;
   }
 
-  return `E2E-${String(index + 1).padStart(3, "0")}`;
+  return `E2E-${String(index + 1).padStart(3, "0")}${suffix}`;
 }
 
 async function loadDotEnv() {
