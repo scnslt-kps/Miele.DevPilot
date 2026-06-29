@@ -1343,8 +1343,9 @@ function setCorsHeaders(res) {
 }
 
 async function getGitVersionInfo() {
-  const [description, commit, branch, date, dirty] = await Promise.all([
+  const [description, tag, commit, branch, date, dirty] = await Promise.all([
     readGitValue(["describe", "--tags", "--always", "--dirty"]),
+    readGitValue(["describe", "--tags", "--exact-match"]),
     readGitValue(["rev-parse", "--short", "HEAD"]),
     readGitValue(["branch", "--show-current"]),
     readGitValue(["log", "-1", "--format=%cI"]),
@@ -1353,6 +1354,7 @@ async function getGitVersionInfo() {
 
   return {
     version: description || commit || "Nicht verfuegbar",
+    tag: tag || "Nicht verfuegbar",
     commit: commit || "Nicht verfuegbar",
     branch: branch || "Nicht verfuegbar",
     date: date || "",

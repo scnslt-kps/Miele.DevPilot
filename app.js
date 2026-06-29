@@ -150,6 +150,7 @@ const UI_TRANSLATIONS = {
     "Autor": "Author",
     "Build-Informationen": "Build information",
     "Build": "Build",
+    "Tag": "Tag",
     "Stand": "Date",
     "Pfad": "Path",
     "Bei geöffnetem Projekt kannst du auch direkt über den Prozessablauf zurückspringen.": "When a project is open, you can also navigate back directly through the workflow.",
@@ -393,6 +394,7 @@ const els = {
   closeAboutButton: document.querySelector("#closeAboutButton"),
   aboutVersion: document.querySelector("#aboutVersion"),
   aboutBuild: document.querySelector("#aboutBuild"),
+  aboutTag: document.querySelector("#aboutTag"),
   aboutBuildDate: document.querySelector("#aboutBuildDate"),
   aboutRuntimePath: document.querySelector("#aboutRuntimePath"),
   openAiCostTotal: document.querySelector("#openAiCostTotal"),
@@ -789,10 +791,12 @@ function renderAboutPage() {
   const version = gitInfo.version || "Git-Version nicht verfügbar";
   const commit = gitInfo.commit || "Nicht verfügbar";
   const branch = gitInfo.branch || "Nicht verfügbar";
+  const tag = gitInfo.tag || "Nicht verfügbar";
   const dirtyMarker = gitInfo.dirty ? " (lokale Änderungen)" : "";
 
   els.aboutVersion.textContent = `Git ${version}${dirtyMarker}`;
   els.aboutBuild.textContent = `${branch} / ${commit}`;
+  els.aboutTag.textContent = tag;
   els.aboutBuildDate.textContent = formatGitDate(gitInfo.date) || document.lastModified || "Nicht verfügbar";
   els.aboutRuntimePath.textContent = window.location.pathname || "/";
 }
