@@ -66,6 +66,10 @@ select {
   box-shadow: 0 18px 42px rgba(39, 35, 31, 0.08);
 }
 
+.app-header > div:first-child {
+  min-width: 0;
+}
+
 .eyebrow {
   margin: 0 0 7px;
   color: var(--accent);
@@ -83,15 +87,15 @@ h2 {
 .app-title {
   display: flex;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .app-logo {
-  width: min(560px, 62vw);
-  height: 190px;
+  width: clamp(260px, 34vw, 470px);
+  max-width: 100%;
+  height: auto;
   display: block;
-  object-fit: cover;
-  object-position: center 42%;
+  object-fit: contain;
 }
 
 .header-copy {
@@ -119,6 +123,30 @@ h2 {
   justify-items: end;
   gap: 14px;
   min-width: 280px;
+}
+
+.language-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.language-switch select {
+  min-width: 76px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: #fff;
+  color: var(--black);
+  padding: 7px 10px;
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .project-state {
@@ -290,6 +318,24 @@ h2 {
 .workflow-step.is-locked {
   cursor: not-allowed;
   opacity: 1;
+}
+
+.workflow-step.has-change::after {
+  content: "!";
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--warn);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 950;
+  box-shadow: 0 8px 18px rgba(39, 35, 31, 0.22);
 }
 
 .workflow-step:not(.is-locked):hover,
@@ -1036,6 +1082,88 @@ td:nth-child(6) {
   margin-bottom: 10px;
 }
 
+.ai-improvement-panel .hint {
+  margin: -2px 0 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.attachment-control {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.attachment-picker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 34px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text);
+  padding: 6px 12px;
+  font-size: 0.86rem;
+  font-weight: 750;
+  line-height: 1.2;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.attachment-picker:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachment-chip {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  max-width: 100%;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  padding: 5px 8px 5px 5px;
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.attachment-chip-icon {
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--accent);
+  padding: 3px 6px;
+  font-size: 0.68rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.attachment-chip-name {
+  min-width: 0;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-chip small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
 .ai-improvement-panel button {
   width: 100%;
 }
@@ -1181,6 +1309,12 @@ tbody tr:hover td {
   border-color: var(--bad);
   background: #fee2e2;
   color: var(--bad);
+}
+
+.decision-icon.changed {
+  border-color: var(--warn);
+  background: #fef3c7;
+  color: var(--warn);
 }
 
 .final-selected-row td {
@@ -1963,7 +2097,7 @@ tbody tr.group-row:hover td {
 
   .app-logo {
     width: min(100%, 360px);
-    height: 130px;
+    height: auto;
   }
 
   .controls-panel {

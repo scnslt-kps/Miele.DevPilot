@@ -1,11 +1,46 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
-  <title id="title">Miele.DevPilot Icon</title>
-  <desc id="desc">A document with requirement lines, a check mark, and an analysis lens.</desc>
-  <rect width="64" height="64" fill="#0e0e0e"/>
-  <path d="M18 10h21l9 9v35H18z" fill="#fff"/>
-  <path d="M39 10v10h9" fill="#d9d9d9"/>
-  <path d="M24 25h16M24 32h11M24 39h8" stroke="#6f7378" stroke-width="3" stroke-linecap="round"/>
-  <path d="m25 48 5 5 10-13" fill="none" stroke="#0e0e0e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="43" cy="42" r="8" fill="none" stroke="#6f7378" stroke-width="4"/>
-  <path d="m49 48 6 6" stroke="#6f7378" stroke-width="4" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 470 96" role="img" aria-labelledby="title desc">
+  <title id="title">Miele.DevPilot</title>
+  <desc id="desc">A refined monochrome wordmark with a minimal rounded device symbol.</desc>
+  <g fill="none" fill-rule="evenodd">
+    <rect x="12" y="12" width="72" height="72" rx="20" fill="#b00020"/>
+    <text
+      x="48"
+      y="63"
+      fill="#fff"
+      font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif"
+      font-size="40"
+      font-weight="720"
+      letter-spacing="-2"
+      text-anchor="middle"
+    >DP</text>
+    <path d="M62 27h12M68 21v12" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+
+    <text
+      x="108"
+      y="49"
+      fill="#101114"
+      font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif"
+      font-size="28"
+      font-weight="650"
+      letter-spacing="-0.2"
+    >Miele</text>
+    <text
+      x="184"
+      y="49"
+      fill="#101114"
+      font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif"
+      font-size="28"
+      font-weight="420"
+      letter-spacing="-0.4"
+    >DevPilot</text>
+    <text
+      x="108"
+      y="70"
+      fill="#71757d"
+      font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif"
+      font-size="11"
+      font-weight="600"
+      letter-spacing="1.4"
+    >AI ENGINEERING PLATFORM</text>
+  </g>
 </svg>

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Miele.DevPilot</title>
-    <link rel="icon" href="Res/Miele.DevPilot_Logo.png" type="image/png" />
+    <link rel="icon" href="assets/app-icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
     <script src="vendor/xlsx.full.min.js"></script>
   </head>
@@ -14,7 +14,7 @@
         <header class="app-header">
           <div>
             <div class="app-title">
-              <img class="app-logo" src="Res/Miele.DevPilot_Logo.png" alt="Miele.DevPilot" />
+              <img class="app-logo" src="assets/app-icon.svg" alt="Miele.DevPilot" />
             </div>
             <p class="eyebrow">AI Engineering Platform</p>
             <p class="header-copy">
@@ -22,6 +22,13 @@
             </p>
           </div>
           <div class="header-state">
+            <label class="language-switch" for="languageSelect">
+              <span>Sprache</span>
+              <select id="languageSelect" aria-label="Sprache auswählen">
+                <option value="de" selected>DE</option>
+                <option value="en">EN</option>
+              </select>
+            </label>
             <div class="project-state">
               <span>Projekt</span>
               <strong id="projectHeaderName">Kein Projekt geöffnet</strong>
@@ -561,6 +568,12 @@
               <h3>AI Verbesserung</h3>
               <label for="prImprovementInstruction">Was soll verbessert werden?</label>
               <textarea id="prImprovementInstruction" rows="4" placeholder="z. B. klarer formulieren, messbarer machen, atomarer schneiden"></textarea>
+              <label for="prImprovementAttachments">Anhänge für die Verbesserung</label>
+              <div class="attachment-control">
+                <input id="prImprovementAttachments" class="visually-hidden improvement-attachment-input" type="file" multiple accept=".txt,.md,.markdown,.csv,.json,.xml,.yaml,.yml,.log,.xlsx,.xls" />
+                <label class="attachment-picker" for="prImprovementAttachments" title="Text-, CSV-, JSON-, XML-, Markdown- und Excel-Dateien werden als zusätzlicher Kontext berücksichtigt.">+ Anhang hinzufügen</label>
+                <div id="prImprovementAttachmentList" class="attachment-list" aria-live="polite"></div>
+              </div>
               <button id="prImproveButton" type="button">AI Verbesserung</button>
             </section>
             <button id="selectAiButton" class="primary" type="button">AI-Vorschlag verwenden</button>
@@ -630,8 +643,15 @@
             <h3>AI Verbesserung</h3>
             <label for="softwareImprovementInstruction">Was soll verbessert werden?</label>
             <textarea id="softwareImprovementInstruction" rows="4" placeholder="z. B. atomarer formulieren, Akzeptanzkriterien präzisieren, Fehlerfall ergänzen"></textarea>
+            <label for="softwareImprovementAttachments">Anhänge für die Verbesserung</label>
+            <div class="attachment-control">
+              <input id="softwareImprovementAttachments" class="visually-hidden improvement-attachment-input" type="file" multiple accept=".txt,.md,.markdown,.csv,.json,.xml,.yaml,.yml,.log,.xlsx,.xls" />
+              <label class="attachment-picker" for="softwareImprovementAttachments" title="Text-, CSV-, JSON-, XML-, Markdown- und Excel-Dateien werden als zusätzlicher Kontext berücksichtigt.">+ Anhang hinzufügen</label>
+              <div id="softwareImprovementAttachmentList" class="attachment-list" aria-live="polite"></div>
+            </div>
             <button id="softwareImproveButton" type="button">AI Verbesserung</button>
           </section>
+          <button id="softwareSelectionRegenerateButton" type="button" hidden>SR neu ableiten</button>
           <button id="softwareSelectionAcceptButton" class="primary" type="button">SR übernehmen</button>
         </section>
 
@@ -687,8 +707,15 @@
             <h3>AI Verbesserung</h3>
             <label for="e2eImprovementInstruction">Was soll verbessert werden?</label>
             <textarea id="e2eImprovementInstruction" rows="4" placeholder="z. B. präzisere Vorbedingungen, konkretere erwartete Ergebnisse, negative Tests ergänzen"></textarea>
+            <label for="e2eImprovementAttachments">Anhänge für die Verbesserung</label>
+            <div class="attachment-control">
+              <input id="e2eImprovementAttachments" class="visually-hidden improvement-attachment-input" type="file" multiple accept=".txt,.md,.markdown,.csv,.json,.xml,.yaml,.yml,.log,.xlsx,.xls" />
+              <label class="attachment-picker" for="e2eImprovementAttachments" title="Text-, CSV-, JSON-, XML-, Markdown- und Excel-Dateien werden als zusätzlicher Kontext berücksichtigt.">+ Anhang hinzufügen</label>
+              <div id="e2eImprovementAttachmentList" class="attachment-list" aria-live="polite"></div>
+            </div>
             <button id="e2eImproveButton" type="button">AI Verbesserung</button>
           </section>
+          <button id="e2eSelectionRegenerateButton" type="button" hidden>E2E TestCase neu ableiten</button>
           <button id="e2eSelectionAcceptButton" class="primary" type="button">E2E TestCase übernehmen</button>
         </section>
 
