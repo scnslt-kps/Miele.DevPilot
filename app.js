@@ -794,7 +794,7 @@ function renderAboutPage() {
   const tag = gitInfo.tag || "Nicht verfügbar";
   const dirtyMarker = gitInfo.dirty ? " (lokale Änderungen)" : "";
 
-  els.aboutVersion.textContent = `Git ${version}${dirtyMarker}`;
+  els.aboutVersion.textContent = `App ${version}${dirtyMarker}`;
   els.aboutBuild.textContent = `${branch} / ${commit}`;
   els.aboutTag.textContent = tag;
   els.aboutBuildDate.textContent = formatGitDate(gitInfo.date) || document.lastModified || "Nicht verfügbar";

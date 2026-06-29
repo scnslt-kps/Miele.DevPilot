@@ -1343,18 +1343,24 @@ function setCorsHeaders(res) {
 }
 
 async function getGitVersionInfo() {
-  const [description, tag, commit, branch, date, dirty] = await Promise.all([
+  const tag = await readGitValue(["describe", "--tags", "--abbrev=0"]);
+  const [description, commitsSinceTag, commit, branch, date, dirty] = await Promise.all([
     readGitValue(["describe", "--tags", "--always", "--dirty"]),
-    readGitValue(["describe", "--tags", "--exact-match"]),
+    tag ? readGitValue(["rev-list", "--count", `${tag}..HEAD`]) : "",
     readGitValue(["rev-parse", "--short", "HEAD"]),
     readGitValue(["branch", "--show-current"]),
     readGitValue(["log", "-1", "--format=%cI"]),
     readGitValue(["status", "--short"]),
   ]);
+  const build = Number(commitsSinceTag);
+  const formattedBuild = Number.isFinite(build) ? String(build).padStart(4, "0") : "0000";
+  const appVersion = tag && Number.isFinite(build) ? `${tag}.${formattedBuild}` : description || commit || "Nicht verfuegbar";
 
   return {
-    version: description || commit || "Nicht verfuegbar",
+    version: appVersion,
     tag: tag || "Nicht verfuegbar",
+    build: formattedBuild,
+    gitDescription: description || commit || "Nicht verfuegbar",
     commit: commit || "Nicht verfuegbar",
     branch: branch || "Nicht verfuegbar",
     date: date || "",
