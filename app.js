@@ -3778,7 +3778,7 @@ function columnName(index) {
 }
 
 function scoreClass(score) {
-  if (score >= 80) return "good";
+  if (score >= PRODUCT_STEP_MIN_SCORE) return "good";
   if (score >= 55) return "warn";
   return "bad";
 }
