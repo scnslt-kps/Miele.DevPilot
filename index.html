@@ -548,24 +548,11 @@
           </div>
         </dl>
 
-        <section class="techtype-panel" id="techTypeSelectionPanel" hidden>
-          <div class="techtype-panel-header">
-            <div>
-              <h3>TechTypes</h3>
-              <p id="techTypeSelectionSummary">Alle TechTypes ausgewählt</p>
-            </div>
-            <button id="selectAllTechTypesButton" type="button">Alle auswählen</button>
-          </div>
-          <div id="techTypeSelectionList" class="techtype-selection-list"></div>
-        </section>
-
         <div class="selection-grid">
           <section class="choice-card">
             <h3>Originaltext</h3>
-            <textarea id="selectionOriginalText" rows="10"></textarea>
+            <p id="selectionOriginalText" class="readonly-requirement-text"></p>
             <button id="selectOriginalButton" type="button">Original verwenden</button>
-            <button id="resetOriginalTextButton" type="button">Ursprungstext wiederherstellen</button>
-            <button id="selectEditedOriginalButton" type="button">Bearbeiteten Text verwenden</button>
           </section>
           <section class="choice-card">
             <h3>AI-Vorschlag</h3>
@@ -576,13 +563,24 @@
               <textarea id="prImprovementInstruction" rows="4" placeholder="z. B. klarer formulieren, messbarer machen, atomarer schneiden"></textarea>
               <button id="prImproveButton" type="button">AI Verbesserung</button>
             </section>
-            <button id="selectAiButton" type="button">AI-Vorschlag verwenden</button>
+            <button id="selectAiButton" class="primary" type="button">AI-Vorschlag verwenden</button>
           </section>
         </div>
 
         <section class="selection-issues">
           <h3>Hinweise aus der Analyse</h3>
           <div id="selectionIssues">Noch keine Analysehinweise vorhanden.</div>
+        </section>
+
+        <section class="techtype-panel" id="techTypeSelectionPanel" hidden>
+          <div class="techtype-panel-header">
+            <div>
+              <h3>TechTypes</h3>
+              <p id="techTypeSelectionSummary">Alle TechTypes ausgewählt</p>
+            </div>
+            <button id="selectAllTechTypesButton" type="button">Alle auswählen</button>
+          </div>
+          <div id="techTypeSelectionList" class="techtype-selection-list"></div>
         </section>
 
         <div class="selection-actions">
@@ -623,6 +621,10 @@
           <section class="acceptance-criteria-panel">
             <h3 id="softwareSelectionAcceptanceCriteriaTitle">Akzeptanzkriterien</h3>
             <div id="softwareSelectionAcceptanceCriteria">Keine Akzeptanzkriterien vorhanden.</div>
+          </section>
+          <section class="readonly-techtype-panel">
+            <h3>TechTypes</h3>
+            <div id="softwareSelectionTechTypes">Keine TechTypes zugeordnet.</div>
           </section>
           <section class="ai-improvement-panel">
             <h3>AI Verbesserung</h3>
@@ -676,6 +678,10 @@
           <section class="e2e-testcase-table-panel">
             <h3>TestCase-Tabelle</h3>
             <div id="e2eSelectionTable"></div>
+          </section>
+          <section class="readonly-techtype-panel">
+            <h3>TechTypes</h3>
+            <div id="e2eSelectionTechTypes">Keine TechTypes zugeordnet.</div>
           </section>
           <section class="ai-improvement-panel">
             <h3>AI Verbesserung</h3>

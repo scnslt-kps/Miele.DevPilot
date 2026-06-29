@@ -150,6 +150,7 @@ const els = {
   softwareImproveButton: document.querySelector("#softwareImproveButton"),
   softwareSelectionAcceptanceCriteriaTitle: document.querySelector("#softwareSelectionAcceptanceCriteriaTitle"),
   softwareSelectionAcceptanceCriteria: document.querySelector("#softwareSelectionAcceptanceCriteria"),
+  softwareSelectionTechTypes: document.querySelector("#softwareSelectionTechTypes"),
   softwareSelectionIssues: document.querySelector("#softwareSelectionIssues"),
   e2eTestsBody: document.querySelector("#e2eTestsBody"),
   e2eDerivedMetric: document.querySelector("#e2eDerivedMetric"),
@@ -170,14 +171,13 @@ const els = {
   e2eImprovementInstruction: document.querySelector("#e2eImprovementInstruction"),
   e2eImproveButton: document.querySelector("#e2eImproveButton"),
   e2eSelectionTable: document.querySelector("#e2eSelectionTable"),
+  e2eSelectionTechTypes: document.querySelector("#e2eSelectionTechTypes"),
   e2eSelectionIssues: document.querySelector("#e2eSelectionIssues"),
   selectionOverlay: document.querySelector("#selectionOverlay"),
   selectionCloseButton: document.querySelector("#selectionCloseButton"),
   selectionDeferButton: document.querySelector("#selectionDeferButton"),
   excludeRequirementButton: document.querySelector("#excludeRequirementButton"),
   selectOriginalButton: document.querySelector("#selectOriginalButton"),
-  selectEditedOriginalButton: document.querySelector("#selectEditedOriginalButton"),
-  resetOriginalTextButton: document.querySelector("#resetOriginalTextButton"),
   selectAiButton: document.querySelector("#selectAiButton"),
   selectionId: document.querySelector("#selectionId"),
   selectionName: document.querySelector("#selectionName"),
@@ -373,11 +373,10 @@ els.selectionCloseButton.addEventListener("click", closeSelectionDialog);
 els.selectionDeferButton.addEventListener("click", closeSelectionDialog);
 els.excludeRequirementButton.addEventListener("click", excludeRequirement);
 els.selectOriginalButton.addEventListener("click", () => selectFinalText("original"));
-els.selectEditedOriginalButton.addEventListener("click", () => selectFinalText("edited-original"));
-els.resetOriginalTextButton.addEventListener("click", resetOriginalText);
 els.selectAiButton.addEventListener("click", () => selectFinalText("ai"));
 els.prImproveButton.addEventListener("click", improveProductRequirementWithAi);
 els.selectAllTechTypesButton.addEventListener("click", selectAllTechTypesForActiveRequirement);
+els.techTypeSelectionList.addEventListener("click", handleTechTypeSelectionClick);
 els.techTypeSelectionList.addEventListener("change", handleTechTypeSelectionChange);
 els.selectionOverlay.addEventListener("click", (event) => {
   if (event.target === els.selectionOverlay) {
@@ -731,7 +730,8 @@ async function handleFile(event) {
   state.techTypes = extractTechTypesFromWorkbook(state.workbook);
 
   els.sheetSelect.innerHTML = "";
-  const requirementSheetNames = state.workbook.SheetNames.filter((name) => String(name || "").trim().toLowerCase() !== "techtype");
+  const techTypeSheet = techTypeSheetName(state.workbook);
+  const requirementSheetNames = state.workbook.SheetNames.filter((name) => name !== techTypeSheet);
   const selectableSheetNames = requirementSheetNames.length ? requirementSheetNames : state.workbook.SheetNames;
   for (const name of selectableSheetNames) {
     els.sheetSelect.append(new Option(name, name));
@@ -900,7 +900,7 @@ function loadSheet(sheetName) {
 }
 
 function extractTechTypesFromWorkbook(workbook) {
-  const sheetName = workbook?.SheetNames?.find((name) => String(name || "").trim().toLowerCase() === "techtype");
+  const sheetName = techTypeSheetName(workbook);
   if (!sheetName) return [];
 
   const worksheet = workbook.Sheets[sheetName];
@@ -932,14 +932,20 @@ function extractTechTypesFromWorkbook(workbook) {
 function fillTechTypeColumnSelects() {
   els.techTypeValueClassColumn.innerHTML = "";
   els.techTypeDesignationColumn.innerHTML = "";
-  els.techTypeValueClassColumn.append(new Option("Automatisch erkennen", ""));
-  els.techTypeDesignationColumn.append(new Option("Automatisch erkennen", ""));
 
-  const sheetName = state.workbook?.SheetNames?.find((name) => String(name || "").trim().toLowerCase() === "techtype");
+  const sheetName = techTypeSheetName(state.workbook);
   const worksheet = sheetName ? state.workbook.Sheets[sheetName] : null;
   const rows = worksheet ? XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" }) : [];
   const headerIndex = techTypeHeaderIndex(rows);
   const headers = headerIndex >= 0 ? rows[headerIndex] : [];
+
+  if (!sheetName) {
+    els.techTypeValueClassColumn.append(new Option("Kein TechType-Sheet gefunden", ""));
+    els.techTypeDesignationColumn.append(new Option("Kein TechType-Sheet gefunden", ""));
+  } else if (!headers.length) {
+    els.techTypeValueClassColumn.append(new Option("Keine Spalten im TechType-Sheet gefunden", ""));
+    els.techTypeDesignationColumn.append(new Option("Keine Spalten im TechType-Sheet gefunden", ""));
+  }
 
   headers.forEach((header, index) => {
     const label = `${columnName(index)} - ${String(header || "").trim() || `Spalte ${columnName(index)}`}`;
@@ -950,6 +956,23 @@ function fillTechTypeColumnSelects() {
   const hasTechTypeColumns = headers.length > 0;
   els.techTypeValueClassColumn.disabled = !hasTechTypeColumns;
   els.techTypeDesignationColumn.disabled = !hasTechTypeColumns;
+  if (!hasTechTypeColumns) return;
+
+  const normalizedHeaders = headers.map(normalizeHeaderName);
+  const valueClassIndex = normalizedHeaders.indexOf("valueclass");
+  const designationIndex = normalizedHeaders.indexOf("appliancedesignation");
+  els.techTypeValueClassColumn.value = String(valueClassIndex >= 0 ? valueClassIndex : 0);
+  els.techTypeDesignationColumn.value = String(designationIndex >= 0 ? designationIndex : Math.min(1, headers.length - 1));
+}
+
+function techTypeSheetName(workbook) {
+  if (!Array.isArray(workbook?.SheetNames)) return "";
+
+  return (
+    workbook.SheetNames.find((name) => normalizeHeaderName(name) === "techtype") ||
+    workbook.SheetNames.find((name) => normalizeHeaderName(name).includes("techtype")) ||
+    ""
+  );
 }
 
 function techTypeHeaderIndex(rows) {
@@ -959,23 +982,35 @@ function techTypeHeaderIndex(rows) {
     row.some((cell) => normalizeHeaderName(cell) === "valueclass") ||
     row.some((cell) => normalizeHeaderName(cell) === "appliancedesignation"),
   );
-  return detectedIndex >= 0 ? detectedIndex : 0;
+  if (detectedIndex >= 0) return detectedIndex;
+
+  return rows.findIndex((row) => row.some((cell) => String(cell || "").trim()));
 }
 
 function techTypeColumnIndex(selectedValue, headers, fallbackHeaderName) {
-  if (selectedValue !== "") {
-    const index = Number(selectedValue);
-    return Number.isInteger(index) ? index : -1;
-  }
+  const index = Number(selectedValue);
+  if (Number.isInteger(index) && index >= 0) return index;
 
-  return headers.indexOf(fallbackHeaderName);
+  const fallbackIndex = headers.indexOf(fallbackHeaderName);
+  return fallbackIndex >= 0 ? fallbackIndex : -1;
 }
 
 function refreshTechTypesFromSettings() {
   if (!state.workbook) return;
 
   state.techTypes = extractTechTypesFromWorkbook(state.workbook);
+  assignDefaultTechTypesToRequirements();
   refreshRequirements();
+}
+
+function assignDefaultTechTypesToRequirements() {
+  const techTypes = allTechTypeDesignations();
+  if (!techTypes.length) return;
+
+  state.requirements = state.requirements.map((requirement) => ({
+    ...requirement,
+    techTypes: Array.isArray(requirement.techTypes) && requirement.techTypes.length ? requirement.techTypes : techTypes,
+  }));
 }
 
 function normalizeHeaderName(value) {
@@ -1097,7 +1132,7 @@ async function analyzeRequirements() {
   state.scoreFilterActive = false;
   state.analysisComplete = false;
   updateExportAvailability();
-  await showProgress(state.requirements.length, { requirements: state.requirements, mode: "pr-analysis" });
+  await showProgress(state.requirements.length, { requirements: state.requirements, mode: "pr-analysis", batchSize: ANALYSIS_BATCH_SIZE });
 
   try {
     const results = [];
@@ -1204,7 +1239,7 @@ function renderTable() {
           <td>${item.rowNumber}</td>
           <td>${escapeHtml(item.id || "-")}</td>
           <td>${escapeHtml(item.name || item.id || "-")}</td>
-          <td class="${selection?.choice === "original" || selection?.choice === "edited-original" ? "selected-text" : ""} ${isExcluded ? "excluded-text" : ""}">${escapeHtml(item.text)}</td>
+          <td class="${selection?.choice === "original" ? "selected-text" : ""} ${isExcluded ? "excluded-text" : ""}">${escapeHtml(item.text)}</td>
           <td>${renderScoreCell(result, score, isSelected, isExcluded, isUpdatingFinalScore)}</td>
           <td>${result ? renderIssues(issues) : "-"}</td>
           <td class="${selection?.choice === "ai" ? "selected-text" : ""} ${isExcluded ? "excluded-text" : ""}">${result ? escapeHtml(result.rewrittenRequirement || "") : "-"}</td>
@@ -1261,7 +1296,7 @@ function openSelectionDialog(rowNumber) {
   els.selectionName.textContent = item.name || item.id || "-";
   els.selectionGroup.textContent = `${item.category || "Ohne Kategorie"} / ${item.subcategory || "Ohne Subkategorie"}`;
   els.selectionScore.textContent = result ? displayProductScore(result, state.finalSelections.get(rowNumber)) : "-";
-  els.selectionOriginalText.value = item.text;
+  els.selectionOriginalText.textContent = item.text;
   els.selectionAiText.textContent = result?.rewrittenRequirement || "Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen.";
   els.prImprovementInstruction.value = "";
   renderTechTypeSelection(item, state.finalSelections.get(rowNumber));
@@ -1279,12 +1314,19 @@ function closeSelectionDialog() {
 
 function renderTechTypeSelection(requirement, selection) {
   if (!state.techTypes.length) {
-    els.techTypeSelectionPanel.hidden = true;
-    els.techTypeSelectionList.innerHTML = "";
+    els.techTypeSelectionPanel.hidden = false;
+    els.selectAllTechTypesButton.disabled = true;
+    els.techTypeSelectionSummary.textContent = "Keine TechTypes erkannt";
+    els.techTypeSelectionList.innerHTML = `
+      <p class="techtype-empty">
+        Keine TechTypes verfügbar. Prüfe im Datei-Import die TechType-Spalten für Gruppierung und Appliance Designation.
+      </p>
+    `;
     return;
   }
 
   els.techTypeSelectionPanel.hidden = false;
+  els.selectAllTechTypesButton.disabled = false;
   const selected = new Set(selectedTechTypesForRequirement(requirement, selection));
   const groups = groupedTechTypes();
   els.techTypeSelectionList.innerHTML = groups
@@ -1294,22 +1336,24 @@ function renderTechTypeSelection(requirement, selection) {
       return `
         <details class="techtype-group" open>
           <summary>
-            <label>
+            <label class="techtype-group-select">
               <input type="checkbox" data-techtype-group="${escapeHtml(group.valueClass)}" ${groupChecked ? "checked" : ""} />
               <span>${escapeHtml(group.valueClass)}</span>
-              <small>${groupSelectedCount} / ${group.items.length}</small>
             </label>
+            <small>${groupSelectedCount} / ${group.items.length}</small>
+            <button class="techtype-toggle" type="button" data-techtype-toggle aria-label="Gruppe ein- oder ausklappen"></button>
           </summary>
           <div class="techtype-options">
             ${group.items
-              .map(
-                (item) => `
+              .map((item, index) => {
+                const designation = item.designation || `TechType ${index + 1}`;
+                return `
                   <label>
                     <input type="checkbox" data-techtype-designation="${escapeHtml(item.designation)}" data-techtype-designation-group="${escapeHtml(item.valueClass)}" ${selected.has(item.designation) ? "checked" : ""} />
-                    <span>${escapeHtml(item.designation)}</span>
+                    <span title="${escapeHtml(designation)}">${escapeHtml(designation)}</span>
                   </label>
-                `,
-              )
+                `;
+              })
               .join("")}
           </div>
         </details>
@@ -1374,6 +1418,21 @@ function handleTechTypeSelectionChange(event) {
   syncTechTypeGroupCheckboxes();
   renderTechTypeSummary();
   persistActiveRequirementTechTypes();
+}
+
+function handleTechTypeSelectionClick(event) {
+  const toggleButton = event.target.closest("[data-techtype-toggle]");
+  if (toggleButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const group = toggleButton.closest(".techtype-group");
+    if (group) group.open = !group.open;
+    return;
+  }
+
+  if (event.target.closest(".techtype-group-select")) {
+    event.stopPropagation();
+  }
 }
 
 function syncTechTypeGroupCheckboxes() {
@@ -1444,17 +1503,6 @@ function excludeRequirement() {
   updateExportAvailability();
 }
 
-function resetOriginalText() {
-  const rowNumber = state.activeSelectionRow;
-  if (!rowNumber) return;
-
-  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === rowNumber);
-  if (!item) return;
-
-  els.selectionOriginalText.value = item.text;
-  els.selectionOriginalText.focus();
-}
-
 async function improveProductRequirementWithAi() {
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
@@ -1472,7 +1520,7 @@ async function improveProductRequirementWithAi() {
     return;
   }
 
-  const currentText = result?.rewrittenRequirement || els.selectionOriginalText.value.trim() || item.text;
+  const currentText = result?.rewrittenRequirement || item.text;
   const previousStatus = els.prImproveButton.textContent;
   els.prImproveButton.disabled = true;
   els.selectAiButton.disabled = true;
@@ -1538,9 +1586,7 @@ async function selectFinalText(choice) {
   const text =
     choice === "ai"
       ? result?.rewrittenRequirement
-      : choice === "edited-original"
-        ? els.selectionOriginalText.value.trim()
-        : item?.text;
+      : item?.text;
 
   if (!item || !text) return;
   if (state.techTypes.length && !currentTechTypeSelection().length) {
@@ -1929,6 +1975,17 @@ function renderAcceptanceCriteriaList(value, label = "Akzeptanzkriterien") {
   `;
 }
 
+function renderReadOnlyTechTypes(value) {
+  const items = Array.isArray(value) ? value.filter(Boolean) : [];
+  if (!items.length) return "Keine TechTypes zugeordnet.";
+
+  return `
+    <div class="readonly-techtype-list">
+      ${items.map((item) => `<span title="${escapeHtml(item)}">${escapeHtml(item)}</span>`).join("")}
+    </div>
+  `;
+}
+
 function acceptanceCriteriaLabelForSoftwareRequirement(item) {
   const criteria = Array.isArray(item?.acceptanceCriteria) ? item.acceptanceCriteria.join(" ") : String(item?.acceptanceCriteria || "");
   return isLikelyEnglishText(`${item?.text || ""} ${criteria}`)
@@ -2022,6 +2079,7 @@ function openSoftwareSelectionDialog(softwareId) {
   const acceptanceCriteriaLabel = acceptanceCriteriaLabelForSoftwareRequirement(item);
   els.softwareSelectionAcceptanceCriteriaTitle.textContent = acceptanceCriteriaLabel;
   els.softwareSelectionAcceptanceCriteria.innerHTML = renderAcceptanceCriteriaList(item.acceptanceCriteria, acceptanceCriteriaLabel);
+  els.softwareSelectionTechTypes.innerHTML = renderReadOnlyTechTypes(item.techTypes);
   els.softwareSelectionIssues.innerHTML = item.issues?.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
   els.softwareSelectionOverlay.hidden = false;
 }
@@ -2103,6 +2161,7 @@ async function improveSoftwareRequirementWithAi() {
       sourceId: item.sourceId,
       category: item.category,
       subcategory: item.subcategory,
+      techTypes: Array.isArray(item.techTypes) ? item.techTypes : [],
       text: improved.text || item.text || "",
       acceptanceCriteria: Array.isArray(improved.acceptanceCriteria) ? improved.acceptanceCriteria : item.acceptanceCriteria || [],
       score: Number(improved.score),
@@ -2114,6 +2173,7 @@ async function improveSoftwareRequirementWithAi() {
     const acceptanceCriteriaLabel = acceptanceCriteriaLabelForSoftwareRequirement(item);
     els.softwareSelectionAcceptanceCriteriaTitle.textContent = acceptanceCriteriaLabel;
     els.softwareSelectionAcceptanceCriteria.innerHTML = renderAcceptanceCriteriaList(item.acceptanceCriteria, acceptanceCriteriaLabel);
+    els.softwareSelectionTechTypes.innerHTML = renderReadOnlyTechTypes(item.techTypes);
     els.softwareSelectionIssues.innerHTML = item.issues.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
     els.softwareImprovementInstruction.value = "";
     state.e2eTests = [];
@@ -2270,22 +2330,47 @@ async function generateSoftwareRequirements() {
   setStatus("Leite Software Requirements ab...");
   els.generateSoftwareButton.disabled = true;
   els.generateSoftwareMenuButton.disabled = true;
-  await showProgress(requirements.length, { requirements, mode: "sr-derivation" });
+  await showProgress(requirements.length, { requirements, mode: "sr-derivation", batchSize: ANALYSIS_BATCH_SIZE });
 
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requirementType: "software", requirements }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Software Requirements konnten nicht abgeleitet werden");
+    const rawSoftwareRequirements = [];
+    const totalBatches = Math.ceil(requirements.length / ANALYSIS_BATCH_SIZE);
+    let processed = 0;
+
+    for (let index = 0; index < requirements.length; index += ANALYSIS_BATCH_SIZE) {
+      const batchNumber = Math.floor(index / ANALYSIS_BATCH_SIZE) + 1;
+      const batch = requirements.slice(index, index + ANALYSIS_BATCH_SIZE);
+      setStatus(`Leite Software Requirements ab ${batchNumber}/${totalBatches}`);
+      updateProgress({
+        processed,
+        total: requirements.length,
+        batchNumber,
+        totalBatches,
+      });
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requirementType: "software", requirements: batch }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Software Requirements konnten nicht abgeleitet werden");
+      }
+
+      addOpenAiUsage(data.openAiUsage);
+      rawSoftwareRequirements.push(...(Array.isArray(data.softwareRequirements) ? data.softwareRequirements : []));
+      processed += batch.length;
+      updateProgress({
+        processed,
+        total: requirements.length,
+        batchNumber,
+        totalBatches,
+      });
     }
 
-    addOpenAiUsage(data.openAiUsage);
     state.softwareRequirements = normalizeSoftwareRequirements(
-      Array.isArray(data.softwareRequirements) ? data.softwareRequirements : [],
+      rawSoftwareRequirements,
       requirements,
     );
     state.softwareSelections = new Map();
@@ -2295,7 +2380,7 @@ async function generateSoftwareRequirements() {
     state.e2eScoreFilterActive = false;
     resetSoftwareWindchillTransfer();
     setStatus("Software Requirements erstellt");
-    completeProgress(state.softwareRequirements.length);
+    completeProgress(requirements.length);
   } catch (error) {
     setStatus("Fehler");
     hideProgress();
@@ -2340,6 +2425,11 @@ function normalizeSoftwareRequirements(softwareRequirements, sourceRequirements)
       sourceId: item.sourceId || source.id || "",
       category: item.category || source.category || "",
       subcategory: item.subcategory || source.subcategory || "",
+      techTypes: Array.isArray(item.techTypes) && item.techTypes.length
+        ? item.techTypes
+        : Array.isArray(source.techTypes)
+          ? source.techTypes
+          : [],
       source,
     };
   });
@@ -2553,6 +2643,7 @@ function getFinalSoftwareRequirements() {
         subcategory: item.subcategory || sourceProductRequirement?.subcategory || "",
         text: selection.text || item.text || "",
         acceptanceCriteria: Array.isArray(item.acceptanceCriteria) ? item.acceptanceCriteria : [],
+        techTypes: Array.isArray(item.techTypes) ? item.techTypes : [],
         score: Number(selection.score),
       };
     })
@@ -2736,6 +2827,7 @@ function openE2eSelectionDialog(e2eId) {
   els.e2eSelectionText.value = text;
   els.e2eImprovementInstruction.value = "";
   els.e2eSelectionTable.innerHTML = renderE2eTestCaseTable(item);
+  els.e2eSelectionTechTypes.innerHTML = renderReadOnlyTechTypes(item.techTypes);
   els.e2eSelectionIssues.innerHTML = item.issues?.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
   els.e2eSelectionOverlay.hidden = false;
 }
@@ -2810,6 +2902,7 @@ async function improveE2eTestWithAi() {
       id: item.id,
       sourceId: item.sourceId,
       sourcePrId: improved.sourcePrId || item.sourcePrId,
+      techTypes: Array.isArray(item.techTypes) ? item.techTypes : [],
       description: improved.description || improved.text || item.description || item.text || "",
       text: improved.description || improved.text || item.text || "",
       score: Number(improved.score),
@@ -2819,6 +2912,7 @@ async function improveE2eTestWithAi() {
     els.e2eSelectionScore.textContent = item.score ?? "-";
     els.e2eSelectionText.value = item.description || item.text || "";
     els.e2eSelectionTable.innerHTML = renderE2eTestCaseTable(item);
+    els.e2eSelectionTechTypes.innerHTML = renderReadOnlyTechTypes(item.techTypes);
     els.e2eSelectionIssues.innerHTML = item.issues.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
     els.e2eImprovementInstruction.value = "";
     renderE2ePage();
@@ -2974,25 +3068,50 @@ async function generateE2eTests() {
   setStatus("Leite E2E TestCases ab...");
   els.generateE2eButton.disabled = true;
   els.generateE2eMenuButton.disabled = true;
-  await showProgress(requirements.length, { requirements, mode: "e2e-derivation" });
+  await showProgress(requirements.length, { requirements, mode: "e2e-derivation", batchSize: ANALYSIS_BATCH_SIZE });
 
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requirementType: "e2e", requirements }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "E2E TestCases konnten nicht abgeleitet werden");
+    const rawE2eTests = [];
+    const totalBatches = Math.ceil(requirements.length / ANALYSIS_BATCH_SIZE);
+    let processed = 0;
+
+    for (let index = 0; index < requirements.length; index += ANALYSIS_BATCH_SIZE) {
+      const batchNumber = Math.floor(index / ANALYSIS_BATCH_SIZE) + 1;
+      const batch = requirements.slice(index, index + ANALYSIS_BATCH_SIZE);
+      setStatus(`Leite E2E TestCases ab ${batchNumber}/${totalBatches}`);
+      updateProgress({
+        processed,
+        total: requirements.length,
+        batchNumber,
+        totalBatches,
+      });
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requirementType: "e2e", requirements: batch }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "E2E TestCases konnten nicht abgeleitet werden");
+      }
+
+      addOpenAiUsage(data.openAiUsage);
+      rawE2eTests.push(...(Array.isArray(data.e2eTests) ? data.e2eTests : []));
+      processed += batch.length;
+      updateProgress({
+        processed,
+        total: requirements.length,
+        batchNumber,
+        totalBatches,
+      });
     }
 
-    addOpenAiUsage(data.openAiUsage);
-    state.e2eTests = normalizeE2eTests(Array.isArray(data.e2eTests) ? data.e2eTests : [], requirements);
+    state.e2eTests = normalizeE2eTests(rawE2eTests, requirements);
     state.e2eSelections = new Map();
     state.e2eScoreFilterActive = false;
     setStatus("E2E TestCases erstellt");
-    completeProgress(state.e2eTests.length);
+    completeProgress(requirements.length);
   } catch (error) {
     setStatus("Fehler");
     hideProgress();
@@ -3019,6 +3138,11 @@ function normalizeE2eTests(e2eTests, sourceRequirements) {
           : Array.isArray(source.acceptanceCriteria)
             ? source.acceptanceCriteria
             : [],
+      techTypes: Array.isArray(item.techTypes) && item.techTypes.length
+        ? item.techTypes
+        : Array.isArray(source.techTypes)
+          ? source.techTypes
+          : [],
       description: item.description || item.text || "",
       source,
     };
@@ -3533,8 +3657,12 @@ function applyImportConfig(config) {
   setSelectValue(els.requirementColumn, config.requirementColumn);
   setSelectValue(els.idColumn, config.idColumn);
   els.idPrefix.value = config.idPrefix || "REQ";
-  setSelectValue(els.techTypeValueClassColumn, config.techTypeValueClassColumn);
-  setSelectValue(els.techTypeDesignationColumn, config.techTypeDesignationColumn);
+  if (config.techTypeValueClassColumn != null && config.techTypeValueClassColumn !== "") {
+    setSelectValue(els.techTypeValueClassColumn, config.techTypeValueClassColumn);
+  }
+  if (config.techTypeDesignationColumn != null && config.techTypeDesignationColumn !== "") {
+    setSelectValue(els.techTypeDesignationColumn, config.techTypeDesignationColumn);
+  }
   updateAutoIdControls();
 }
 
@@ -3710,7 +3838,7 @@ async function showProgress(total, options = {}) {
   state.progressProcessed = 0;
   state.progressTotal = total;
   state.progressBatchNumber = 0;
-  state.progressTotalBatches = 0;
+  state.progressTotalBatches = progressTotalBatches(total, options);
   state.progressEstimatedRemainingMs = null;
   state.progressInitialEstimatedMs = null;
   state.progressMode = options.mode || "";
@@ -3734,11 +3862,11 @@ function updateProgress({ processed, total, batchNumber, totalBatches }) {
   state.progressTotal = total;
   state.progressBatchNumber = batchNumber;
   state.progressTotalBatches = totalBatches;
-  const measuredRemainingMs = estimateRemainingMs(processed, total);
+  const measuredRemainingMs = estimateRemainingMs({ processed, total, batchNumber, totalBatches });
   if (measuredRemainingMs != null) {
     state.progressEstimatedRemainingMs = measuredRemainingMs;
   }
-  const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+  const percent = progressPercent({ processed, total, batchNumber, totalBatches });
   els.progressText.textContent = `Batch ${batchNumber} von ${totalBatches} wird verarbeitet.`;
   els.progressBar.style.width = `${percent}%`;
   renderProgressDetail();
@@ -3772,10 +3900,15 @@ function tickProgressCountdown() {
 function renderProgressDetail() {
   const processed = Number(state.progressProcessed) || 0;
   const total = Number(state.progressTotal) || 0;
+  const batchNumber = Number(state.progressBatchNumber) || 0;
+  const totalBatches = Number(state.progressTotalBatches) || 0;
   const elapsed = state.progressStartedAt ? Date.now() - state.progressStartedAt : 0;
   const remaining = state.progressEstimatedRemainingMs;
   const remainingText = remaining == null ? "Restzeit wird berechnet" : `Restzeit ca. ${formatDuration(remaining)}`;
-  els.progressDetail.textContent = `${processed} von ${total} Requirements verarbeitet · Laufzeit ${formatDuration(elapsed)} · ${remainingText}`;
+  const batchText = totalBatches > 1
+    ? ` · Batch ${Math.min(batchNumber || 1, totalBatches)} von ${totalBatches}`
+    : "";
+  els.progressDetail.textContent = `${processed} von ${total} Requirements verarbeitet${batchText} · Laufzeit ${formatDuration(elapsed)} · ${remainingText}`;
   renderProgressTimeBar(elapsed, remaining);
 }
 
@@ -3792,12 +3925,48 @@ function renderProgressTimeBar(elapsed, remaining) {
   els.progressTimeText.textContent = `${percent}% · ${formatDuration(remaining)} verbleibend`;
 }
 
-function estimateRemainingMs(processed, total) {
-  if (!state.progressStartedAt || processed <= 0 || total <= 0 || processed >= total) return processed >= total ? 0 : null;
+function estimateRemainingMs({ processed, total, totalBatches }) {
+  if (!state.progressStartedAt || total <= 0) return null;
+  if (processed >= total) return 0;
 
   const elapsed = Date.now() - state.progressStartedAt;
+  if (totalBatches > 1) {
+    const completedBatches = completedProgressBatches(processed, total, totalBatches);
+    if (completedBatches <= 0) return null;
+
+    const averageMsPerBatch = elapsed / completedBatches;
+    return Math.max(Math.round(averageMsPerBatch * (totalBatches - completedBatches)), 0);
+  }
+
+  if (processed <= 0) return null;
+
   const averageMsPerItem = elapsed / processed;
   return Math.max(Math.round(averageMsPerItem * (total - processed)), 0);
+}
+
+function progressTotalBatches(total, options = {}) {
+  if (!options.batchSize) return 0;
+
+  return Math.max(Math.ceil((Number(total) || 0) / Number(options.batchSize)), 1);
+}
+
+function completedProgressBatches(processed, total, totalBatches) {
+  if (processed >= total) return totalBatches;
+
+  return Math.min(Math.floor(Math.max(processed, 0) / ANALYSIS_BATCH_SIZE), totalBatches);
+}
+
+function progressPercent({ processed, total, batchNumber, totalBatches }) {
+  if (total <= 0) return 0;
+
+  if (totalBatches > 1) {
+    const completedBatches = completedProgressBatches(processed, total, totalBatches);
+    const currentBatchHint = processed < total && batchNumber > completedBatches ? 0.08 : 0;
+    const batchProgress = Math.min(completedBatches + currentBatchHint, totalBatches);
+    return Math.max(0, Math.min(100, Math.round((batchProgress / totalBatches) * 100)));
+  }
+
+  return Math.max(0, Math.min(100, Math.round((processed / total) * 100)));
 }
 
 function calculateInitialProgressEstimate(total, options = {}) {
