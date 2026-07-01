@@ -52,6 +52,11 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "POST" && pathname === "/api/translate-feedback") {
+      await handleTranslateFeedback(req, res);
+      return;
+    }
+
     if (req.method === "POST" && pathname === "/api/save-project") {
       await handleSaveProject(req, res);
       return;
@@ -120,6 +125,7 @@ async function handleAnalyze(req, res) {
   const improvementAttachments = cleanImprovementAttachments(body.improvementAttachments);
   const analysisMode = body.analysisMode === "final" ? "final" : "initial";
   const finalChoice = body.finalChoice === "original" ? "original" : "ai";
+  const uiLanguage = normalizeUiLanguage(body.uiLanguage);
   const cleaned = requirements
     .map((item) => ({
       rowNumber: Number(item.rowNumber),
@@ -147,27 +153,27 @@ async function handleAnalyze(req, res) {
   }
 
   if (requirementType === "product-improvement") {
-    await handleProductImprovement(cleaned[0], String(body.improvementInstruction || "").trim(), improvementAttachments, res);
+    await handleProductImprovement(cleaned[0], String(body.improvementInstruction || "").trim(), improvementAttachments, uiLanguage, res);
     return;
   }
 
   if (requirementType === "software") {
-    await handleSoftwareDerivation(cleaned, res);
+    await handleSoftwareDerivation(cleaned, uiLanguage, res);
     return;
   }
 
   if (requirementType === "software-improvement") {
-    await handleSoftwareImprovement(cleaned[0], cleanSoftwareRequirement(body.softwareRequirement), String(body.improvementInstruction || "").trim(), improvementAttachments, res);
+    await handleSoftwareImprovement(cleaned[0], cleanSoftwareRequirement(body.softwareRequirement), String(body.improvementInstruction || "").trim(), improvementAttachments, uiLanguage, res);
     return;
   }
 
   if (requirementType === "e2e") {
-    await handleE2eDerivation(cleaned, res);
+    await handleE2eDerivation(cleaned, uiLanguage, res);
     return;
   }
 
   if (requirementType === "e2e-improvement") {
-    await handleE2eImprovement(cleaned[0], cleanE2eTestCase(body.testCase), String(body.improvementInstruction || "").trim(), improvementAttachments, res);
+    await handleE2eImprovement(cleaned[0], cleanE2eTestCase(body.testCase), String(body.improvementInstruction || "").trim(), improvementAttachments, uiLanguage, res);
     return;
   }
 
@@ -212,7 +218,7 @@ async function handleAnalyze(req, res) {
                   : "Assess each Product Requirement for clarity, testability, completeness, atomicity, consistency, solution neutrality, measurability, ambiguity, and suitability as a basis for deriving Software Requirements later. Rewrite the Product Requirement so the generated text addresses the detected weaknesses. Do not include acceptance criteria, Given/When/Then blocks, test steps, or bullet-style verification criteria.",
               scoring:
                 "Return originalScore and originalIssues for the original input Product Requirement. Return score, verdict, and issues for the rewrittenRequirement. Score 0-100 where 100 is a high-quality Product Requirement from which high-quality Software Requirements can be derived later. If the rewrittenRequirement addresses all relevant weaknesses, return score 100 and no issues. Severity must be low, medium, or high.",
-              languageRules: preserveSourceLanguageInstruction(),
+              languageRules: preserveSourceLanguageInstruction(uiLanguage),
               rewritingRules:
                 "The rewrittenRequirement must remain a Product Requirement. Do not turn it into a Software Requirement and do not introduce implementation decisions that are not present in or safely inferable from the Product Requirement. It should describe the user or business need, outcome, scope, and relevant context clearly; remain solution-neutral; be complete enough to derive one or more Software Requirements in a later step; and stay verifiable, measurable, consistent, unambiguous, and as atomic as practical at Product Requirement level. It must not include acceptance criteria, Given/When/Then blocks, test steps, or bullet-style verification criteria. Apply the improvement suggestions internally while rewriting. Report issues only for remaining weaknesses in the rewrittenRequirement.",
               requirements: cleaned,
@@ -322,8 +328,134 @@ async function handleAnalyze(req, res) {
   }
 }
 
-function preserveSourceLanguageInstruction() {
-  return "Preserve the source language of each requirement or test case. German input must be improved or derived in German. English input must be improved or derived in English. Do not translate PR, SR, acceptance criteria, E2E descriptions, groups, preconditions, test data, test steps, expected results, issues, suggestions, or rationales into another language unless the user's improvement instruction explicitly asks for a language change. Preserve IDs and technical names unchanged.";
+async function handleTranslateFeedback(req, res) {
+  const body = await readJsonBody(req, 500_000);
+  const uiLanguage = normalizeUiLanguage(body.uiLanguage);
+  const items = Array.isArray(body.items)
+    ? body.items
+        .slice(0, 100)
+        .map((item, index) => ({
+          id: String(item?.id || index).slice(0, 120),
+          criterion: String(item?.criterion || "").slice(0, 1000),
+          explanation: String(item?.explanation || "").slice(0, 3000),
+          suggestion: String(item?.suggestion || "").slice(0, 3000),
+        }))
+        .filter((item) => item.criterion || item.explanation || item.suggestion)
+    : [];
+
+  if (!items.length) {
+    sendJson(res, 200, { items: [] });
+    return;
+  }
+
+  if (process.env.OPENAI_MOCK === "true") {
+    sendJson(res, 200, { items });
+    return;
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    sendJson(res, 500, { error: "OPENAI_API_KEY is not configured on the server." });
+    return;
+  }
+
+  let response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-5.5",
+        input: [
+          {
+            role: "system",
+            content:
+              "Translate requirements-engineering quality feedback. Return only valid JSON that matches the schema. Preserve IDs, product names, technical identifiers, numbers, units, and acronyms. Do not add new feedback.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              targetLanguage: uiLanguageName(uiLanguage),
+              instructions:
+                "Translate criterion, explanation, and suggestion into the target language. Keep the meaning concise and professional. Do not translate severity enum values, IDs, or technical names.",
+              items,
+            }),
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "translated_quality_feedback",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                items: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      id: { type: "string" },
+                      criterion: { type: "string" },
+                      explanation: { type: "string" },
+                      suggestion: { type: "string" },
+                    },
+                    required: ["id", "criterion", "explanation", "suggestion"],
+                  },
+                },
+              },
+              required: ["items"],
+            },
+          },
+        },
+        max_output_tokens: 12000,
+      }),
+    });
+  } catch (error) {
+    console.error("OpenAI feedback translation failed:", error);
+    sendJson(res, 502, { error: "OpenAI request could not be completed. Check network connectivity and try again." });
+    return;
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    sendJson(res, response.status, { error: payload.error?.message || "OpenAI request failed." });
+    return;
+  }
+
+  const outputText = extractOutputText(payload);
+  if (!outputText) {
+    sendJson(res, 502, { error: "OpenAI returned no parseable output." });
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(outputText);
+    sendJson(res, 200, {
+      items: Array.isArray(parsed.items) ? parsed.items : [],
+      openAiUsage: buildOpenAiUsageSummary(payload),
+    });
+  } catch (error) {
+    console.error("Could not parse OpenAI feedback translation output:", outputText, error);
+    sendJson(res, 502, { error: "OpenAI returned invalid JSON." });
+  }
+}
+
+function normalizeUiLanguage(value) {
+  return value === "en" ? "en" : "de";
+}
+
+function uiLanguageName(language) {
+  return language === "en" ? "English" : "German";
+}
+
+function preserveSourceLanguageInstruction(uiLanguage = "de") {
+  return `Preserve the source language of each requirement or test case for PR text, SR text, acceptance criteria, E2E descriptions, groups, preconditions, test data, test steps, and expected results. German source artifacts must remain German; English source artifacts must remain English. However, write all user-facing quality feedback fields in ${uiLanguageName(uiLanguage)}: criterion, explanation, suggestion, verdict, rationale, and any remaining issue descriptions. Keep the severity enum values exactly low, medium, or high. Preserve IDs and technical names unchanged.`;
 }
 
 function cleanImprovementAttachments(value) {
@@ -344,7 +476,7 @@ function attachmentInstruction(attachments) {
   return "Use the provided improvementAttachments as additional context for the requested improvement. Prefer explicit user instructions over attachment content. Preserve requirement intent and traceability. Do not copy irrelevant attachment text verbatim. If an attachment is marked truncated, use only the available excerpt and do not invent missing content.";
 }
 
-async function handleProductImprovement(requirement, improvementInstruction, improvementAttachments, res) {
+async function handleProductImprovement(requirement, improvementInstruction, improvementAttachments, uiLanguage, res) {
   if (!requirement?.text) {
     sendJson(res, 400, { error: "Product Requirement is required." });
     return;
@@ -399,7 +531,7 @@ async function handleProductImprovement(requirement, improvementInstruction, imp
             content: JSON.stringify({
               task:
                 "Improve the Product Requirement according to the improvement instruction. Preserve the intent, scope, product level, and solution neutrality. Do not turn it into a Software Requirement. Do not add acceptance criteria, Given/When/Then blocks, test steps, or implementation details. Make it clearer, more atomic, measurable, unambiguous, complete, and suitable for deriving Software Requirements. Return no issues when the rewritten requirement is production-ready.",
-              languageRules: preserveSourceLanguageInstruction(),
+              languageRules: preserveSourceLanguageInstruction(uiLanguage),
               attachmentRules: attachmentInstruction(improvementAttachments),
               improvementInstruction,
               improvementAttachments,
@@ -571,7 +703,7 @@ async function handleSaveProject(req, res) {
   sendJson(res, 200, { fileName: basename(finalPath), path: finalPath });
 }
 
-async function handleSoftwareDerivation(requirements, res) {
+async function handleSoftwareDerivation(requirements, uiLanguage, res) {
   if (process.env.OPENAI_MOCK === "true") {
     sendJson(res, 200, {
       softwareRequirements: requirements.map((item, index) => mockSoftwareRequirement(item, index)),
@@ -608,7 +740,7 @@ async function handleSoftwareDerivation(requirements, res) {
                 "For each Product Requirement, derive one or more Software Requirements that specify observable system behavior, inputs, outputs, constraints, quality constraints, and verification-relevant acceptance criteria. Use the selected techTypes as device applicability context. If a PR applies only to selected appliance designations, keep the SR applicable to those TechTypes and mention device-specific constraints only when they materially affect behavior, interfaces, data, errors, or acceptance criteria. Do not duplicate SRs per TechType unless behavior genuinely differs. Actively check whether the PR contains more than one actor goal, system responsibility, observable behavior, condition, business rule, data object, alternative flow, exception flow, or quality constraint. If it does, split it into multiple atomic SRs. Prefer multiple SRs whenever this is needed to preserve atomicity, clarity, testability, flow coverage, or separation of concerns. Derive only one SR when the PR is truly atomic. Use clear shall-style wording. Preserve traceability to the source Product Requirement. Keep the SR text concise and do not duplicate flow prose in the SR text. Include concrete acceptance criteria that belong directly to the SR and can later be used directly as a basis for Use Cases and Test Cases. Write each SR and its acceptanceCriteria in the same language: German SRs require German acceptance criteria, English SRs require English acceptance criteria. Use happyFlow, alternativeFlows, and exceptionFlows only as structured derivation context. Score each Software Requirement from 85-100. Never return a score below 85. If an initial draft would score below 85, improve the Software Requirement until it reaches at least 85 before returning it. If the source Product Requirement has score 100, every derived Software Requirement for that PR must also have score 100. When deriving multiple SRs from source PR PR_BAROLO_1.1, use IDs such as SR_BAROLO_1.1.1 and SR_BAROLO_1.1.2. Remaining issues may be reported only when they do not reduce the SR below the minimum threshold.",
               scoring:
                 "Score 85-100. 100 means excellent SR quality. 85 is the minimum acceptable quality threshold. A source PR with score 100 requires a derived SR with score 100. Evaluate clarity, atomicity, traceability, consistency, completeness, feasibility, testability, measurability, unambiguity, flow coverage, exception handling, acceptance-criteria quality, and suitability for deriving Use Cases and Test Cases.",
-              languageRules: preserveSourceLanguageInstruction(),
+              languageRules: preserveSourceLanguageInstruction(uiLanguage),
               requirements,
             }),
           },
@@ -716,7 +848,7 @@ async function handleSoftwareDerivation(requirements, res) {
   }
 }
 
-async function handleSoftwareImprovement(sourceRequirement, softwareRequirement, improvementInstruction, improvementAttachments, res) {
+async function handleSoftwareImprovement(sourceRequirement, softwareRequirement, improvementInstruction, improvementAttachments, uiLanguage, res) {
   if (!sourceRequirement?.text || !softwareRequirement?.id) {
     sendJson(res, 400, { error: "Product Requirement and Software Requirement are required." });
     return;
@@ -770,7 +902,7 @@ async function handleSoftwareImprovement(sourceRequirement, softwareRequirement,
             content: JSON.stringify({
               task:
                 "Improve the provided Software Requirement according to the improvement instruction while preserving traceability to the source Product Requirement. Keep the SR concise, atomic, measurable, unambiguous, feasible, and testable. Improve acceptance criteria so they are concrete, directly assigned to the SR, and written in the same language as the SR. Do not add informal flow prose into the SR text. Score 85-100. If the source Product Requirement has score 100, improve the SR until it is excellent and return score 100 with no remaining quality issues.",
-              languageRules: preserveSourceLanguageInstruction(),
+              languageRules: preserveSourceLanguageInstruction(uiLanguage),
               attachmentRules: attachmentInstruction(improvementAttachments),
               improvementInstruction,
               improvementAttachments,
@@ -879,7 +1011,7 @@ function enforceE2eScoreRules(payload, sourceRequirements) {
   });
 }
 
-async function handleE2eDerivation(requirements, res) {
+async function handleE2eDerivation(requirements, uiLanguage, res) {
   if (process.env.OPENAI_MOCK === "true") {
     sendJson(res, 200, {
       e2eTests: requirements.map((item, index) => mockE2eTest(item, index)),
@@ -914,7 +1046,7 @@ async function handleE2eDerivation(requirements, res) {
             content: JSON.stringify({
               task:
                 "For each Software Requirement, derive one or more E2E TestCases. Use the SR text, all SR acceptanceCriteria, and selected techTypes as the main derivation basis. Treat techTypes as the appliance designation applicability context and reflect device-specific preconditions, test data, or expected behavior only when relevant. Each TestCase must include E2E-ID, grouping information, a unique concise description, all acceptance criteria that led to this TestCase, reference to the source SR, reference to the source PR, and formal test steps. Prefer more than one TestCase when this improves coverage, independence, positive/negative coverage, or scenario separation. Include positive tests and, where meaningful, negative tests for invalid input, unavailable data, unavailable services, unsupported capabilities, permission problems, or failed state changes. Each TestCase must be production-ready: preconditions must precisely describe user role, system state, data state, permissions, connected devices, services, and feature flags required for execution; each action must be atomic and executable; each expectedResult must contain observable and verifiable outcomes such as UI state, data persistence, API/system response, error handling, or state transition. Include nachvollziehbare Prüfpunkte by making it clear which acceptance criteria are verified by the steps. Never return an issue that asks to precise preconditions, test steps, expected results, or verifiable checkpoints; fix the TestCase before returning it. Score each TestCase from 86-100, prefer 95-100, and never return a score of 85 or lower. Assign score 100 only when the returned JSON objectively contains a specific description, group, source SR, source PR, covered acceptance criteria, concrete preconditions, concrete test data, at least two executable steps with precise actions and expected results, clear verifiable checkpoints, and positive/negative behavior or relevant error handling. If the source Software Requirement has score 100, every derived E2E TestCase for that SR must be improved until it satisfies these 100-point criteria, then receive score 100 and no remaining quality issues.",
-              languageRules: preserveSourceLanguageInstruction(),
+              languageRules: preserveSourceLanguageInstruction(uiLanguage),
               idRules:
                 "Use this pattern: source SR SR_BAROLO_1.1.1 becomes E2E_BAROLO_1.1.1.1, E2E_BAROLO_1.1.1.2, and so on. Source SR SR-001.1 becomes E2E-001.1.1, E2E-001.1.2, and so on.",
               scoring:
@@ -1042,7 +1174,7 @@ async function handleE2eDerivation(requirements, res) {
   }
 }
 
-async function handleE2eImprovement(sourceRequirement, testCase, improvementInstruction, improvementAttachments, res) {
+async function handleE2eImprovement(sourceRequirement, testCase, improvementInstruction, improvementAttachments, uiLanguage, res) {
   if (!sourceRequirement?.text || !testCase?.id) {
     sendJson(res, 400, { error: "Software Requirement and E2E TestCase are required." });
     return;
@@ -1106,7 +1238,7 @@ async function handleE2eImprovement(sourceRequirement, testCase, improvementInst
             content: JSON.stringify({
               task:
                 "Improve the provided E2E TestCase while preserving its ID, source SR reference, source PR reference, and traceability. Apply the improvement instruction fully. The returned TestCase must be production-ready: precise preconditions, atomic executable actions, observable expected results, clear verifiable checkpoints, realistic test data, and direct coverage of the relevant acceptance criteria. If the instruction asks for additional coverage, split or enrich steps only within this TestCase when it remains coherent; otherwise improve clarity and completeness. Never return an issue asking for more precise preconditions, test steps, expected results, or checkpoints; fix the TestCase instead. Score 86-100, prefer 95-100. Assign score 100 only when the returned JSON objectively contains a specific description, group, source SR, source PR, covered acceptance criteria, concrete preconditions, concrete test data, at least two executable steps with precise actions and expected results, clear verifiable checkpoints, and positive/negative behavior or relevant error handling. If the source SR has score 100, improve the E2E TestCase until it satisfies these 100-point criteria, then return score 100 and no remaining quality issues.",
-              languageRules: preserveSourceLanguageInstruction(),
+              languageRules: preserveSourceLanguageInstruction(uiLanguage),
               attachmentRules: attachmentInstruction(improvementAttachments),
               improvementInstruction,
               improvementAttachments,

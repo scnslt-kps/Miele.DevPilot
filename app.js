@@ -117,6 +117,9 @@ const UI_TRANSLATIONS = {
     "OpenAI Kosten": "OpenAI costs",
     "0 Tokens": "0 tokens",
     "0 Tokens geschätzt (Preise nicht konfiguriert)": "0 tokens estimated (prices not configured)",
+    niedrig: "low",
+    mittel: "medium",
+    hoch: "high",
     "Bereit": "Ready",
     "Hauptmenü": "Main menu",
     "Neues Projekt": "New project",
@@ -138,6 +141,11 @@ const UI_TRANSLATIONS = {
     "Nach Windchill": "To Windchill",
     "Windchill-Export ist noch nicht verfügbar": "Windchill export is not available yet",
     "Hilfe": "Help",
+    "OpenAI Nutzung": "OpenAI usage",
+    "OpenAI-Kosten schließen": "Close OpenAI costs",
+    "Kosten": "Costs",
+    "Token-Nutzung": "Token usage",
+    "Die Werte beziehen sich auf den aktuellen Projektstand und werden beim Speichern des Projekts mitgesichert.": "The values refer to the current project state and are saved with the project.",
     "Workspace": "Workspace",
     "Lege ein neues Projekt an oder lade eine Projektdatei, um Requirements zu importieren und zu bewerten.": "Create a new project or open a project file to import and assess requirements.",
     "About": "About",
@@ -268,11 +276,17 @@ const UI_TRANSLATIONS = {
     "SR übernehmen": "Accept SR",
     "Kritische Hinweise": "Critical issues",
     "Keine Hinweise vorhanden.": "No issues available.",
+    "SR-Qualität": "SR quality",
+    "Der übernommene Software-Requirement-Text erreicht den Mindestscore nicht.": "The accepted Software Requirement text does not reach the minimum score.",
+    "Präzisiere Systemverhalten, Auslöser, Ergebnis, Testbarkeit und Fehlerbedingungen.": "Clarify system behavior, trigger, result, testability, and error conditions.",
     "SR ausschließen": "Exclude SR",
     "E2E TestCase übernehmen": "Accept E2E TestCase",
     "E2E TestCase prüfen und final übernehmen": "Review and finally accept E2E TestCase",
     "TestCase-Tabelle": "TestCase table",
     "z. B. präzisere Vorbedingungen, konkretere erwartete Ergebnisse, negative Tests ergänzen": "e.g. refine preconditions, make expected results more concrete, add negative tests",
+    "E2E-Qualität": "E2E quality",
+    "Der übernommene E2E TestCase erreicht den Mindestscore nicht.": "The accepted E2E TestCase does not reach the minimum score.",
+    "Präzisiere Vorbedingungen, Testschritte, erwartete Ergebnisse und nachvollziehbare Prüfpunkte.": "Clarify preconditions, test steps, expected results, and traceable checkpoints.",
     "E2E TestCase ausschließen": "Exclude E2E TestCase",
     "Kein Projekt": "No project",
     "In Vorbereitung": "In preparation",
@@ -390,6 +404,9 @@ const els = {
   openProjectButton: document.querySelector("#openProjectButton"),
   saveProjectButton: document.querySelector("#saveProjectButton"),
   saveProjectAsButton: document.querySelector("#saveProjectAsButton"),
+  openAiCostButton: document.querySelector("#openAiCostButton"),
+  openAiCostOverlay: document.querySelector("#openAiCostOverlay"),
+  openAiCostCloseButton: document.querySelector("#openAiCostCloseButton"),
   aboutButton: document.querySelector("#aboutButton"),
   closeAboutButton: document.querySelector("#closeAboutButton"),
   aboutVersion: document.querySelector("#aboutVersion"),
@@ -568,7 +585,7 @@ els.menuDropdowns.forEach((menu) => {
   });
 });
 els.languageSelect.addEventListener("change", () => {
-  setLanguage(els.languageSelect.value);
+  void changeLanguage(els.languageSelect.value);
 });
 els.newProjectButton.addEventListener("click", () => {
   closeMenus();
@@ -595,6 +612,16 @@ els.saveProjectAsButton.addEventListener("click", async () => {
 els.aboutButton.addEventListener("click", () => {
   closeMenus();
   openAboutPage();
+});
+els.openAiCostButton.addEventListener("click", () => {
+  closeMenus();
+  openOpenAiCostDialog();
+});
+els.openAiCostCloseButton.addEventListener("click", closeOpenAiCostDialog);
+els.openAiCostOverlay.addEventListener("click", (event) => {
+  if (event.target === els.openAiCostOverlay) {
+    closeOpenAiCostDialog();
+  }
 });
 els.closeAboutButton.addEventListener("click", closeAboutPage);
 els.openSettingsButton.addEventListener("click", () => {
@@ -745,6 +772,10 @@ window.addEventListener("keydown", (event) => {
 
   if (event.key === "Escape" && !els.projectOverlay.hidden) {
     closeProjectDialog();
+  }
+
+  if (event.key === "Escape" && !els.openAiCostOverlay.hidden) {
+    closeOpenAiCostDialog();
   }
 
   if (event.key === "Escape" && !els.selectionOverlay.hidden) {
@@ -922,9 +953,12 @@ function renderOpenAiCostSummary() {
   const totalTokens = Number(summary.totalTokens) || 0;
   const isEstimated = summary.estimated !== false;
   const isConfigured = summary.pricingConfigured === true;
+  const tokenLabel = currentLanguage() === "en" ? "tokens" : "Tokens";
+  const estimatedLabel = currentLanguage() === "en" ? " estimated" : " geschätzt";
+  const unconfiguredLabel = currentLanguage() === "en" ? " (prices not configured)" : " (Preise nicht konfiguriert)";
 
   els.openAiCostTotal.textContent = isConfigured || cost > 0 ? formatUsd(cost) : "$0.0000";
-  els.openAiCostDetail.textContent = `${formatInteger(totalTokens)} Tokens${isEstimated ? " geschätzt" : ""}${isConfigured ? "" : " (Preise nicht konfiguriert)"}`;
+  els.openAiCostDetail.textContent = `${formatInteger(totalTokens)} ${tokenLabel}${isEstimated ? estimatedLabel : ""}${isConfigured ? "" : unconfiguredLabel}`;
 }
 
 function addOpenAiUsage(openAiUsage) {
@@ -1153,6 +1187,15 @@ function openProjectDialog() {
 
 function closeProjectDialog() {
   els.projectOverlay.hidden = true;
+}
+
+function openOpenAiCostDialog() {
+  renderOpenAiCostSummary();
+  els.openAiCostOverlay.hidden = false;
+}
+
+function closeOpenAiCostDialog() {
+  els.openAiCostOverlay.hidden = true;
 }
 
 function createProject() {
@@ -1504,7 +1547,7 @@ async function analyzeRequirements() {
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requirementType: state.requirementType, requirements: batch }),
+        body: JSON.stringify({ requirementType: state.requirementType, uiLanguage: selectedUiLanguage(), requirements: batch }),
       });
 
       const data = await response.json();
@@ -1896,6 +1939,7 @@ async function improveProductRequirementWithAi() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         requirementType: "product-improvement",
+        uiLanguage: selectedUiLanguage(),
         improvementInstruction: instruction,
         improvementAttachments,
         requirements: [
@@ -2056,6 +2100,7 @@ async function recalculateFinalScore(item, finalText, choice) {
         analysisMode: "final",
         finalChoice: choice,
         requirementType: state.requirementType,
+        uiLanguage: selectedUiLanguage(),
         requirements: [
           {
             ...item,
@@ -2118,15 +2163,25 @@ function renderIssues(issues = []) {
         .map(
           (issue) => `
             <li>
-              <span class="severity">${escapeHtml(issue.severity)} / ${escapeHtml(issue.criterion)}</span><br />
-              ${escapeHtml(issue.explanation)}<br />
-              ${escapeHtml(issue.suggestion)}
+              <span class="severity">${escapeHtml(formatIssueField(issue.severity))} / ${escapeHtml(displayIssueField(issue, "criterion"))}</span><br />
+              ${escapeHtml(displayIssueField(issue, "explanation"))}<br />
+              ${escapeHtml(displayIssueField(issue, "suggestion"))}
             </li>
           `,
         )
         .join("")}
     </ul>
   `;
+}
+
+function formatIssueField(value) {
+  return translateUiText(value || "-");
+}
+
+function displayIssueField(issue, field) {
+  const language = currentLanguage();
+  const translated = issue?._translations?.[language]?.[field];
+  return formatIssueField(translated || issue?.[field] || "-");
 }
 
 async function readImprovementAttachments(input) {
@@ -2699,7 +2754,7 @@ async function regenerateSoftwareRequirementFromDialog() {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requirementType: "software", requirements: [sourceRequirement] }),
+      body: JSON.stringify({ requirementType: "software", uiLanguage: selectedUiLanguage(), requirements: [sourceRequirement] }),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -2809,6 +2864,7 @@ async function improveSoftwareRequirementWithAi() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         requirementType: "software-improvement",
+        uiLanguage: selectedUiLanguage(),
         improvementInstruction: instruction,
         improvementAttachments,
         requirements: [sourceRequirement],
@@ -2885,10 +2941,10 @@ function acceptSoftwareRequirement() {
   if (isCriticalScore(updatedScore) && (!Array.isArray(item.issues) || !item.issues.length)) {
     item.issues = [
       {
-        criterion: "SR-Qualität",
+        criterion: translateUiText("SR-Qualität"),
         severity: "medium",
-        explanation: "Der übernommene Software-Requirement-Text erreicht den Mindestscore nicht.",
-        suggestion: "Präzisiere Systemverhalten, Auslöser, Ergebnis, Testbarkeit und Fehlerbedingungen.",
+        explanation: translateUiText("Der übernommene Software-Requirement-Text erreicht den Mindestscore nicht."),
+        suggestion: translateUiText("Präzisiere Systemverhalten, Auslöser, Ergebnis, Testbarkeit und Fehlerbedingungen."),
       },
     ];
   }
@@ -3047,7 +3103,7 @@ async function generateSoftwareRequirements() {
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requirementType: "software", requirements: batch }),
+        body: JSON.stringify({ requirementType: "software", uiLanguage: selectedUiLanguage(), requirements: batch }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -3616,7 +3672,7 @@ async function regenerateE2eTestFromDialog() {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requirementType: "e2e", requirements: [sourceRequirement] }),
+      body: JSON.stringify({ requirementType: "e2e", uiLanguage: selectedUiLanguage(), requirements: [sourceRequirement] }),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -3707,6 +3763,7 @@ async function improveE2eTestWithAi() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         requirementType: "e2e-improvement",
+        uiLanguage: selectedUiLanguage(),
         improvementInstruction: instruction,
         improvementAttachments,
         requirements: [sourceRequirement],
@@ -3771,10 +3828,10 @@ function acceptE2eTest() {
   if (isCriticalScore(updatedScore) && (!Array.isArray(item.issues) || !item.issues.length)) {
     item.issues = [
       {
-        criterion: "E2E-Qualität",
+        criterion: translateUiText("E2E-Qualität"),
         severity: "medium",
-        explanation: "Der übernommene E2E TestCase erreicht den Mindestscore nicht.",
-        suggestion: "Präzisiere Vorbedingungen, Testschritte, erwartete Ergebnisse und nachvollziehbare Prüfpunkte.",
+        explanation: translateUiText("Der übernommene E2E TestCase erreicht den Mindestscore nicht."),
+        suggestion: translateUiText("Präzisiere Vorbedingungen, Testschritte, erwartete Ergebnisse und nachvollziehbare Prüfpunkte."),
       },
     ];
   } else if (!isCriticalScore(updatedScore) && Array.isArray(item.issues)) {
@@ -3932,7 +3989,7 @@ async function generateE2eTests() {
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requirementType: "e2e", requirements: batch }),
+        body: JSON.stringify({ requirementType: "e2e", uiLanguage: selectedUiLanguage(), requirements: batch }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -4756,6 +4813,10 @@ function currentLanguage() {
   return LANGUAGES[state.language] ? state.language : DEFAULT_LANGUAGE;
 }
 
+function selectedUiLanguage() {
+  return currentLanguage();
+}
+
 function translateUiText(value, language = currentLanguage()) {
   const text = String(value ?? "");
   const normalizedText = normalizeUiText(text);
@@ -4901,11 +4962,108 @@ function setLanguage(language, options = {}) {
 
   if (!options.skipRender) {
     renderWorkspaceState();
+    renderProcessPages();
+    renderTable();
+    renderMetrics();
     renderOpenAiCostSummary();
     renderAboutPage();
   }
   scheduleApplyTranslations();
   updateProjectActions();
+}
+
+async function changeLanguage(language) {
+  const nextLanguage = LANGUAGES[language] ? language : DEFAULT_LANGUAGE;
+  setLanguage(nextLanguage);
+
+  const translated = await translateExistingFeedback(nextLanguage);
+  if (!translated) return;
+
+  renderWorkspaceState();
+  renderProcessPages();
+  renderTable();
+  renderMetrics();
+  renderAboutPage();
+  scheduleApplyTranslations();
+}
+
+async function translateExistingFeedback(targetLanguage) {
+  const endpoint = getFeedbackTranslationEndpoint();
+  if (!endpoint) return false;
+
+  const entries = collectFeedbackTranslationEntries(targetLanguage);
+  if (!entries.length) return false;
+
+  try {
+    setStatus("Übersetze Hinweise...");
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        uiLanguage: targetLanguage,
+        items: entries.map((entry) => ({
+          id: entry.id,
+          criterion: entry.issue.criterion || "",
+          explanation: entry.issue.explanation || "",
+          suggestion: entry.issue.suggestion || "",
+        })),
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Hinweise konnten nicht übersetzt werden");
+    }
+
+    addOpenAiUsage(data.openAiUsage);
+    const translationsById = new Map((Array.isArray(data.items) ? data.items : []).map((item) => [String(item.id), item]));
+    entries.forEach((entry) => {
+      const translated = translationsById.get(entry.id);
+      if (!translated) return;
+
+      entry.issue._translations = entry.issue._translations || {};
+      entry.issue._translations[targetLanguage] = {
+        criterion: translated.criterion || entry.issue.criterion || "",
+        explanation: translated.explanation || entry.issue.explanation || "",
+        suggestion: translated.suggestion || entry.issue.suggestion || "",
+      };
+    });
+
+    setStatus("Hinweise übersetzt");
+    return true;
+  } catch (error) {
+    console.warn("Feedback translation failed:", error);
+    setStatus("Hinweise nicht übersetzt");
+    return false;
+  }
+}
+
+function collectFeedbackTranslationEntries(targetLanguage) {
+  const entries = [];
+  let index = 0;
+  const addIssues = (issues) => {
+    if (!Array.isArray(issues)) return;
+
+    issues.forEach((issue) => {
+      if (!issue || typeof issue !== "object") return;
+      if (issue._translations?.[targetLanguage]) return;
+      if (!issue.criterion && !issue.explanation && !issue.suggestion) return;
+
+      entries.push({
+        id: String(index++),
+        issue,
+      });
+    });
+  };
+
+  state.results.forEach((result) => {
+    addIssues(result.originalIssues);
+    addIssues(result.issues);
+  });
+  state.softwareRequirements.forEach((item) => addIssues(item.issues));
+  state.e2eTests.forEach((item) => addIssues(item.issues));
+
+  return entries;
 }
 
 function setupTranslationObserver() {
@@ -5042,6 +5200,10 @@ function getAnalyzeEndpoint() {
 
 function getSaveProjectEndpoint() {
   return getApiEndpoint("api/save-project");
+}
+
+function getFeedbackTranslationEndpoint() {
+  return getApiEndpoint("api/translate-feedback");
 }
 
 function getRuntimeEndpoint() {

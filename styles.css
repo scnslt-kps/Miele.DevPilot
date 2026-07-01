@@ -157,16 +157,7 @@ h2 {
   text-align: right;
 }
 
-.openai-cost-state {
-  display: grid;
-  justify-items: end;
-  gap: 4px;
-  max-width: 420px;
-  text-align: right;
-}
-
-.project-state span,
-.openai-cost-state span {
+.project-state span {
   color: var(--accent);
   font-size: 0.72rem;
   font-weight: 850;
@@ -174,15 +165,13 @@ h2 {
   text-transform: uppercase;
 }
 
-.project-state strong,
-.openai-cost-state strong {
+.project-state strong {
   color: var(--black);
   font-size: 1.18rem;
   line-height: 1.15;
 }
 
-.project-state small,
-.openai-cost-state small {
+.project-state small {
   color: var(--muted);
   font-size: 0.86rem;
   font-weight: 650;
@@ -1508,6 +1497,17 @@ tbody tr.group-row:hover td {
   backdrop-filter: blur(2px);
 }
 
+.openai-cost-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 56;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(2px);
+}
+
 .selection-overlay[hidden] {
   display: none;
 }
@@ -1517,6 +1517,10 @@ tbody tr.group-row:hover td {
 }
 
 .project-overlay[hidden] {
+  display: none;
+}
+
+.openai-cost-overlay[hidden] {
   display: none;
 }
 
@@ -1552,6 +1556,45 @@ tbody tr.group-row:hover td {
   background: #fff;
   box-shadow: var(--shadow);
   padding: 26px;
+}
+
+.openai-cost-dialog {
+  width: min(100%, 520px);
+  max-height: min(88vh, 640px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  background: #fff;
+  box-shadow: var(--shadow);
+  padding: 26px;
+}
+
+.cost-summary-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.cost-summary-item {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  padding: 16px;
+}
+
+.cost-summary-item span {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cost-summary-item strong {
+  color: var(--black);
+  font-size: 1.28rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .settings-dialog .controls-panel {
@@ -2030,8 +2073,7 @@ tbody tr.group-row:hover td {
   }
 
   .header-state,
-  .project-state,
-  .openai-cost-state {
+  .project-state {
     justify-items: start;
     text-align: left;
   }
@@ -2118,12 +2160,14 @@ tbody tr.group-row:hover td {
 
   .settings-overlay,
   .project-overlay,
+  .openai-cost-overlay,
   .selection-overlay {
     padding: 12px;
   }
 
   .settings-dialog,
   .project-dialog,
+  .openai-cost-dialog,
   .selection-dialog {
     padding: 18px;
   }

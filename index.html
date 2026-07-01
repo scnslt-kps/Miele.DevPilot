@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Miele.DevPilot</title>
-    <link rel="icon" href="assets/app-icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
     <script src="vendor/xlsx.full.min.js"></script>
   </head>
@@ -16,7 +16,6 @@
             <div class="app-title">
               <img class="app-logo" src="assets/app-icon.svg" alt="Miele.DevPilot" />
             </div>
-            <p class="eyebrow">AI Engineering Platform</p>
             <p class="header-copy">
               Von Produktanforderungen zu umsetzbaren Entwicklungs- und Testartefakten.
             </p>
@@ -33,11 +32,6 @@
               <span>Projekt</span>
               <strong id="projectHeaderName">Kein Projekt geöffnet</strong>
               <small id="projectHeaderDescription"></small>
-            </div>
-            <div class="openai-cost-state">
-              <span>OpenAI Kosten</span>
-              <strong id="openAiCostTotal">$0.0000</strong>
-              <small id="openAiCostDetail">0 Tokens</small>
             </div>
             <div class="status-pill" id="statusPill">Bereit</div>
           </div>
@@ -85,6 +79,7 @@
             <details class="menu-dropdown">
               <summary>Hilfe</summary>
               <div class="menu-popover" role="menu">
+                <button id="openAiCostButton" type="button" role="menuitem">OpenAI Kosten</button>
                 <button id="aboutButton" type="button" role="menuitem">About</button>
               </div>
             </details>
@@ -499,6 +494,31 @@
           <button id="projectCancelButton" type="button">Abbrechen</button>
           <button id="projectCreateButton" class="primary" type="button">Projekt anlegen</button>
         </div>
+      </div>
+    </div>
+
+    <div class="openai-cost-overlay" id="openAiCostOverlay" hidden>
+      <div class="openai-cost-dialog" role="dialog" aria-modal="true" aria-labelledby="openAiCostTitle">
+        <div class="selection-header">
+          <div>
+            <p class="eyebrow">OpenAI Kosten</p>
+            <h2 id="openAiCostTitle">OpenAI Nutzung</h2>
+          </div>
+          <button class="icon-button" id="openAiCostCloseButton" type="button" aria-label="OpenAI-Kosten schließen">×</button>
+        </div>
+
+        <section class="cost-summary-panel">
+          <div class="cost-summary-item">
+            <span>Kosten</span>
+            <strong id="openAiCostTotal">$0.0000</strong>
+          </div>
+          <div class="cost-summary-item">
+            <span>Token-Nutzung</span>
+            <strong id="openAiCostDetail">0 Tokens</strong>
+          </div>
+        </section>
+
+        <p class="hint">Die Werte beziehen sich auf den aktuellen Projektstand und werden beim Speichern des Projekts mitgesichert.</p>
       </div>
     </div>
 
