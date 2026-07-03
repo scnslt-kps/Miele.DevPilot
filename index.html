@@ -28,12 +28,23 @@
                 <option value="en">EN</option>
               </select>
             </label>
+            <div class="account-state" id="accountState" hidden tabindex="0" aria-label="Benutzermenü">
+              <span class="account-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M12 12.5a4.25 4.25 0 1 0 0-8.5 4.25 4.25 0 0 0 0 8.5Z"></path>
+                  <path d="M4.75 20a7.25 7.25 0 0 1 14.5 0"></path>
+                </svg>
+              </span>
+              <strong id="accountUserName">-</strong>
+              <div class="account-context-menu" id="accountContextMenu" hidden>
+                <button id="logoutButton" type="button">Abmelden</button>
+              </div>
+            </div>
             <div class="project-state">
               <span>Projekt</span>
               <strong id="projectHeaderName">Kein Projekt geöffnet</strong>
               <small id="projectHeaderDescription"></small>
             </div>
-            <div class="status-pill" id="statusPill">Bereit</div>
           </div>
         </header>
 
@@ -44,15 +55,14 @@
               <div class="menu-popover" role="menu">
                 <button id="newProjectButton" type="button" role="menuitem">Neues Projekt</button>
                 <button id="openProjectButton" type="button" role="menuitem">Projekt laden</button>
-                <button id="saveProjectButton" type="button" role="menuitem" disabled>Projekt speichern</button>
-                <button id="saveProjectAsButton" type="button" role="menuitem" disabled>Projekt speichern unter...</button>
+                <button id="projectHistoryButton" type="button" role="menuitem" aria-disabled="true">Projekt-Historie</button>
               </div>
             </details>
             <details class="menu-dropdown" data-requires-project="true">
               <summary>Import</summary>
               <div class="menu-popover" role="menu">
                 <button id="openFileButton" type="button" role="menuitem">Datei</button>
-                <button id="openWindchillButton" class="windchill-button" type="button" role="menuitem" disabled title="Requirements aus Windchill laden ist noch nicht verfügbar">
+                <button id="openWindchillButton" class="windchill-button" type="button" role="menuitem" aria-disabled="true" title="Requirements aus Windchill laden ist noch nicht verfügbar">
                   <img src="assets/windchill-logo.svg" alt="" />
                   <span>Windchill</span>
                 </button>
@@ -61,16 +71,16 @@
             <details class="menu-dropdown" data-requires-project="true">
               <summary>Analyse</summary>
               <div class="menu-popover" role="menu">
-                <button id="openSettingsButton" type="button" role="menuitem" disabled>Einstellungen</button>
-                <button id="analyzeButton" type="button" role="menuitem" disabled>PR Analysieren</button>
-                <button id="generateSoftwareMenuButton" type="button" role="menuitem" disabled>Software Requirements ableiten</button>
-                <button id="generateE2eMenuButton" type="button" role="menuitem" disabled>E2E TestCases ableiten</button>
+                <button id="openSettingsButton" type="button" role="menuitem" aria-disabled="true">Einstellungen</button>
+                <button id="analyzeButton" type="button" role="menuitem" aria-disabled="true">PR Analysieren</button>
+                <button id="generateSoftwareMenuButton" type="button" role="menuitem" aria-disabled="true">Software Requirements ableiten</button>
+                <button id="generateE2eMenuButton" type="button" role="menuitem" aria-disabled="true">E2E TestCases ableiten</button>
               </div>
             </details>
             <details class="menu-dropdown" data-requires-project="true">
               <summary>Export</summary>
               <div class="menu-popover" role="menu">
-                <button id="exportButton" class="windchill-button" type="button" role="menuitem" disabled title="Windchill-Export ist noch nicht verfügbar">
+                <button id="exportButton" class="windchill-button" type="button" role="menuitem" aria-disabled="true" title="Windchill-Export ist noch nicht verfügbar">
                   <img src="assets/windchill-logo.svg" alt="" />
                   <span>Nach Windchill</span>
                 </button>
@@ -83,17 +93,23 @@
                 <button id="aboutButton" type="button" role="menuitem">About</button>
               </div>
             </details>
+            <details class="menu-dropdown" id="adminMenu" hidden>
+              <summary>Admin</summary>
+              <div class="menu-popover" role="menu">
+                <button id="openUserAdminButton" type="button" role="menuitem">Benutzerverwaltung</button>
+                <button id="deleteProjectButton" type="button" role="menuitem">Projekt löschen</button>
+              </div>
+            </details>
           </div>
           <div class="file-state" id="fileState">Kein Projekt geöffnet</div>
         </nav>
 
         <input id="fileInput" class="visually-hidden" type="file" accept=".xlsx,.xls,.csv" />
-        <input id="projectInput" class="visually-hidden" type="file" accept=".mdp,.json,.miele-devpilot.json,application/json" />
 
         <section class="empty-workspace" id="emptyWorkspace">
           <p class="eyebrow">Workspace</p>
           <h1>Kein Projekt geöffnet</h1>
-          <p>Lege ein neues Projekt an oder lade eine Projektdatei, um Requirements zu importieren und zu bewerten.</p>
+          <p>Lege ein neues Projekt an oder öffne ein gespeichertes Projekt, um Requirements zu importieren und zu bewerten.</p>
         </section>
 
         <section class="about-page" id="aboutPage" hidden>
@@ -109,7 +125,7 @@
             </section>
             <section>
               <h2>Arbeitsstand</h2>
-              <p>Aktuell verfügbar sind PR-Import und Analyse, Projektdateien sowie die Ableitung und Prüfung von SR inklusive Score-Schwelle und Übernahmestatus.</p>
+              <p>Aktuell verfügbar sind PR-Import und Analyse, datenbankgestützte Projekte sowie die Ableitung und Prüfung von SR inklusive Score-Schwelle und Übernahmestatus.</p>
             </section>
             <section>
               <h2>Version</h2>
@@ -144,6 +160,40 @@
           <div class="about-actions">
             <span>Bei geöffnetem Projekt kannst du auch direkt über den Prozessablauf zurückspringen.</span>
             <button id="closeAboutButton" type="button">Zurück zum Workspace</button>
+          </div>
+        </section>
+
+        <section class="admin-page" id="adminPage" hidden>
+          <div class="software-toolbar">
+            <div>
+              <p class="eyebrow">Admin</p>
+              <h1 id="adminTitle">Benutzerverwaltung</h1>
+            </div>
+            <div class="action-row admin-toolbar-actions">
+              <button id="adminCloseButton" type="button">Zurück zum Workspace</button>
+              <button class="primary" id="openCreateUserButton" type="button">Neuer Benutzer</button>
+            </div>
+          </div>
+
+          <p class="form-message admin-message" id="userAdminMessage" role="status"></p>
+
+          <div class="table-wrap user-table-wrap">
+            <table class="user-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>E-Mail</th>
+                  <th>Rolle</th>
+                  <th>Status</th>
+                  <th>Aktion</th>
+                </tr>
+              </thead>
+              <tbody id="usersBody">
+                <tr>
+                  <td colspan="5">Keine Benutzer geladen.</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </section>
 
@@ -497,6 +547,70 @@
       </div>
     </div>
 
+    <div class="project-overlay" id="projectSelectionOverlay" hidden>
+      <div class="project-dialog project-selection-dialog" role="dialog" aria-modal="true" aria-labelledby="projectSelectionTitle">
+        <div class="selection-header">
+          <div>
+            <p class="eyebrow">Projekt</p>
+            <h2 id="projectSelectionTitle">Projekt auswählen</h2>
+          </div>
+          <button class="icon-button" id="projectSelectionCloseButton" type="button" aria-label="Projektauswahl schließen">×</button>
+        </div>
+
+        <p class="form-message" id="projectSelectionMessage" role="status"></p>
+
+        <div class="table-wrap project-table-wrap">
+          <table class="project-table">
+            <thead>
+              <tr>
+                <th>Projekt</th>
+                <th>Beschreibung</th>
+                <th>Geändert</th>
+                <th>Aktion</th>
+              </tr>
+            </thead>
+            <tbody id="projectSelectionBody">
+              <tr>
+                <td colspan="4">Keine Projekte geladen.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="project-overlay" id="projectHistoryOverlay" hidden>
+      <div class="project-dialog project-history-dialog" role="dialog" aria-modal="true" aria-labelledby="projectHistoryTitle">
+        <div class="selection-header">
+          <div>
+            <p class="eyebrow">Projekt</p>
+            <h2 id="projectHistoryTitle">Projekt-Historie</h2>
+          </div>
+          <button class="icon-button" id="projectHistoryCloseButton" type="button" aria-label="Projekt-Historie schließen">×</button>
+        </div>
+
+        <p class="form-message" id="projectHistoryMessage" role="status"></p>
+
+        <div class="table-wrap project-table-wrap">
+          <table class="project-history-table">
+            <thead>
+              <tr>
+                <th>Zeitpunkt</th>
+                <th>Aktion</th>
+                <th>Benutzer</th>
+                <th>Wiederherstellen</th>
+              </tr>
+            </thead>
+            <tbody id="projectHistoryBody">
+              <tr>
+                <td colspan="4">Keine Historie geladen.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div class="openai-cost-overlay" id="openAiCostOverlay" hidden>
       <div class="openai-cost-dialog" role="dialog" aria-modal="true" aria-labelledby="openAiCostTitle">
         <div class="selection-header">
@@ -752,6 +866,148 @@
           <button id="e2eSelectionExcludeButton" type="button">E2E TestCase ausschließen</button>
           <button id="e2eSelectionDeferButton" type="button">Auswahl später treffen</button>
         </div>
+      </div>
+    </div>
+
+    <div class="login-overlay" id="loginOverlay" hidden>
+      <div class="login-dialog" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+        <p class="eyebrow">Anmeldung</p>
+        <h2 id="loginTitle">Miele.DevPilot</h2>
+        <p>Melde dich mit deinem Benutzernamen oder deiner E-Mail-Adresse und Passwort an.</p>
+        <form id="loginForm" class="auth-form">
+          <label for="loginIdentifier">Name oder E-Mail-Adresse</label>
+          <input id="loginIdentifier" type="text" autocomplete="username" required />
+          <label for="loginPassword">Passwort</label>
+          <input id="loginPassword" type="password" autocomplete="current-password" required />
+          <button class="primary" type="submit">Anmelden</button>
+          <p class="form-message" id="loginMessage" role="status"></p>
+        </form>
+      </div>
+    </div>
+
+    <div class="selection-overlay" id="passwordChangeOverlay" hidden>
+      <div class="project-dialog" role="dialog" aria-modal="true" aria-labelledby="passwordChangeTitle">
+        <div class="selection-header">
+          <div>
+            <p class="eyebrow">Passwort ändern</p>
+            <h2 id="passwordChangeTitle">Neues Passwort festlegen</h2>
+          </div>
+        </div>
+        <p class="dialog-copy">Bitte lege ein eigenes Passwort fest, bevor du Miele.DevPilot weiter nutzt.</p>
+        <form id="passwordChangeForm" class="auth-form">
+          <label for="newPassword">Neues Passwort</label>
+          <input id="newPassword" type="password" autocomplete="new-password" required />
+          <label for="confirmNewPassword">Passwort bestätigen</label>
+          <input id="confirmNewPassword" type="password" autocomplete="new-password" required />
+          <button class="primary" type="submit">Passwort speichern</button>
+          <p class="form-message" id="passwordChangeMessage" role="status"></p>
+        </form>
+      </div>
+    </div>
+
+    <div class="selection-overlay" id="userDialogOverlay" hidden>
+      <div class="project-dialog user-dialog" role="dialog" aria-modal="true" aria-labelledby="userDialogTitle">
+        <div class="selection-header">
+          <div>
+            <p class="eyebrow">Admin</p>
+            <h2 id="userDialogTitle">Benutzer anlegen</h2>
+          </div>
+          <button class="icon-button" id="userDialogCloseButton" type="button" aria-label="Dialog schließen">×</button>
+        </div>
+        <form id="userForm" class="user-form">
+          <input id="userId" type="hidden" />
+          <section class="user-form-section" aria-labelledby="userIdentityTitle">
+            <div class="user-form-section-header">
+              <h3 id="userIdentityTitle">Stammdaten</h3>
+              <p>Name und E-Mail-Adresse für die Anmeldung.</p>
+            </div>
+            <div class="user-form-grid user-form-grid-identity">
+              <div class="field-group">
+                <label for="userName">Name</label>
+                <input id="userName" type="text" autocomplete="off" required />
+              </div>
+              <div class="field-group">
+                <label for="userEmail">E-Mail-Adresse</label>
+                <input id="userEmail" type="email" required />
+              </div>
+            </div>
+          </section>
+          <section class="user-form-section" aria-labelledby="userAccessTitle">
+            <div class="user-form-section-header">
+              <h3 id="userAccessTitle">Zugriff</h3>
+              <p>Rolle und Kontostatus des Benutzers.</p>
+            </div>
+            <div class="user-form-grid user-form-grid-access">
+              <fieldset class="role-selection" id="userRoleGroup">
+                <legend>Rollen</legend>
+                <div class="role-table" role="table" aria-label="Rollen auswählen">
+                  <div class="role-table-head" role="row">
+                    <span role="columnheader">Rolle</span>
+                    <span role="columnheader">Berechtigung</span>
+                    <span role="columnheader">Auswahl</span>
+                  </div>
+                  <label class="role-row" role="row">
+                    <span class="role-name" role="cell">Admin</span>
+                    <span class="role-description" role="cell">Alle Berechtigungen und Benutzerverwaltung.</span>
+                    <span class="role-check" role="cell"><input type="checkbox" name="userRoles" value="admin" /></span>
+                  </label>
+                  <label class="role-row" role="row">
+                    <span class="role-name" role="cell">Product Requirement Owner</span>
+                    <span class="role-description" role="cell">Product Requirements erstellen und bearbeiten.</span>
+                    <span class="role-check" role="cell"><input type="checkbox" name="userRoles" value="productRequirementOwner" /></span>
+                  </label>
+                  <label class="role-row" role="row">
+                    <span class="role-name" role="cell">Software Requirement Owner</span>
+                    <span class="role-description" role="cell">Software Requirements erstellen und bearbeiten.</span>
+                    <span class="role-check" role="cell"><input type="checkbox" name="userRoles" value="softwareRequirementOwner" /></span>
+                  </label>
+                  <label class="role-row" role="row">
+                    <span class="role-name" role="cell">E2E Test Owner</span>
+                    <span class="role-description" role="cell">E2E TestCases erstellen und bearbeiten.</span>
+                    <span class="role-check" role="cell"><input type="checkbox" name="userRoles" value="e2eTestOwner" /></span>
+                  </label>
+                  <label class="role-row" role="row">
+                    <span class="role-name" role="cell">Product Requirement Approver</span>
+                    <span class="role-description" role="cell">Product Requirements freigeben oder kommentieren.</span>
+                    <span class="role-check" role="cell"><input type="checkbox" name="userRoles" value="productRequirementApprover" /></span>
+                  </label>
+                  <label class="role-row" role="row">
+                    <span class="role-name" role="cell">Software Requirement Approver</span>
+                    <span class="role-description" role="cell">Software Requirements freigeben oder kommentieren.</span>
+                    <span class="role-check" role="cell"><input type="checkbox" name="userRoles" value="softwareRequirementApprover" /></span>
+                  </label>
+                  <label class="role-row" role="row">
+                    <span class="role-name" role="cell">E2E Test Approver</span>
+                    <span class="role-description" role="cell">E2E TestCases freigeben oder kommentieren.</span>
+                    <span class="role-check" role="cell"><input type="checkbox" name="userRoles" value="e2eTestApprover" /></span>
+                  </label>
+                </div>
+              </fieldset>
+              <div class="field-group">
+                <label for="userActive">Status</label>
+                <label class="checkbox-row" for="userActive">
+                  <input id="userActive" type="checkbox" checked />
+                  <span>Aktiv</span>
+                  <span class="switch-track" aria-hidden="true"></span>
+                </label>
+              </div>
+            </div>
+          </section>
+          <section class="user-form-section" aria-labelledby="userPasswordTitle">
+            <div class="user-form-section-header">
+              <h3 id="userPasswordTitle">Passwort</h3>
+              <p>Neue Benutzer müssen das Passwort nach der ersten Anmeldung ändern.</p>
+            </div>
+            <div class="field-group">
+              <label for="userPassword">Initiales Passwort</label>
+              <input id="userPassword" type="password" autocomplete="new-password" placeholder="Mindestens 8 Zeichen" />
+            </div>
+          </section>
+          <div class="user-dialog-actions">
+            <button id="resetUserFormButton" type="button">Abbrechen</button>
+            <button class="primary" id="saveUserButton" type="submit">Benutzer speichern</button>
+          </div>
+        </form>
       </div>
     </div>
 
