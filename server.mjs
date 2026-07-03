@@ -1,16 +1,31 @@
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
-import { basename, extname, join, normalize } from "node:path";
+import { randomBytes, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { extname, join, normalize } from "node:path";
 import { promisify } from "node:util";
+import { prisma } from "./src/lib/prisma.js";
 
 const root = new URL(".", import.meta.url).pathname;
 const execFileAsync = promisify(execFile);
+const scryptAsync = promisify(scrypt);
 
 await loadDotEnv();
 
 const port = Number(process.env.PORT || 3000);
 const basePath = normalizeBasePath(process.env.BASE_PATH || "");
+const legacyUsersFilePath = join(root, "data/users.json");
+const sessionCookieName = "miele_devpilot_session";
+const sessions = new Map();
+const knownRoles = new Set([
+  "admin",
+  "productRequirementOwner",
+  "softwareRequirementOwner",
+  "e2eTestOwner",
+  "productRequirementApprover",
+  "softwareRequirementApprover",
+  "e2eTestApprover",
+]);
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -47,18 +62,135 @@ const server = createServer(async (req, res) => {
       pathname = pathname.slice(basePath.length) || "/";
     }
 
+    if (req.method === "GET" && pathname === "/api/session") {
+      await handleSession(req, res);
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/login") {
+      await handleLogin(req, res);
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/logout") {
+      await handleLogout(req, res);
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/change-password") {
+      const session = await requireSession(req, res, { allowPasswordChange: true });
+      if (!session) return;
+
+      await handleChangePassword(req, res, session.user.id);
+      return;
+    }
+
+    if (pathname.startsWith("/api/admin/")) {
+      const session = await requireSession(req, res, { admin: true });
+      if (!session) return;
+
+      if (req.method === "GET" && pathname === "/api/admin/users") {
+        await handleListUsers(res);
+        return;
+      }
+
+      if (req.method === "POST" && pathname === "/api/admin/users") {
+        await handleCreateUser(req, res);
+        return;
+      }
+
+      const userIdMatch = pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
+      if (userIdMatch && req.method === "PUT") {
+        await handleUpdateUser(req, res, userIdMatch[1]);
+        return;
+      }
+
+      if (userIdMatch && req.method === "DELETE") {
+        await handleDeleteUser(res, userIdMatch[1], session.user.id);
+        return;
+      }
+
+      sendJson(res, 404, { error: "Not found" });
+      return;
+    }
+
     if (req.method === "POST" && pathname === "/api/analyze") {
-      await handleAnalyze(req, res);
+      const session = await requireSession(req, res);
+      if (!session) return;
+
+      await handleAnalyze(req, res, session.user);
       return;
     }
 
     if (req.method === "POST" && pathname === "/api/translate-feedback") {
+      if (!(await requireSession(req, res))) return;
       await handleTranslateFeedback(req, res);
       return;
     }
 
-    if (req.method === "POST" && pathname === "/api/save-project") {
-      await handleSaveProject(req, res);
+    if (pathname.startsWith("/api/projects")) {
+      const session = await requireSession(req, res);
+      if (!session) return;
+
+      if (req.method === "GET" && pathname === "/api/projects") {
+        await handleListProjects(res, session.user);
+        return;
+      }
+
+      if (req.method === "POST" && pathname === "/api/projects") {
+        if (!userCanCreateProject(session.user)) {
+          sendJson(res, 403, { error: "Project create permission required." });
+          return;
+        }
+
+        await handleCreateProject(req, res, session.user);
+        return;
+      }
+
+      const projectIdMatch = pathname.match(/^\/api\/projects\/([^/]+)$/);
+      const projectRevisionsMatch = pathname.match(/^\/api\/projects\/([^/]+)\/revisions$/);
+      if (projectRevisionsMatch && req.method === "GET") {
+        await handleListProjectRevisions(res, session.user, projectRevisionsMatch[1]);
+        return;
+      }
+
+      const projectRevisionRestoreMatch = pathname.match(/^\/api\/projects\/([^/]+)\/revisions\/([^/]+)\/restore$/);
+      if (projectRevisionRestoreMatch && req.method === "POST") {
+        if (!userCanSaveProject(session.user)) {
+          sendJson(res, 403, { error: "Project update permission required." });
+          return;
+        }
+
+        await handleRestoreProjectRevision(res, session.user, projectRevisionRestoreMatch[1], projectRevisionRestoreMatch[2]);
+        return;
+      }
+
+      if (projectIdMatch && req.method === "GET") {
+        await handleGetProject(res, session.user, projectIdMatch[1]);
+        return;
+      }
+
+      if (projectIdMatch && req.method === "PUT") {
+        if (!userCanSaveProject(session.user)) {
+          sendJson(res, 403, { error: "Project update permission required." });
+          return;
+        }
+
+        await handleUpdateProject(req, res, session.user, projectIdMatch[1]);
+        return;
+      }
+
+      if (projectIdMatch && req.method === "DELETE") {
+        if (!userHasRole(session.user, "admin")) {
+          sendJson(res, 403, { error: "Admin role required." });
+          return;
+        }
+
+        await handleDeleteProject(res, projectIdMatch[1]);
+        return;
+      }
+
+      sendJson(res, 404, { error: "Not found" });
       return;
     }
 
@@ -90,6 +222,483 @@ server.listen(port, () => {
   });
 });
 
+async function handleSession(req, res) {
+  const session = await getSession(req);
+  sendJson(res, 200, { user: session?.user || null });
+}
+
+async function handleLogin(req, res) {
+  const body = await readJsonBody(req, 50_000);
+  const identifier = normalizeLoginIdentifier(body.identifier || body.email || body.name);
+  const password = String(body.password || "");
+  if (!identifier || !password) {
+    sendJson(res, 400, { error: "Please enter your name or email address and password." });
+    return;
+  }
+
+  const users = await loadUsers();
+  const user = users.find((item) => userMatchesIdentifier(item, identifier) && item.active !== false);
+  if (!user || !(await verifyPassword(password, user.passwordHash))) {
+    sendJson(res, 401, { error: "Invalid login credentials." });
+    return;
+  }
+
+  const sessionId = randomBytes(32).toString("base64url");
+  sessions.set(sessionId, { user: publicUser(user), createdAt: new Date().toISOString() });
+  res.setHeader("Set-Cookie", serializeCookie(sessionCookieName, sessionId, cookieOptions()));
+  sendJson(res, 200, { user: publicUser(user), passwordChangeRequired: user.mustChangePassword === true });
+}
+
+async function handleLogout(req, res) {
+  const sessionId = getCookie(req, sessionCookieName);
+  if (sessionId) {
+    sessions.delete(sessionId);
+  }
+
+  res.setHeader("Set-Cookie", serializeCookie(sessionCookieName, "", { ...cookieOptions(), "Max-Age": 0 }));
+  sendJson(res, 200, { ok: true });
+}
+
+async function handleListUsers(res) {
+  const users = await loadUsers();
+  sendJson(res, 200, { users: users.map(publicUser) });
+}
+
+async function handleChangePassword(req, res, userId) {
+  const body = await readJsonBody(req, 50_000);
+  const password = String(body.password || "");
+  const confirmPassword = String(body.confirmPassword || "");
+  if (password.length < 8) {
+    sendJson(res, 400, { error: "Please enter a password with at least 8 characters." });
+    return;
+  }
+
+  if (confirmPassword && password !== confirmPassword) {
+    sendJson(res, 400, { error: "Password confirmation does not match." });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    sendJson(res, 404, { error: "User not found." });
+    return;
+  }
+
+  const updatedUser = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      passwordHash: await hashPassword(password),
+      mustChangePassword: false,
+    },
+  });
+  refreshSessionsForUser(updatedUser);
+  sendJson(res, 200, { user: publicUser(updatedUser) });
+}
+
+async function handleCreateUser(req, res) {
+  const body = await readJsonBody(req, 50_000);
+  const name = normalizeUserName(body.name);
+  const email = normalizeEmail(body.email);
+  const password = String(body.password || "");
+  if (!name) {
+    sendJson(res, 400, { error: "Please enter a user name." });
+    return;
+  }
+
+  if (!email) {
+    sendJson(res, 400, { error: "Please enter a valid email address." });
+    return;
+  }
+
+  if (password.length < 8) {
+    sendJson(res, 400, { error: "Please enter a password with at least 8 characters." });
+    return;
+  }
+
+  if (await prisma.user.findUnique({ where: { email } })) {
+    sendJson(res, 409, { error: "This email address already exists." });
+    return;
+  }
+
+  if (await prisma.user.findUnique({ where: { name } })) {
+    sendJson(res, 409, { error: "This user name already exists." });
+    return;
+  }
+
+  const user = await prisma.user.create({
+    data: {
+      name,
+      email,
+      roles: normalizeRoles(body.roles ?? body.role),
+      active: body.active !== false,
+      passwordHash: await hashPassword(password),
+      mustChangePassword: true,
+    },
+  });
+  sendJson(res, 201, { user: publicUser(user) });
+}
+
+async function handleUpdateUser(req, res, userId) {
+  const body = await readJsonBody(req, 50_000);
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    sendJson(res, 404, { error: "User not found." });
+    return;
+  }
+
+  const name = body.name === undefined ? user.name : normalizeUserName(body.name);
+  if (!name) {
+    sendJson(res, 400, { error: "Please enter a user name." });
+    return;
+  }
+
+  const email = body.email === undefined ? user.email : normalizeEmail(body.email);
+  if (!email) {
+    sendJson(res, 400, { error: "Please enter a valid email address." });
+    return;
+  }
+
+  const existingEmailUser = await prisma.user.findUnique({ where: { email } });
+  if (existingEmailUser && existingEmailUser.id !== user.id) {
+    sendJson(res, 409, { error: "This email address already exists." });
+    return;
+  }
+
+  const existingNameUser = await prisma.user.findUnique({ where: { name } });
+  if (existingNameUser && existingNameUser.id !== user.id) {
+    sendJson(res, 409, { error: "This user name already exists." });
+    return;
+  }
+
+  const password = String(body.password || "");
+  if (password && password.length < 8) {
+    sendJson(res, 400, { error: "Please enter a password with at least 8 characters." });
+    return;
+  }
+
+  const data = {
+    name,
+    email,
+    roles: normalizeRoles(body.roles ?? body.role ?? user.roles),
+    active: body.active !== false,
+  };
+  if (password) {
+    data.passwordHash = await hashPassword(password);
+    data.mustChangePassword = true;
+  }
+  const updatedUser = await prisma.user.update({ where: { id: userId }, data });
+  refreshSessionsForUser(updatedUser);
+  sendJson(res, 200, { user: publicUser(updatedUser) });
+}
+
+async function handleDeleteUser(res, userId, currentUserId) {
+  if (userId === currentUserId) {
+    sendJson(res, 400, { error: "You cannot delete your own user account while signed in." });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    sendJson(res, 404, { error: "User not found." });
+    return;
+  }
+
+  await prisma.user.delete({ where: { id: userId } });
+  removeSessionsForUser(userId);
+  sendJson(res, 200, { ok: true });
+}
+
+async function requireSession(req, res, options = {}) {
+  const session = await getSession(req);
+  if (!session) {
+    sendJson(res, 401, { error: "Authentication required." });
+    return null;
+  }
+
+  if (session.user.mustChangePassword && !options.allowPasswordChange) {
+    sendJson(res, 403, { error: "Password change required.", passwordChangeRequired: true });
+    return null;
+  }
+
+  if (options.admin && !userHasRole(session.user, "admin")) {
+    sendJson(res, 403, { error: "Admin role required." });
+    return null;
+  }
+
+  return session;
+}
+
+async function getSession(req) {
+  const sessionId = getCookie(req, sessionCookieName);
+  if (!sessionId) return null;
+
+  const session = sessions.get(sessionId);
+  if (!session) return null;
+
+  const user = await prisma.user.findFirst({
+    where: {
+      id: session.user.id,
+      active: true,
+    },
+  });
+  if (!user) {
+    sessions.delete(sessionId);
+    return null;
+  }
+
+  session.user = publicUser(user);
+  return session;
+}
+
+async function loadUsers() {
+  await importLegacyUsersIfNeeded();
+  await bootstrapAdminUsers();
+  return prisma.user.findMany({ orderBy: [{ createdAt: "asc" }, { name: "asc" }] });
+}
+
+async function importLegacyUsersIfNeeded() {
+  const userCount = await prisma.user.count();
+  if (userCount > 0) return;
+
+  let users = [];
+  try {
+    const raw = await readFile(legacyUsersFilePath, "utf8");
+    const parsed = JSON.parse(raw);
+    users = Array.isArray(parsed.users) ? parsed.users : [];
+  } catch {
+    users = [];
+  }
+
+  const legacyUsers = users.map(normalizeStoredUser).filter(Boolean);
+  for (const user of legacyUsers) {
+    await prisma.user.upsert({
+      where: { email: user.email },
+      update: {
+        name: user.name,
+        roles: user.roles,
+        active: user.active,
+        passwordHash: user.passwordHash,
+        mustChangePassword: user.mustChangePassword,
+      },
+      create: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        roles: user.roles,
+        active: user.active,
+        passwordHash: user.passwordHash,
+        mustChangePassword: user.mustChangePassword,
+        createdAt: new Date(user.createdAt),
+        updatedAt: new Date(user.updatedAt),
+      },
+    });
+  }
+}
+
+async function bootstrapAdminUsers() {
+  const adminEmails = String(process.env.ADMIN_EMAIL || process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map(normalizeEmail)
+    .filter(Boolean);
+  const adminName = normalizeUserName(process.env.ADMIN_NAME || "Admin");
+  const adminPassword = String(process.env.ADMIN_PASSWORD || "");
+
+  for (const email of adminEmails) {
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      await prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          name: normalizeUserName(existing.name) || adminName,
+          roles: ["admin"],
+          active: true,
+          passwordHash: existing.passwordHash || (adminPassword ? await hashPassword(adminPassword) : ""),
+          mustChangePassword: existing.mustChangePassword === true,
+        },
+      });
+      continue;
+    }
+
+    await prisma.user.create({
+      data: {
+        name: adminName,
+        email,
+        roles: ["admin"],
+        active: true,
+        passwordHash: adminPassword ? await hashPassword(adminPassword) : "",
+        mustChangePassword: false,
+      },
+    });
+  }
+}
+
+function normalizeStoredUser(user) {
+  const email = normalizeEmail(user.email);
+  if (!email) return null;
+  const name = normalizeUserName(user.name) || email.split("@")[0] || "User";
+
+  return {
+    id: String(user.id || randomUUID()),
+    name,
+    email,
+    roles: normalizeRoles(user.roles ?? user.role),
+    active: user.active !== false,
+    passwordHash: typeof user.passwordHash === "string" ? user.passwordHash : "",
+    mustChangePassword: user.mustChangePassword === true,
+    createdAt: user.createdAt || new Date().toISOString(),
+    updatedAt: user.updatedAt || user.createdAt || new Date().toISOString(),
+  };
+}
+
+function publicUser(user) {
+  const roles = normalizeRoles(user.roles ?? user.role);
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: roles.includes("admin") ? "admin" : roles[0] || "user",
+    roles,
+    active: user.active !== false,
+    mustChangePassword: user.mustChangePassword === true,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  };
+}
+
+function refreshSessionsForUser(user) {
+  for (const session of sessions.values()) {
+    if (session.user.id === user.id) {
+      session.user = publicUser(user);
+    }
+  }
+}
+
+function removeSessionsForUser(userId) {
+  for (const [sessionId, session] of sessions.entries()) {
+    if (session.user.id === userId) {
+      sessions.delete(sessionId);
+    }
+  }
+}
+
+async function hashPassword(password) {
+  const salt = randomBytes(16).toString("base64url");
+  const derivedKey = await scryptAsync(password, salt, 64);
+  return `scrypt:${salt}:${Buffer.from(derivedKey).toString("base64url")}`;
+}
+
+async function verifyPassword(password, passwordHash) {
+  const [algorithm, salt, storedHash] = String(passwordHash || "").split(":");
+  if (algorithm !== "scrypt" || !salt || !storedHash) return false;
+
+  const derivedKey = await scryptAsync(password, salt, 64);
+  const storedBuffer = Buffer.from(storedHash, "base64url");
+  const derivedBuffer = Buffer.from(derivedKey);
+  if (storedBuffer.length !== derivedBuffer.length) return false;
+
+  return timingSafeEqual(storedBuffer, derivedBuffer);
+}
+
+function normalizeLoginIdentifier(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function userMatchesIdentifier(user, identifier) {
+  return normalizeEmail(user.email) === identifier || normalizeUserName(user.name).toLowerCase() === identifier;
+}
+
+function normalizeUserName(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 120);
+}
+
+function normalizeEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+}
+
+function normalizeRoles(value) {
+  const rawRoles = Array.isArray(value) ? value : String(value || "").split(",");
+  const roles = rawRoles.map((role) => String(role || "").trim()).filter((role) => knownRoles.has(role));
+  return [...new Set(roles)];
+}
+
+function userHasRole(user, role) {
+  const roles = normalizeRoles(user?.roles ?? user?.role);
+  return roles.includes("admin") || roles.includes(role);
+}
+
+function userHasAnyRole(user, roles) {
+  return roles.some((role) => userHasRole(user, role));
+}
+
+function userCanSaveProject(user) {
+  return userHasAnyRole(user, [
+    "admin",
+    "productRequirementOwner",
+    "softwareRequirementOwner",
+    "e2eTestOwner",
+    "productRequirementApprover",
+    "softwareRequirementApprover",
+    "e2eTestApprover",
+  ]);
+}
+
+function userCanCreateProject(user) {
+  return userHasAnyRole(user, [
+    "admin",
+    "productRequirementOwner",
+    "softwareRequirementOwner",
+    "e2eTestOwner",
+  ]);
+}
+
+function userCanAnalyzeRequirementType(user, requirementType) {
+  if (requirementType === "product" || requirementType === "product-improvement") {
+    return userHasRole(user, "productRequirementOwner");
+  }
+
+  if (requirementType === "software" || requirementType === "software-improvement") {
+    return userHasRole(user, "softwareRequirementOwner");
+  }
+
+  if (requirementType === "e2e" || requirementType === "e2e-improvement") {
+    return userHasRole(user, "e2eTestOwner");
+  }
+
+  return false;
+}
+
+function getCookie(req, name) {
+  const cookies = String(req.headers.cookie || "").split(";");
+  for (const cookie of cookies) {
+    const [rawName, ...rawValue] = cookie.trim().split("=");
+    if (rawName === name) {
+      return decodeURIComponent(rawValue.join("="));
+    }
+  }
+  return "";
+}
+
+function serializeCookie(name, value, options = {}) {
+  const parts = [`${name}=${encodeURIComponent(value)}`];
+  for (const [key, optionValue] of Object.entries(options)) {
+    if (optionValue === true) {
+      parts.push(key);
+    } else if (optionValue !== false && optionValue !== undefined && optionValue !== null) {
+      parts.push(`${key}=${optionValue}`);
+    }
+  }
+  return parts.join("; ");
+}
+
+function cookieOptions() {
+  return {
+    Path: `${basePath || "/"}`,
+    HttpOnly: true,
+    SameSite: "Lax",
+  };
+}
+
 async function openAppInBrowser(url) {
   if (process.env.OPEN_BROWSER === "false") return;
 
@@ -106,7 +715,7 @@ async function openAppInBrowser(url) {
   await execFileAsync("xdg-open", [url]);
 }
 
-async function handleAnalyze(req, res) {
+async function handleAnalyze(req, res, user) {
   const body = await readJsonBody(req, 3_000_000);
   const requirementType = body.requirementType || "product";
   if (
@@ -118,6 +727,11 @@ async function handleAnalyze(req, res) {
     requirementType !== "product-improvement"
   ) {
     sendJson(res, 400, { error: "Unsupported requirement type." });
+    return;
+  }
+
+  if (!userCanAnalyzeRequirementType(user, requirementType)) {
+    sendJson(res, 403, { error: "Permission required for this requirement type." });
     return;
   }
 
@@ -670,37 +1284,322 @@ function softwareRequirementSchema() {
   };
 }
 
-async function handleSaveProject(req, res) {
-  if (process.platform !== "darwin") {
-    sendJson(res, 501, { error: "Native save dialog is only available on macOS." });
-    return;
-  }
-
+async function handleCreateProject(req, res, user) {
   const body = await readJsonBody(req, 25_000_000);
-  const content = typeof body.content === "string" ? body.content : "";
-  if (!content) {
-    sendJson(res, 400, { error: "No project content was provided." });
+  const data = parseProjectPayload(body);
+  if (data.error) {
+    sendJson(res, data.status, { error: data.error });
     return;
   }
 
-  const defaultName = normalizeProjectFileName(body.fileName || "Miele.DevPilot.mdp");
-  let targetPath;
+  const project = await createNewProject(user, data, body.action || "created");
+  sendJson(res, 201, {
+    project: projectSummary(project),
+    projectId: project.id,
+  });
+}
+
+async function handleListProjects(res, user) {
+  const projects = await prisma.project.findMany({
+    where: projectAccessWhere(user),
+    include: {
+      owner: true,
+      members: true,
+    },
+    orderBy: [{ updatedAt: "desc" }, { name: "asc" }],
+  });
+
+  sendJson(res, 200, { projects: projects.map(projectSummary) });
+}
+
+async function handleGetProject(res, user, projectId) {
+  const project = await prisma.project.findFirst({
+    where: {
+      id: projectId,
+      ...projectAccessWhere(user),
+    },
+  });
+
+  if (!project) {
+    sendJson(res, 404, { error: "Project not found." });
+    return;
+  }
+
+  sendJson(res, 200, {
+    project: projectSummary(project),
+    payload: project.content,
+  });
+}
+
+async function handleListProjectRevisions(res, user, projectId) {
+  const project = await prisma.project.findFirst({
+    where: {
+      id: projectId,
+      ...projectAccessWhere(user),
+    },
+  });
+
+  if (!project) {
+    sendJson(res, 404, { error: "Project not found." });
+    return;
+  }
+
+  const revisions = await prisma.projectRevision.findMany({
+    where: { projectId },
+    include: { user: true },
+    orderBy: { createdAt: "desc" },
+    take: 80,
+  });
+
+  sendJson(res, 200, { revisions: revisions.map(projectRevisionSummary) });
+}
+
+async function handleUpdateProject(req, res, user, projectId) {
+  const body = await readJsonBody(req, 25_000_000);
+  const data = parseProjectPayload(body, projectId);
+  if (data.error) {
+    sendJson(res, data.status, { error: data.error });
+    return;
+  }
+
+  const existingProject = await prisma.project.findFirst({
+    where: {
+      id: projectId,
+      ...projectAccessWhere(user),
+    },
+  });
+
+  if (!existingProject) {
+    sendJson(res, 404, { error: "Project not found." });
+    return;
+  }
+
+  const project = await prisma.$transaction(async (tx) => {
+    const updatedProject = await tx.project.update({
+      where: { id: projectId },
+      data: {
+        name: data.name,
+        description: data.description,
+        content: data.content,
+      },
+    });
+    await tx.projectRevision.create({
+      data: {
+        projectId,
+        userId: user.id,
+        action: normalizeRevisionAction(body.action || "autosave"),
+        content: data.content,
+      },
+    });
+    await pruneProjectRevisions(tx, projectId);
+    return updatedProject;
+  });
+
+  sendJson(res, 200, {
+    project: projectSummary(project),
+    projectId: project.id,
+  });
+}
+
+async function handleRestoreProjectRevision(res, user, projectId, revisionId) {
+  const existingProject = await prisma.project.findFirst({
+    where: {
+      id: projectId,
+      ...projectAccessWhere(user),
+    },
+  });
+
+  if (!existingProject) {
+    sendJson(res, 404, { error: "Project not found." });
+    return;
+  }
+
+  const revision = await prisma.projectRevision.findFirst({
+    where: {
+      id: revisionId,
+      projectId,
+    },
+  });
+
+  if (!revision) {
+    sendJson(res, 404, { error: "Project revision not found." });
+    return;
+  }
+
+  const data = parseProjectPayload({ content: revision.content }, projectId);
+  if (data.error) {
+    sendJson(res, data.status, { error: data.error });
+    return;
+  }
+
+  const project = await prisma.$transaction(async (tx) => {
+    const restoredProject = await tx.project.update({
+      where: { id: projectId },
+      data: {
+        name: data.name,
+        description: data.description,
+        content: data.content,
+      },
+    });
+    await tx.projectRevision.create({
+      data: {
+        projectId,
+        userId: user.id,
+        action: "Projektstand wiederhergestellt",
+        content: data.content,
+      },
+    });
+    await pruneProjectRevisions(tx, projectId);
+    return restoredProject;
+  });
+
+  sendJson(res, 200, {
+    project: projectSummary(project),
+    projectId: project.id,
+    payload: project.content,
+  });
+}
+
+async function handleDeleteProject(res, projectId) {
+  const project = await prisma.project.findUnique({ where: { id: projectId } });
+  if (!project) {
+    sendJson(res, 404, { error: "Project not found." });
+    return;
+  }
+
+  await prisma.project.delete({ where: { id: projectId } });
+  sendJson(res, 200, { ok: true });
+}
+
+async function createNewProject(user, data, action = "created") {
+  return prisma.$transaction(async (tx) => {
+    const project = await tx.project.create({
+      data: {
+        id: data.id,
+        name: data.name,
+        description: data.description,
+        content: data.content,
+        ownerId: user.id,
+        members: {
+          create: {
+            userId: user.id,
+            role: "owner",
+          },
+        },
+      },
+    });
+    await tx.projectRevision.create({
+      data: {
+        projectId: project.id,
+        userId: user.id,
+        action: normalizeRevisionAction(action),
+        content: data.content,
+      },
+    });
+    return project;
+  });
+}
+
+function projectAccessWhere(user) {
+  if (userHasRole(user, "admin")) return {};
+
+  return {
+    OR: [
+      { ownerId: user.id },
+      {
+        members: {
+          some: {
+            userId: user.id,
+          },
+        },
+      },
+    ],
+  };
+}
+
+function parseProjectPayload(body, fallbackProjectId = "") {
+  const rawContent = body.content ?? body.payload;
+  const payload = typeof rawContent === "string" ? parseJson(rawContent) : rawContent;
+  if (!payload || typeof payload !== "object") {
+    return { status: 400, error: "Project content is not valid JSON." };
+  }
+
+  if (payload.type !== "miele-devpilot-project") {
+    return { status: 400, error: "Unsupported project format." };
+  }
+
+  const id = String(fallbackProjectId || body.projectId || payload.project?.id || randomUUID()).trim();
+  const name = normalizeProjectName(body.name || payload.project?.name || "Miele.DevPilot");
+  const description = String(body.description ?? payload.project?.description ?? "").trim().slice(0, 2000);
+  const content = {
+    ...payload,
+    project: {
+      ...(payload.project || {}),
+      id,
+      name,
+      description,
+    },
+  };
+
+  return {
+    id,
+    name,
+    description,
+    content,
+  };
+}
+
+function parseJson(value) {
   try {
-    targetPath = await chooseSavePath(defaultName);
-  } catch (error) {
-    if (isAppleScriptCancel(error)) {
-      sendJson(res, 499, { canceled: true });
-      return;
-    }
-
-    console.error(error);
-    sendJson(res, 500, { error: "Save dialog could not be opened." });
-    return;
+    return JSON.parse(value);
+  } catch {
+    return null;
   }
+}
 
-  const finalPath = targetPath.toLowerCase().endsWith(".mdp") ? targetPath : `${targetPath}.mdp`;
-  await writeFile(finalPath, content, "utf8");
-  sendJson(res, 200, { fileName: basename(finalPath), path: finalPath });
+function normalizeRevisionAction(value) {
+  return String(value || "autosave").trim().slice(0, 180) || "autosave";
+}
+
+function projectSummary(project) {
+  return {
+    id: project.id,
+    name: project.name,
+    description: project.description || "",
+    ownerId: project.ownerId,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+  };
+}
+
+function projectRevisionSummary(revision) {
+  return {
+    id: revision.id,
+    projectId: revision.projectId,
+    action: revision.action,
+    userId: revision.userId,
+    userName: revision.user?.name || revision.user?.email || "",
+    createdAt: revision.createdAt,
+  };
+}
+
+async function pruneProjectRevisions(tx, projectId) {
+  const staleRevisions = await tx.projectRevision.findMany({
+    where: { projectId },
+    orderBy: { createdAt: "desc" },
+    skip: 80,
+    select: { id: true },
+  });
+
+  if (!staleRevisions.length) return;
+
+  await tx.projectRevision.deleteMany({
+    where: {
+      id: {
+        in: staleRevisions.map((revision) => revision.id),
+      },
+    },
+  });
 }
 
 async function handleSoftwareDerivation(requirements, uiLanguage, res) {
@@ -1418,11 +2317,6 @@ function cleanSoftwareRequirement(value) {
   };
 }
 
-function isAppleScriptCancel(error) {
-  const message = `${error?.message || ""}\n${error?.stderr || ""}`;
-  return error?.code === 1 && (message.includes("-128") || message.includes("User canceled"));
-}
-
 async function serveStatic(pathname, res, headOnly = false) {
   const requested = pathname === "/" ? "/index.html" : pathname;
   const safePath = normalize(decodeURIComponent(requested)).replace(/^(\.\.[/\\])+/, "");
@@ -1470,7 +2364,7 @@ function sendJson(res, status, data) {
 
 function setCorsHeaders(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
@@ -1509,27 +2403,12 @@ async function readGitValue(args) {
   }
 }
 
-async function chooseSavePath(defaultName) {
-  const { stdout } = await execFileAsync("osascript", [
-    "-e",
-    "on run argv",
-    "-e",
-    "set defaultName to item 1 of argv",
-    "-e",
-    "set chosenFile to choose file name with prompt \"Miele.DevPilot Projekt speichern\" default name defaultName",
-    "-e",
-    "return POSIX path of chosenFile",
-    "-e",
-    "end run",
-    defaultName,
-  ]);
-
-  return stdout.trim();
-}
-
-function normalizeProjectFileName(value) {
-  const name = basename(String(value || "Miele.DevPilot.mdp")).replace(/[/:]/g, "-").trim() || "Miele.DevPilot.mdp";
-  return name.toLowerCase().endsWith(".mdp") ? name : `${name}.mdp`;
+function normalizeProjectName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\.[^.]+$/, "")
+    .slice(0, 160) || "Miele.DevPilot";
 }
 
 function extractOutputText(payload) {
@@ -1744,21 +2623,26 @@ function buildMockE2eTestId(sourceId, index) {
 }
 
 async function loadDotEnv() {
-  if (process.env.OPENAI_API_KEY) {
-    return;
-  }
-
   try {
     const env = await readFile(join(root, ".env.local"), "utf8");
     for (const line of env.split(/\r?\n/)) {
       const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
       if (match && !process.env[match[1]]) {
-        process.env[match[1]] = match[2];
+        process.env[match[1]] = stripEnvQuotes(match[2]);
       }
     }
   } catch {
     // Local env files are optional. The request handler reports missing keys.
   }
+}
+
+function stripEnvQuotes(value) {
+  const trimmed = String(value || "").trim();
+  if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
+  }
+
+  return trimmed;
 }
 
 function normalizeBasePath(value) {

@@ -6,6 +6,8 @@ Webbasierter POC zur Qualitaetspruefung von Requirements aus Excel-Dateien.
 
 ```bash
 cp .env.example .env.local
+npm install
+npx prisma migrate dev
 npm start
 ```
 
@@ -36,6 +38,50 @@ Summe wird aus der API-Token-Usage geschaetzt; dafuer koennen die aktuellen
 Modellpreise in `.env.local` als USD pro 1M Tokens gesetzt werden:
 `OPENAI_INPUT_USD_PER_1M_TOKENS`, `OPENAI_CACHED_INPUT_USD_PER_1M_TOKENS` und
 `OPENAI_OUTPUT_USD_PER_1M_TOKENS`.
+
+## Persistenz
+
+Miele.DevPilot speichert Benutzer und Projekte in PostgreSQL ueber Prisma. Die
+lokale Entwicklungsdatenbank wird ueber `DATABASE_URL` konfiguriert:
+
+```bash
+DATABASE_URL="postgresql://miele_devpilot:devpassword@localhost:5432/miele_devpilot?schema=public"
+```
+
+Schema und Migrationen liegen unter `prisma/`. Nach Aenderungen am Datenmodell:
+
+```bash
+npx prisma migrate dev
+npx prisma generate
+```
+
+Beim ersten Start importiert der Server vorhandene Benutzer aus
+`data/users.json`, falls die Datenbank noch keine Benutzer enthaelt. Danach ist
+PostgreSQL die fuehrende Speicherung.
+
+## Benutzerverwaltung
+
+Miele.DevPilot nutzt eine PostgreSQL-basierte Benutzerverwaltung mit
+Passwort-Login. Lege in `.env.local` mindestens einen Start-Admin fest:
+
+```bash
+ADMIN_NAME=admin
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=Admin-DevPilot-2026!
+```
+
+Beim Serverstart wird dieser Benutzer in PostgreSQL angelegt bzw. auf die
+Rolle `admin` gesetzt. Die Anmeldung ist mit Name oder E-Mail-Adresse plus
+Passwort moeglich. Angemeldete Admins koennen die Benutzerverwaltung in der App
+ueber `Admin > Benutzerverwaltung` oeffnen und weitere Namen, E-Mail-Adressen,
+Passwoerter, Rollen und Aktiv-Status pflegen.
+
+Von Admins neu angelegte Benutzer erhalten ein initiales Passwort. Bei der
+ersten Anmeldung muessen sie ein eigenes neues Passwort setzen und bestaetigen,
+bevor die App weiter genutzt werden kann.
+
+Das initiale Passwort ist nur fuer die Erstinstallation gedacht und sollte nach
+der ersten Anmeldung geaendert werden.
 
 ## Offline-Test
 

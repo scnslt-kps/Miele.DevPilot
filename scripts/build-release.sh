@@ -11,11 +11,15 @@ mkdir -p "$TARGET_DIR"
 
 cp -R \
   package.json \
+  package-lock.json \
+  prisma.config.ts \
   server.mjs \
   index.html \
   app.js \
   styles.css \
   assets \
+  prisma \
+  src \
   vendor \
   .env.example \
   README.md \

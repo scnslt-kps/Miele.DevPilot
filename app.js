@@ -26,6 +26,7 @@ const state = {
   requirementType: "product",
   activeProcessStep: "product",
   aboutOpen: false,
+  adminOpen: false,
   productWindchillTransferComplete: false,
   productWindchillTransferredAt: "",
   softwareWindchillTransferComplete: false,
@@ -43,8 +44,10 @@ const state = {
   sourceFileName: "",
   projectName: "",
   projectDescription: "",
-  projectFileHandle: null,
+  projectId: "",
   projectFileName: "",
+  projectSavedSnapshot: "",
+  projectDirty: false,
   language: DEFAULT_LANGUAGE,
   progressStartedAt: 0,
   progressProcessed: 0,
@@ -56,6 +59,13 @@ const state = {
   progressTimerId: null,
   progressMode: "",
   progressInputCharCount: 0,
+  projectSaveTimerId: null,
+  projectSaveInFlight: false,
+  projectSaveQueued: false,
+  projectSavePaused: false,
+  projectRevisionAction: "",
+  currentUser: null,
+  adminUsers: [],
 };
 
 const PROJECT_FILE_TYPE = "miele-devpilot-project";
@@ -87,6 +97,27 @@ const PROCESS_STEP_LABELS = {
   usecase: "UseCase",
   userstory: "UserStory",
   "app-test": "App TestCase",
+};
+const DYNAMIC_UI_TEXT_IDS = new Set([
+  "accountUserName",
+  "projectHeaderName",
+  "projectHeaderDescription",
+  "aboutVersion",
+  "aboutBuild",
+  "aboutTag",
+  "aboutBuildDate",
+  "aboutRuntimePath",
+  "openAiCostTotal",
+  "openAiCostDetail",
+]);
+const USER_ROLE_LABELS = {
+  admin: "Admin",
+  productRequirementOwner: "Product Requirement Owner",
+  softwareRequirementOwner: "Software Requirement Owner",
+  e2eTestOwner: "E2E Test Owner",
+  productRequirementApprover: "Product Requirement Approver",
+  softwareRequirementApprover: "Software Requirement Approver",
+  e2eTestApprover: "E2E Test Approver",
 };
 const WORKFLOW_STEP_TITLES = {
   de: {
@@ -124,8 +155,7 @@ const UI_TRANSLATIONS = {
     "Hauptmenü": "Main menu",
     "Neues Projekt": "New project",
     "Projekt laden": "Open project",
-    "Projekt speichern": "Save project",
-    "Projekt speichern unter...": "Save project as...",
+    "Projekt löschen": "Delete project",
     "Import": "Import",
     "Datei": "File",
     "Requirements aus Windchill laden ist noch nicht verfügbar": "Loading requirements from Windchill is not available yet",
@@ -147,13 +177,13 @@ const UI_TRANSLATIONS = {
     "Token-Nutzung": "Token usage",
     "Die Werte beziehen sich auf den aktuellen Projektstand und werden beim Speichern des Projekts mitgesichert.": "The values refer to the current project state and are saved with the project.",
     "Workspace": "Workspace",
-    "Lege ein neues Projekt an oder lade eine Projektdatei, um Requirements zu importieren und zu bewerten.": "Create a new project or open a project file to import and assess requirements.",
+    "Lege ein neues Projekt an oder öffne ein gespeichertes Projekt, um Requirements zu importieren und zu bewerten.": "Create a new project or open a saved project to import and assess requirements.",
     "About": "About",
     "Von Product Requirements zu qualitätsgesicherten Software Requirements, UseCases und Testartefakten.": "From Product Requirements to quality-assured Software Requirements, UseCases, and test artifacts.",
     "Zweck": "Purpose",
     "Miele.DevPilot unterstützt Requirements Engineering durch strukturierte Analyse, Bewertung, Ableitung und Übernahme von Requirements im Projektkontext.": "Miele.DevPilot supports requirements engineering through structured analysis, assessment, derivation, and acceptance of requirements in the project context.",
     "Arbeitsstand": "Current status",
-    "Aktuell verfügbar sind PR-Import und Analyse, Projektdateien sowie die Ableitung und Prüfung von SR inklusive Score-Schwelle und Übernahmestatus.": "Currently available: PR import and analysis, project files, and SR derivation and review including score threshold and acceptance status.",
+    "Aktuell verfügbar sind PR-Import und Analyse, datenbankgestützte Projekte sowie die Ableitung und Prüfung von SR inklusive Score-Schwelle und Übernahmestatus.": "Currently available: PR import and analysis, database-backed projects, and SR derivation and review including score threshold and acceptance status.",
     "Version": "Version",
     "Autor": "Author",
     "Build-Informationen": "Build information",
@@ -361,7 +391,6 @@ const UI_TRANSLATIONS = {
     "E2E TestCases erstellt": "E2E TestCases created",
     "Gewählte Software Requirements": "Selected Software Requirements",
     "SR-Übertragung nach Windchill noch erforderlich": "SR transfer to Windchill still required",
-    "Projektdatei speichern": "Save project file",
     "Dateiimport ist nur im PR-Schritt verfügbar": "File import is only available in the PR step",
     "Einstellungen sind nur im PR-Schritt verfügbar": "Settings are only available in the PR step",
     "PR-Analyse ist nur im PR-Schritt verfügbar": "PR analysis is only available in the PR step",
@@ -376,7 +405,6 @@ const UI_TRANSLATIONS = {
     "Änderung erkannt": "Change detected",
     "Quelle geändert - neu ableiten erforderlich": "Source changed - derivation required",
     "Software Requirement geändert - TestCase neu ableiten erforderlich": "Software Requirement changed - TestCase derivation required",
-    "Aktuellen Arbeitsstand verwerfen und ein neues Projekt anlegen?": "Discard the current work state and create a new project?",
     "Bitte starte den lokalen Server und öffne die App über http://localhost:3000. Die Analyse-API ist über file:// nicht verfügbar.": "Please start the local server and open the app at http://localhost:3000. The analysis API is not available via file://.",
     "Bitte starte den lokalen Server und öffne die App über http://localhost:3000.": "Please start the local server and open the app at http://localhost:3000.",
     "Bitte beschreibe, was die AI am Product Requirement verbessern soll.": "Please describe what the AI should improve in the Product Requirement.",
@@ -397,13 +425,18 @@ const UI_TRANSLATIONS = {
 
 const els = {
   fileInput: document.querySelector("#fileInput"),
-  projectInput: document.querySelector("#projectInput"),
   languageSelect: document.querySelector("#languageSelect"),
   newProjectButton: document.querySelector("#newProjectButton"),
   openFileButton: document.querySelector("#openFileButton"),
   openProjectButton: document.querySelector("#openProjectButton"),
-  saveProjectButton: document.querySelector("#saveProjectButton"),
-  saveProjectAsButton: document.querySelector("#saveProjectAsButton"),
+  projectHistoryButton: document.querySelector("#projectHistoryButton"),
+  adminMenu: document.querySelector("#adminMenu"),
+  openUserAdminButton: document.querySelector("#openUserAdminButton"),
+  deleteProjectButton: document.querySelector("#deleteProjectButton"),
+  accountState: document.querySelector("#accountState"),
+  accountUserName: document.querySelector("#accountUserName"),
+  accountContextMenu: document.querySelector("#accountContextMenu"),
+  logoutButton: document.querySelector("#logoutButton"),
   openAiCostButton: document.querySelector("#openAiCostButton"),
   openAiCostOverlay: document.querySelector("#openAiCostOverlay"),
   openAiCostCloseButton: document.querySelector("#openAiCostCloseButton"),
@@ -447,6 +480,14 @@ const els = {
   projectCreateButton: document.querySelector("#projectCreateButton"),
   projectName: document.querySelector("#projectName"),
   projectDescription: document.querySelector("#projectDescription"),
+  projectSelectionOverlay: document.querySelector("#projectSelectionOverlay"),
+  projectSelectionCloseButton: document.querySelector("#projectSelectionCloseButton"),
+  projectSelectionMessage: document.querySelector("#projectSelectionMessage"),
+  projectSelectionBody: document.querySelector("#projectSelectionBody"),
+  projectHistoryOverlay: document.querySelector("#projectHistoryOverlay"),
+  projectHistoryCloseButton: document.querySelector("#projectHistoryCloseButton"),
+  projectHistoryMessage: document.querySelector("#projectHistoryMessage"),
+  projectHistoryBody: document.querySelector("#projectHistoryBody"),
   resultsTable: document.querySelector("#resultsTable"),
   resultsBody: document.querySelector("#resultsBody"),
   softwareRequirementsBody: document.querySelector("#softwareRequirementsBody"),
@@ -523,7 +564,6 @@ const els = {
   prImprovementAttachmentList: document.querySelector("#prImprovementAttachmentList"),
   prImproveButton: document.querySelector("#prImproveButton"),
   selectionIssues: document.querySelector("#selectionIssues"),
-  statusPill: document.querySelector("#statusPill"),
   projectHeaderName: document.querySelector("#projectHeaderName"),
   projectHeaderDescription: document.querySelector("#projectHeaderDescription"),
   countMetricLabel: document.querySelector("#countMetricLabel"),
@@ -539,6 +579,8 @@ const els = {
   clearScoreFilterButton: document.querySelector("#clearScoreFilterButton"),
   emptyWorkspace: document.querySelector("#emptyWorkspace"),
   aboutPage: document.querySelector("#aboutPage"),
+  adminPage: document.querySelector("#adminPage"),
+  openCreateUserButton: document.querySelector("#openCreateUserButton"),
   workflowSelector: document.querySelector(".workflow-selector"),
   progressOverlay: document.querySelector("#progressOverlay"),
   progressTitle: document.querySelector("#progressTitle"),
@@ -547,6 +589,31 @@ const els = {
   progressTimeBar: document.querySelector("#progressTimeBar"),
   progressTimeText: document.querySelector("#progressTimeText"),
   progressDetail: document.querySelector("#progressDetail"),
+  loginOverlay: document.querySelector("#loginOverlay"),
+  loginForm: document.querySelector("#loginForm"),
+  loginIdentifier: document.querySelector("#loginIdentifier"),
+  loginPassword: document.querySelector("#loginPassword"),
+  loginMessage: document.querySelector("#loginMessage"),
+  passwordChangeOverlay: document.querySelector("#passwordChangeOverlay"),
+  passwordChangeForm: document.querySelector("#passwordChangeForm"),
+  newPassword: document.querySelector("#newPassword"),
+  confirmNewPassword: document.querySelector("#confirmNewPassword"),
+  passwordChangeMessage: document.querySelector("#passwordChangeMessage"),
+  userDialogOverlay: document.querySelector("#userDialogOverlay"),
+  userDialogTitle: document.querySelector("#userDialogTitle"),
+  userDialogCloseButton: document.querySelector("#userDialogCloseButton"),
+  adminCloseButton: document.querySelector("#adminCloseButton"),
+  userForm: document.querySelector("#userForm"),
+  userId: document.querySelector("#userId"),
+  userName: document.querySelector("#userName"),
+  userEmail: document.querySelector("#userEmail"),
+  userRoleInputs: [...document.querySelectorAll("input[name='userRoles']")],
+  userActive: document.querySelector("#userActive"),
+  userPassword: document.querySelector("#userPassword"),
+  saveUserButton: document.querySelector("#saveUserButton"),
+  resetUserFormButton: document.querySelector("#resetUserFormButton"),
+  userAdminMessage: document.querySelector("#userAdminMessage"),
+  usersBody: document.querySelector("#usersBody"),
   workflowSteps: [...document.querySelectorAll("[data-process-step]")],
   processPages: [...document.querySelectorAll("[data-process-page]")],
   menuDropdowns: [...document.querySelectorAll(".menu-dropdown")],
@@ -573,7 +640,6 @@ els.menuDropdowns.forEach((menu) => {
 
     if (menuRequiresProject(menu) && !hasProject()) {
       menu.open = false;
-      setStatus("Projekt erforderlich");
       return;
     }
 
@@ -587,27 +653,101 @@ els.menuDropdowns.forEach((menu) => {
 els.languageSelect.addEventListener("change", () => {
   void changeLanguage(els.languageSelect.value);
 });
+els.loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await loginWithEmail();
+});
+els.passwordChangeForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await changeOwnPassword();
+});
+els.logoutButton.addEventListener("click", async () => {
+  closeAccountContextMenu();
+  closeMenus();
+  await logout();
+});
+els.accountState.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
+  openAccountContextMenu();
+});
+els.accountState.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+
+  event.preventDefault();
+  openAccountContextMenu();
+});
+els.openUserAdminButton.addEventListener("click", async () => {
+  closeMenus();
+  await openUserAdminPage();
+});
+els.adminCloseButton.addEventListener("click", closeUserAdminPage);
+els.openCreateUserButton.addEventListener("click", openCreateUserDialog);
+els.userDialogCloseButton.addEventListener("click", closeUserDialog);
+els.userDialogOverlay.addEventListener("click", (event) => {
+  if (event.target === els.userDialogOverlay) {
+    closeUserDialog();
+  }
+});
+els.userForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await saveUserFromForm();
+});
+els.resetUserFormButton.addEventListener("click", closeUserDialog);
+els.usersBody.addEventListener("click", async (event) => {
+  const menuButton = event.target.closest("[data-user-menu]");
+  if (menuButton) {
+    const menu = menuButton.closest(".user-actions")?.querySelector(".user-action-menu");
+    const isOpening = menu?.hidden;
+    closeUserActionMenus();
+    if (menu && isOpening) {
+      menu.hidden = false;
+      menuButton.setAttribute("aria-expanded", "true");
+      positionUserActionMenu(menuButton, menu);
+    }
+    return;
+  }
+
+  const actionButton = event.target.closest("[data-user-action]");
+  if (!actionButton) return;
+
+  closeUserActionMenus();
+  const userId = actionButton.dataset.userId;
+  if (actionButton.dataset.userAction === "edit") {
+    editUser(userId);
+    return;
+  }
+
+  if (actionButton.dataset.userAction === "delete") {
+    await deleteUser(userId);
+  }
+});
 els.newProjectButton.addEventListener("click", () => {
   closeMenus();
+  if (!ensureMenuButtonAvailable(els.newProjectButton)) return;
+
   openProjectDialog();
 });
 els.openFileButton.addEventListener("click", () => {
-  if (!hasProject() || state.activeProcessStep !== "product") return;
-
   closeMenus();
+  if (!ensureMenuButtonAvailable(els.openFileButton)) return;
+
   els.fileInput.click();
 });
 els.openProjectButton.addEventListener("click", () => {
   closeMenus();
+  if (!ensureMenuButtonAvailable(els.openProjectButton)) return;
+
   openProjectFile();
 });
-els.saveProjectButton.addEventListener("click", async () => {
+els.projectHistoryButton.addEventListener("click", async () => {
   closeMenus();
-  await saveProjectFile();
+  if (!ensureMenuButtonAvailable(els.projectHistoryButton)) return;
+
+  await openProjectHistoryDialog();
 });
-els.saveProjectAsButton.addEventListener("click", async () => {
+els.deleteProjectButton.addEventListener("click", async () => {
   closeMenus();
-  await saveProjectFileAs();
+  await deleteProjectFromAdmin();
 });
 els.aboutButton.addEventListener("click", () => {
   closeMenus();
@@ -625,7 +765,9 @@ els.openAiCostOverlay.addEventListener("click", (event) => {
 });
 els.closeAboutButton.addEventListener("click", closeAboutPage);
 els.openSettingsButton.addEventListener("click", () => {
-  if (state.activeProcessStep !== "product") return;
+  closeMenus();
+  if (!ensureMenuButtonAvailable(els.openSettingsButton)) return;
+
   openSettingsDialog();
 });
 els.projectCloseButton.addEventListener("click", closeProjectDialog);
@@ -636,6 +778,43 @@ els.projectOverlay.addEventListener("click", (event) => {
     closeProjectDialog();
   }
 });
+els.projectSelectionCloseButton.addEventListener("click", closeProjectSelectionDialog);
+els.projectSelectionOverlay.addEventListener("click", (event) => {
+  if (event.target === els.projectSelectionOverlay) {
+    closeProjectSelectionDialog();
+  }
+});
+els.projectSelectionBody.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-project-action]");
+  if (!button) return;
+
+  const projectId = button.dataset.projectId;
+  if (!projectId) return;
+
+  if (button.dataset.projectAction === "open") {
+    await loadProjectFromServer(projectId);
+    closeProjectSelectionDialog();
+    return;
+  }
+
+  if (button.dataset.projectAction === "delete") {
+    await deleteProjectById(projectId, button.dataset.projectName || "");
+  }
+});
+els.projectHistoryCloseButton.addEventListener("click", closeProjectHistoryDialog);
+els.projectHistoryOverlay.addEventListener("click", (event) => {
+  if (event.target === els.projectHistoryOverlay) {
+    closeProjectHistoryDialog();
+  }
+});
+els.projectHistoryBody.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-revision-action]");
+  if (!button) return;
+
+  if (button.dataset.revisionAction === "restore") {
+    await restoreProjectRevision(button.dataset.revisionId);
+  }
+});
 els.settingsCloseButton.addEventListener("click", closeSettingsDialog);
 els.settingsDoneButton.addEventListener("click", closeSettingsDialog);
 els.settingsOverlay.addEventListener("click", (event) => {
@@ -644,9 +823,10 @@ els.settingsOverlay.addEventListener("click", (event) => {
   }
 });
 els.fileInput.addEventListener("change", handleFile);
-els.projectInput.addEventListener("change", handleProjectFile);
 els.requirementType.addEventListener("change", () => {
   state.requirementType = els.requirementType.value;
+  setProjectRevisionAction(`Requirement-Typ geaendert: ${state.requirementType}`);
+  updateProjectActions();
 });
 els.sheetSelect.addEventListener("change", () => {
   if (state.workbook) {
@@ -676,19 +856,33 @@ els.idColumn.addEventListener("change", () => {
 els.idPrefix.addEventListener("input", refreshRequirements);
 els.techTypeValueClassColumn.addEventListener("change", refreshTechTypesFromSettings);
 els.techTypeDesignationColumn.addEventListener("change", refreshTechTypesFromSettings);
-els.analyzeButton.addEventListener("click", analyzeRequirements);
+els.analyzeButton.addEventListener("click", async () => {
+  closeMenus();
+  if (!ensureMenuButtonAvailable(els.analyzeButton)) return;
+
+  await analyzeRequirements();
+});
 els.analyzeProductButton.addEventListener("click", analyzeRequirements);
 els.generateSoftwareButton.addEventListener("click", generateSoftwareRequirements);
 els.generateSoftwareMenuButton.addEventListener("click", async () => {
   closeMenus();
+  if (!ensureMenuButtonAvailable(els.generateSoftwareMenuButton)) return;
+
   await generateSoftwareRequirements();
 });
 els.generateE2eButton.addEventListener("click", generateE2eTests);
 els.generateE2eMenuButton.addEventListener("click", async () => {
   closeMenus();
+  if (!ensureMenuButtonAvailable(els.generateE2eMenuButton)) return;
+
   await generateE2eTests();
 });
-els.exportButton.addEventListener("click", simulateActiveWindchillTransfer);
+els.exportButton.addEventListener("click", () => {
+  closeMenus();
+  if (!ensureMenuButtonAvailable(els.exportButton)) return;
+
+  simulateActiveWindchillTransfer();
+});
 els.productTransferButton.addEventListener("click", simulateProductWindchillTransfer);
 els.softwareTransferButton.addEventListener("click", simulateSoftwareWindchillTransfer);
 els.criticalIssuesButton.addEventListener("click", activateScoreFilter);
@@ -764,6 +958,8 @@ els.e2eSelectionOverlay.addEventListener("click", (event) => {
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closeMenus();
+    closeAccountContextMenu();
+    closeUserActionMenus();
   }
 
   if (event.key === "Escape" && !els.settingsOverlay.hidden) {
@@ -774,8 +970,20 @@ window.addEventListener("keydown", (event) => {
     closeProjectDialog();
   }
 
+  if (event.key === "Escape" && !els.projectSelectionOverlay.hidden) {
+    closeProjectSelectionDialog();
+  }
+
+  if (event.key === "Escape" && !els.projectHistoryOverlay.hidden) {
+    closeProjectHistoryDialog();
+  }
+
   if (event.key === "Escape" && !els.openAiCostOverlay.hidden) {
     closeOpenAiCostDialog();
+  }
+
+  if (event.key === "Escape" && !els.userDialogOverlay.hidden) {
+    closeUserDialog();
   }
 
   if (event.key === "Escape" && !els.selectionOverlay.hidden) {
@@ -794,27 +1002,419 @@ document.addEventListener("click", (event) => {
   if (!event.target.closest(".menu-dropdown")) {
     closeMenus();
   }
+
+  if (!event.target.closest("#accountState")) {
+    closeAccountContextMenu();
+  }
+
+  if (!event.target.closest(".user-actions")) {
+    closeUserActionMenus();
+  }
 });
 
 function closeMenus() {
   els.menuDropdowns.forEach((menu) => {
     menu.open = false;
   });
+  normalizeMenuButtonStates();
+}
+
+function openAccountContextMenu() {
+  if (!state.currentUser) return;
+
+  els.accountContextMenu.hidden = false;
+}
+
+function closeAccountContextMenu() {
+  els.accountContextMenu.hidden = true;
+}
+
+function closeUserActionMenus() {
+  els.usersBody.querySelectorAll(".user-action-menu").forEach((menu) => {
+    menu.hidden = true;
+    menu.classList.remove("is-above");
+  });
+  els.usersBody.querySelectorAll("[data-user-menu]").forEach((button) => {
+    button.setAttribute("aria-expanded", "false");
+  });
+}
+
+function positionUserActionMenu(button, menu) {
+  menu.classList.remove("is-above");
+
+  const tableWrap = button.closest(".user-table-wrap");
+  if (!tableWrap) return;
+
+  const menuRect = menu.getBoundingClientRect();
+  const tableRect = tableWrap.getBoundingClientRect();
+  const buttonRect = button.getBoundingClientRect();
+  const wouldClipBottom = menuRect.bottom > tableRect.bottom;
+  const hasSpaceAbove = buttonRect.top - tableRect.top > menuRect.height + 8;
+
+  if (wouldClipBottom && hasSpaceAbove) {
+    menu.classList.add("is-above");
+  }
+}
+
+async function loadSession() {
+  try {
+    const response = await fetch(getSessionEndpoint());
+    if (!response.ok) {
+      state.currentUser = null;
+      renderAuthState();
+      return;
+    }
+
+    const data = await response.json();
+    state.currentUser = data.user || null;
+    renderAuthState();
+  } catch {
+    state.currentUser = null;
+    renderAuthState();
+  }
+}
+
+async function loginWithEmail() {
+  const identifier = els.loginIdentifier.value.trim();
+  const password = els.loginPassword.value;
+  els.loginMessage.textContent = "";
+
+  try {
+    const response = await fetch(getLoginEndpoint(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier, password }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      els.loginMessage.textContent = data.error || "Anmeldung fehlgeschlagen";
+      return;
+    }
+
+    state.currentUser = data.user || null;
+    els.loginIdentifier.value = "";
+    els.loginPassword.value = "";
+    renderAuthState();
+  } catch {
+    els.loginMessage.textContent = "Server nicht erreichbar";
+  }
+}
+
+async function changeOwnPassword() {
+  const password = els.newPassword.value;
+  const confirmPassword = els.confirmNewPassword.value;
+  els.passwordChangeMessage.textContent = "";
+
+  if (password !== confirmPassword) {
+    els.passwordChangeMessage.textContent = "Die Passwörter stimmen nicht überein.";
+    return;
+  }
+
+  try {
+    const response = await fetch(getChangePasswordEndpoint(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password, confirmPassword }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      els.passwordChangeMessage.textContent = data.error || "Passwort konnte nicht geändert werden";
+      return;
+    }
+
+    state.currentUser = data.user || { ...state.currentUser, mustChangePassword: false };
+    els.newPassword.value = "";
+    els.confirmNewPassword.value = "";
+    renderAuthState();
+  } catch {
+    els.passwordChangeMessage.textContent = "Server nicht erreichbar";
+  }
+}
+
+async function logout() {
+  try {
+    await fetch(getLogoutEndpoint(), { method: "POST" });
+  } catch {
+    // Local session state is cleared even if the server is unavailable.
+  }
+
+  state.currentUser = null;
+  state.adminUsers = [];
+  closeUserAdminPage();
+  renderAuthState();
+}
+
+function renderAuthState() {
+  const isSignedIn = Boolean(state.currentUser);
+  const isAdmin = currentUserHasRole("admin");
+  const mustChangePassword = state.currentUser?.mustChangePassword === true;
+  els.loginOverlay.hidden = isSignedIn;
+  els.passwordChangeOverlay.hidden = !mustChangePassword;
+  els.adminMenu.hidden = !isAdmin;
+  if (!isAdmin) {
+    state.adminOpen = false;
+  }
+  els.accountState.hidden = !isSignedIn;
+  els.accountUserName.textContent = state.currentUser?.name || state.currentUser?.email || "-";
+  els.logoutButton.disabled = !isSignedIn;
+  closeAccountContextMenu();
+  updateProjectActions();
+  if (mustChangePassword) {
+    els.newPassword.focus();
+    return;
+  }
+
+  if (!isSignedIn) {
+    els.loginIdentifier.focus();
+  }
+}
+
+async function openUserAdminPage() {
+  if (!currentUserHasRole("admin")) return;
+
+  state.aboutOpen = false;
+  state.adminOpen = true;
+  renderWorkspaceState();
+  renderProcessPages();
+  closeUserDialog();
+  await loadAdminUsers();
+}
+
+function closeUserAdminPage() {
+  state.adminOpen = false;
+  els.userAdminMessage.textContent = "";
+  renderWorkspaceState();
+  renderProcessPages();
+}
+
+async function loadAdminUsers() {
+  els.userAdminMessage.textContent = "Benutzer werden geladen...";
+  try {
+    const response = await fetch(getAdminUsersEndpoint());
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      els.userAdminMessage.textContent = data.error || "Benutzer konnten nicht geladen werden";
+      return;
+    }
+
+    state.adminUsers = Array.isArray(data.users) ? data.users : [];
+    renderUserTable();
+    els.userAdminMessage.textContent = "";
+  } catch {
+    els.userAdminMessage.textContent = "Server nicht erreichbar";
+  }
+}
+
+function openCreateUserDialog() {
+  resetUserForm();
+  els.userDialogTitle.textContent = "Benutzer anlegen";
+  els.saveUserButton.textContent = "Benutzer speichern";
+  els.userPassword.required = true;
+  els.userPassword.placeholder = "Mindestens 8 Zeichen";
+  els.userDialogOverlay.hidden = false;
+  els.userName.focus();
+}
+
+function closeUserDialog() {
+  els.userDialogOverlay.hidden = true;
+}
+
+async function saveUserFromForm() {
+  const userId = els.userId.value;
+  const payload = {
+    name: els.userName.value.trim(),
+    email: els.userEmail.value.trim(),
+    roles: selectedUserRoles(),
+    active: els.userActive.checked,
+  };
+  if (els.userPassword.value) {
+    payload.password = els.userPassword.value;
+  }
+  const endpoint = userId ? getAdminUserEndpoint(userId) : getAdminUsersEndpoint();
+
+  els.userAdminMessage.textContent = "Benutzer wird gespeichert...";
+  try {
+    const response = await fetch(endpoint, {
+      method: userId ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      els.userAdminMessage.textContent = data.error || "Benutzer konnte nicht gespeichert werden";
+      return;
+    }
+
+    resetUserForm();
+    closeUserDialog();
+    await loadAdminUsers();
+    els.userAdminMessage.textContent = userId ? "Benutzer gespeichert" : "Benutzer angelegt";
+  } catch {
+    els.userAdminMessage.textContent = "Server nicht erreichbar";
+  }
+}
+
+function resetUserForm() {
+  els.userId.value = "";
+  els.userName.value = "";
+  els.userEmail.value = "";
+  setSelectedUserRoles([]);
+  els.userActive.checked = true;
+  els.userPassword.value = "";
+  els.userPassword.required = true;
+  els.userPassword.placeholder = "Mindestens 8 Zeichen";
+  els.saveUserButton.textContent = "Benutzer speichern";
+}
+
+function selectedUserRoles() {
+  return els.userRoleInputs.filter((input) => input.checked).map((input) => input.value);
+}
+
+function setSelectedUserRoles(roles) {
+  const selectedRoles = new Set(normalizeClientRoles(roles));
+  els.userRoleInputs.forEach((input) => {
+    input.checked = selectedRoles.has(input.value);
+  });
+}
+
+function normalizeClientRoles(value) {
+  const roles = Array.isArray(value) ? value : String(value || "").split(",");
+  return [...new Set(roles.map((role) => String(role || "").trim()).filter((role) => USER_ROLE_LABELS[role]))];
+}
+
+function formatRoleList(value) {
+  const roles = normalizeClientRoles(value);
+  if (!roles.length) return "Keine Rolle";
+  if (roles.includes("admin")) return "Admin";
+  return roles.map((role) => USER_ROLE_LABELS[role]).join(", ");
+}
+
+function currentUserHasRole(role) {
+  const roles = normalizeClientRoles(state.currentUser?.roles ?? state.currentUser?.role);
+  return roles.includes("admin") || roles.includes(role);
+}
+
+function currentUserHasAnyRole(roles) {
+  return roles.some((role) => currentUserHasRole(role));
+}
+
+function canCreateProject() {
+  return currentUserHasAnyRole(["admin", "productRequirementOwner", "softwareRequirementOwner", "e2eTestOwner"]);
+}
+
+function canLoadProject() {
+  return currentUserHasAnyRole([
+    "admin",
+    "productRequirementOwner",
+    "softwareRequirementOwner",
+    "e2eTestOwner",
+    "productRequirementApprover",
+    "softwareRequirementApprover",
+    "e2eTestApprover",
+  ]);
+}
+
+function canSaveProject() {
+  return canLoadProject();
+}
+
+function canEditProductRequirements() {
+  return currentUserHasRole("productRequirementOwner");
+}
+
+function canEditSoftwareRequirements() {
+  return currentUserHasRole("softwareRequirementOwner");
+}
+
+function canEditE2eTests() {
+  return currentUserHasRole("e2eTestOwner");
+}
+
+function editUser(userId) {
+  const user = state.adminUsers.find((item) => item.id === userId);
+  if (!user) return;
+
+  els.userDialogTitle.textContent = "Benutzer bearbeiten";
+  els.userId.value = user.id;
+  els.userName.value = user.name || "";
+  els.userEmail.value = user.email;
+  setSelectedUserRoles(normalizeClientRoles(user.roles ?? user.role));
+  els.userActive.checked = user.active !== false;
+  els.userPassword.value = "";
+  els.userPassword.required = false;
+  els.userPassword.placeholder = "Leer lassen, um Passwort beizubehalten";
+  els.saveUserButton.textContent = "Änderungen speichern";
+  els.userDialogOverlay.hidden = false;
+  els.userName.focus();
+}
+
+async function deleteUser(userId) {
+  const user = state.adminUsers.find((item) => item.id === userId);
+  if (!user) return;
+  if (!window.confirm(`Benutzer ${user.email} löschen?`)) return;
+
+  els.userAdminMessage.textContent = "Benutzer wird gelöscht...";
+  try {
+    const response = await fetch(getAdminUserEndpoint(userId), { method: "DELETE" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      els.userAdminMessage.textContent = data.error || "Benutzer konnte nicht gelöscht werden";
+      return;
+    }
+
+    resetUserForm();
+    await loadAdminUsers();
+    els.userAdminMessage.textContent = "Benutzer gelöscht";
+  } catch {
+    els.userAdminMessage.textContent = "Server nicht erreichbar";
+  }
+}
+
+function renderUserTable() {
+  if (!state.adminUsers.length) {
+    els.usersBody.innerHTML = `<tr><td colspan="5">${escapeHtml(translateUiText("Keine Benutzer vorhanden."))}</td></tr>`;
+    return;
+  }
+
+  els.usersBody.innerHTML = state.adminUsers
+    .map((user) => {
+      const statusText = user.active === false ? "Inaktiv" : user.mustChangePassword ? "Passwortwechsel offen" : "Aktiv";
+      const statusClass = user.active === false ? "status-inactive" : user.mustChangePassword ? "status-pending" : "status-active";
+      const roleText = formatRoleList(user.roles ?? user.role);
+      const isCurrentUser = user.id === state.currentUser?.id;
+      return `
+        <tr>
+          <td>${escapeHtml(user.name || "-")}${isCurrentUser ? ` <span class="muted-cell">(${escapeHtml(translateUiText("du"))})</span>` : ""}</td>
+          <td>${escapeHtml(user.email)}</td>
+          <td><span class="role-pill">${escapeHtml(roleText)}</span></td>
+          <td><span class="${statusClass}">${escapeHtml(statusText)}</span></td>
+          <td>
+            <div class="user-actions">
+              <button class="user-action-trigger" type="button" data-user-menu data-user-id="${escapeHtml(user.id)}" aria-expanded="false" aria-label="Aktionen für ${escapeHtml(user.name || user.email)}">•••</button>
+              <div class="user-action-menu" hidden>
+                <button type="button" data-user-action="edit" data-user-id="${escapeHtml(user.id)}">Bearbeiten</button>
+                <button type="button" data-user-action="delete" data-user-id="${escapeHtml(user.id)}" ${isCurrentUser ? "disabled" : ""}>Löschen</button>
+              </div>
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
 }
 
 function openAboutPage() {
   state.aboutOpen = true;
+  state.adminOpen = false;
   renderAboutPage();
   renderWorkspaceState();
   renderProcessPages();
-  setStatus("About");
 }
 
 function closeAboutPage() {
   state.aboutOpen = false;
   renderWorkspaceState();
   renderProcessPages();
-  setStatus(hasProject() ? "Bereit" : "Kein Projekt");
 }
 
 function renderAboutPage() {
@@ -836,21 +1436,21 @@ function setActiveProcessStep(processStep) {
   if (!hasProject()) return;
   if (!processStep) return;
   if (!isProcessStepAvailable(processStep)) {
-    setStatus(getLockedStepMessage(processStep));
     updateWorkflowState();
     return;
   }
 
   const wasAboutOpen = state.aboutOpen;
   state.aboutOpen = false;
+  state.adminOpen = false;
   if (processStep === state.activeProcessStep && !wasAboutOpen) return;
 
   state.activeProcessStep = processStep;
   updateWorkflowState();
   renderProcessPages();
   updateExportAvailability();
-
-  setStatus(processStep === "product" ? "Bereit" : "In Vorbereitung");
+  setProjectRevisionAction(`Prozessschritt geoeffnet: ${PROCESS_STEP_LABELS[processStep] || processStep}`);
+  updateProjectActions();
 }
 
 function updateWorkflowState() {
@@ -858,7 +1458,7 @@ function updateWorkflowState() {
   if (!hasProject()) return;
 
   if (!isProcessStepAvailable(state.activeProcessStep)) {
-    state.activeProcessStep = "product";
+    state.activeProcessStep = firstAvailableProcessStep();
     renderProcessPages();
   }
 
@@ -896,7 +1496,7 @@ function updateWorkflowState() {
 
 function renderProcessPages() {
   els.processPages.forEach((page) => {
-    const isActive = !state.aboutOpen && hasProject() && page.dataset.processPage === state.activeProcessStep;
+    const isActive = !state.aboutOpen && !state.adminOpen && hasProject() && page.dataset.processPage === state.activeProcessStep;
     page.hidden = !isActive;
     page.classList.toggle("is-active", isActive);
   });
@@ -905,7 +1505,7 @@ function renderProcessPages() {
 }
 
 function hasProject() {
-  return Boolean(state.projectName);
+  return Boolean(projectDisplayName() || state.projectDescription || state.requirements.length);
 }
 
 function renderWorkspaceState() {
@@ -914,10 +1514,11 @@ function renderWorkspaceState() {
   renderOpenAiCostSummary();
   renderMenuAvailability();
   els.aboutPage.hidden = !state.aboutOpen;
-  els.emptyWorkspace.hidden = state.aboutOpen || projectOpen;
-  els.workflowSelector.hidden = !projectOpen;
+  els.adminPage.hidden = !state.adminOpen;
+  els.emptyWorkspace.hidden = state.aboutOpen || state.adminOpen || projectOpen;
+  els.workflowSelector.hidden = !projectOpen || state.adminOpen;
   els.processPages.forEach((page) => {
-    if (state.aboutOpen || !projectOpen) {
+    if (state.aboutOpen || state.adminOpen || !projectOpen) {
       page.hidden = true;
       page.classList.remove("is-active");
     }
@@ -942,9 +1543,34 @@ function menuRequiresProject(menu) {
 }
 
 function renderProjectHeader() {
-  els.projectHeaderName.textContent = state.projectName || "Kein Projekt geöffnet";
+  updateProjectDirtyState();
+  const dirtyMarker = state.projectDirty ? " *" : "";
+  const displayName = projectDisplayName();
+  els.projectHeaderName.textContent = displayName ? `${displayName}${dirtyMarker}` : "Kein Projekt geöffnet";
+  els.projectHeaderName.title = state.projectDirty ? "Ungespeicherte Änderungen" : "";
   els.projectHeaderDescription.textContent = state.projectDescription || "";
   els.projectHeaderDescription.hidden = !state.projectDescription;
+}
+
+function updateProjectDirtyState() {
+  if (!hasProject()) {
+    state.projectDirty = false;
+    return;
+  }
+
+  state.projectDirty = !state.projectSavedSnapshot || currentProjectSnapshot() !== state.projectSavedSnapshot;
+}
+
+function markProjectSaved() {
+  state.projectSavedSnapshot = currentProjectSnapshot();
+  state.projectDirty = false;
+  renderProjectHeader();
+}
+
+function currentProjectSnapshot() {
+  const payload = createProjectPayload();
+  delete payload.savedAt;
+  return JSON.stringify(payload);
 }
 
 function renderOpenAiCostSummary() {
@@ -1000,8 +1626,22 @@ function normalizedOpenAiCostSummary(value = state.openAiCostSummary) {
 }
 
 function isProcessStepAvailable(processStep) {
+  if (!canAccessProcessStep(processStep)) return false;
+
   const previousStep = PROCESS_STEP_DEPENDENCIES[processStep];
   return !previousStep || isProcessStepComplete(previousStep);
+}
+
+function firstAvailableProcessStep() {
+  return Object.keys(PROCESS_STEP_DEPENDENCIES).find((processStep) => isProcessStepAvailable(processStep)) || "";
+}
+
+function canAccessProcessStep(processStep) {
+  if (currentUserHasRole("admin")) return true;
+  if (processStep === "product") return canEditProductRequirements();
+  if (processStep === "software") return canEditSoftwareRequirements();
+  if (processStep === "e2e") return canEditE2eTests();
+  return false;
 }
 
 function isProcessStepComplete(processStep) {
@@ -1012,6 +1652,10 @@ function isProcessStepComplete(processStep) {
 }
 
 function getLockedStepMessage(processStep) {
+  if (!canAccessProcessStep(processStep)) {
+    return "Keine Berechtigung für diesen Prozessbereich";
+  }
+
   const previousStep = PROCESS_STEP_DEPENDENCIES[processStep];
   if (!previousStep) return "";
 
@@ -1031,6 +1675,10 @@ function getLockedStepMessage(processStep) {
 }
 
 function getLockedStepShortText(processStep) {
+  if (!canAccessProcessStep(processStep)) {
+    return "Keine Berechtigung";
+  }
+
   const previousStep = PROCESS_STEP_DEPENDENCIES[processStep];
   if (!previousStep) return "";
 
@@ -1103,7 +1751,6 @@ async function handleFile(event) {
   const file = event.target.files?.[0];
   if (!file) return;
 
-  setStatus("Lese Datei...");
   els.fileState.textContent = file.name;
   state.sourceFileName = file.name;
   const buffer = await file.arrayBuffer();
@@ -1127,47 +1774,298 @@ async function handleFile(event) {
   openSettingsDialog();
 }
 
-async function handleProjectFile(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
-
-  await loadProjectFile(file, null);
-  event.target.value = "";
-}
-
 async function openProjectFile() {
-  if ("showOpenFilePicker" in window) {
-    try {
-      const [handle] = await window.showOpenFilePicker({
-        multiple: false,
-        types: [projectFilePickerType()],
-      });
-      const file = await handle.getFile();
-      await loadProjectFile(file, handle);
-      return;
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        setStatus("Laden abgebrochen");
-        return;
-      }
+  if (!canLoadProject()) return;
 
-      console.warn("Projekt-Dateidialog nicht verfügbar, nutze Eingabe-Fallback.", error);
-    }
-  }
-
-  els.projectInput.click();
+  const projects = await fetchProjectList();
+  if (!projects) return;
+  openProjectSelectionDialog(projects);
 }
 
-async function loadProjectFile(file, handle) {
-  try {
-    setStatus("Lade Projekt...");
-    const payload = JSON.parse(await file.text());
-    loadProjectPayload(payload, file.name, handle);
-    setStatus("Projekt geladen");
-  } catch (error) {
-    setStatus("Fehler");
-    alert(`Projektdatei konnte nicht geladen werden: ${error.message}`);
+function openProjectSelectionDialog(projects) {
+  renderProjectSelection(projects);
+  els.projectSelectionOverlay.hidden = false;
+}
+
+function closeProjectSelectionDialog() {
+  els.projectSelectionOverlay.hidden = true;
+}
+
+function renderProjectSelection(projects) {
+  const canDeleteProjects = currentUserHasRole("admin");
+  els.projectSelectionMessage.textContent = projects.length
+    ? `${projects.length} ${projects.length === 1 ? "Projekt" : "Projekte"} verfügbar`
+    : "Es sind noch keine Projekte in der Datenbank gespeichert.";
+
+  if (!projects.length) {
+    els.projectSelectionBody.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(translateUiText("Keine Projekte vorhanden."))}</td></tr>`;
+    return;
   }
+
+  els.projectSelectionBody.innerHTML = projects
+    .map((project) => {
+      const isCurrentProject = project.id === state.projectId;
+      const projectName = project.name || "Miele.DevPilot";
+      return `
+        <tr>
+          <td>
+            <strong>${escapeHtml(projectName)}</strong>
+            ${isCurrentProject ? ` <span class="muted-cell">(${escapeHtml(translateUiText("geöffnet"))})</span>` : ""}
+          </td>
+          <td>${escapeHtml(project.description || "-")}</td>
+          <td>${escapeHtml(formatProjectDate(project.updatedAt || project.createdAt))}</td>
+          <td>
+            <div class="project-row-actions">
+              <button type="button" data-project-action="open" data-project-id="${escapeHtml(project.id)}">Öffnen</button>
+              ${
+                canDeleteProjects
+                  ? `<button type="button" class="danger-text-button" data-project-action="delete" data-project-id="${escapeHtml(project.id)}" data-project-name="${escapeHtml(projectName)}">Löschen</button>`
+                  : ""
+              }
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+async function loadProjectFromServer(projectId) {
+  const endpoint = getProjectEndpoint(projectId);
+  if (!endpoint) return;
+
+  try {
+    state.projectSavePaused = true;
+    const response = await fetch(endpoint);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      alert(data.error || "Projekt konnte nicht geladen werden.");
+      return;
+    }
+
+    loadProjectPayload(data.payload, `${data.project?.name || "Miele.DevPilot"}.mdp`, data.project?.id);
+  } catch (error) {
+    alert(`Projekt konnte nicht geladen werden: ${error.message}`);
+  } finally {
+    state.projectSavePaused = false;
+  }
+}
+
+async function deleteProjectFromAdmin() {
+  if (!currentUserHasRole("admin")) return;
+
+  const projects = await fetchProjectList();
+  if (!projects) return;
+  openProjectSelectionDialog(projects);
+}
+
+async function deleteProjectById(projectId, projectName = "") {
+  if (!currentUserHasRole("admin")) return;
+
+  const displayName = projectName || "Projekt";
+  if (!confirm(`Projekt "${displayName}" wirklich löschen?`)) {
+    return;
+  }
+
+  try {
+    const response = await fetch(getProjectEndpoint(projectId), { method: "DELETE" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      alert(data.error || "Projekt konnte nicht gelöscht werden.");
+      return;
+    }
+
+    if (state.projectId === projectId) {
+      clearOpenProject();
+    }
+    const projects = await fetchProjectList();
+    if (projects) {
+      renderProjectSelection(projects);
+    }
+  } catch (error) {
+    console.warn("Projekt konnte nicht gelöscht werden.", error);
+  }
+}
+
+async function fetchProjectList() {
+  const endpoint = getProjectsEndpoint();
+  if (!endpoint) return null;
+
+  try {
+    const response = await fetch(endpoint);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      alert(data.error || "Projektliste konnte nicht geladen werden.");
+      return null;
+    }
+
+    return Array.isArray(data.projects) ? data.projects : [];
+  } catch (error) {
+    console.warn("Projektliste konnte nicht geladen werden.", error);
+    return null;
+  }
+}
+
+async function openProjectHistoryDialog() {
+  if (!state.projectId) return;
+
+  const revisions = await fetchProjectRevisions();
+  if (!revisions) return;
+
+  renderProjectHistory(revisions);
+  els.projectHistoryOverlay.hidden = false;
+}
+
+function closeProjectHistoryDialog() {
+  els.projectHistoryOverlay.hidden = true;
+}
+
+async function fetchProjectRevisions() {
+  const endpoint = getProjectRevisionsEndpoint(state.projectId);
+  if (!endpoint) return null;
+
+  try {
+    const response = await fetch(endpoint);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      alert(data.error || "Projekt-Historie konnte nicht geladen werden.");
+      return null;
+    }
+
+    return Array.isArray(data.revisions) ? data.revisions : [];
+  } catch (error) {
+    console.warn("Projekt-Historie konnte nicht geladen werden.", error);
+    return null;
+  }
+}
+
+function renderProjectHistory(revisions) {
+  els.projectHistoryMessage.textContent = revisions.length
+    ? `${revisions.length} ${revisions.length === 1 ? "Stand" : "Stände"} verfügbar`
+    : "Für dieses Projekt ist noch keine Historie vorhanden.";
+
+  if (!revisions.length) {
+    els.projectHistoryBody.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(translateUiText("Keine Historie vorhanden."))}</td></tr>`;
+    return;
+  }
+
+  els.projectHistoryBody.innerHTML = revisions
+    .map((revision, index) => {
+      const isLatest = index === 0;
+      return `
+        <tr>
+          <td>
+            ${escapeHtml(formatProjectDate(revision.createdAt))}
+            ${isLatest ? ` <span class="muted-cell">(${escapeHtml(translateUiText("aktuell"))})</span>` : ""}
+          </td>
+          <td>${escapeHtml(formatRevisionAction(revision.action))}</td>
+          <td>${escapeHtml(revision.userName || "-")}</td>
+          <td>
+            <div class="project-row-actions">
+              <button type="button" data-revision-action="restore" data-revision-id="${escapeHtml(revision.id)}" ${isLatest ? "disabled" : ""}>Wiederherstellen</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+async function restoreProjectRevision(revisionId) {
+  if (!state.projectId || !revisionId) return;
+
+  const endpoint = getProjectRevisionRestoreEndpoint(state.projectId, revisionId);
+  if (!endpoint) return;
+
+  try {
+    state.projectSavePaused = true;
+    const response = await fetch(endpoint, { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      alert(data.error || "Projektstand konnte nicht wiederhergestellt werden.");
+      return;
+    }
+
+    loadProjectPayload(data.payload, `${data.project?.name || "Miele.DevPilot"}.mdp`, data.project?.id);
+    const revisions = await fetchProjectRevisions();
+    if (revisions) {
+      renderProjectHistory(revisions);
+    }
+  } catch (error) {
+    console.warn("Projektstand konnte nicht wiederhergestellt werden.", error);
+  } finally {
+    state.projectSavePaused = false;
+  }
+}
+
+function formatRevisionAction(action) {
+  const labels = {
+    created: "Angelegt",
+    autosave: "Automatisch gespeichert",
+    restored: "Wiederhergestellt",
+  };
+
+  return labels[action] || action || "Automatisch gespeichert";
+}
+
+function setProjectRevisionAction(action) {
+  const label = String(action || "").trim();
+  if (!label) return;
+
+  state.projectRevisionAction = label;
+}
+
+function projectRevisionTargetLabel(item, fallback = "Requirement") {
+  const candidates = [
+    item?.id,
+    item?.sourceId,
+    item?.sourcePrId,
+    item?.name,
+    Number.isFinite(Number(item?.rowNumber)) ? `Zeile ${Number(item.rowNumber)}` : "",
+    Number.isFinite(Number(item?.sourceRowNumber)) ? `Zeile ${Number(item.sourceRowNumber)}` : "",
+  ];
+  const value = candidates.map((candidate) => String(candidate || "").trim()).find(Boolean);
+
+  return value || fallback;
+}
+
+function projectRevisionActionFor(action, item, fallback = "Requirement") {
+  return `${action}: ${projectRevisionTargetLabel(item, fallback)}`;
+}
+
+function clearOpenProject() {
+  clearTimeout(state.projectSaveTimerId);
+  state.projectSavePaused = true;
+  state.workbook = null;
+  state.sheetName = "Projekt";
+  state.rows = [];
+  state.headers = [];
+  state.techTypes = [];
+  state.requirements = [];
+  state.results = [];
+  state.softwareRequirements = [];
+  state.softwareSelections = new Map();
+  state.e2eTests = [];
+  state.e2eSelections = new Map();
+  state.finalSelections = new Map();
+  state.finalScoreUpdates = new Set();
+  state.generatedIds = false;
+  state.projectId = "";
+  state.projectName = "";
+  state.projectDescription = "";
+  state.projectFileName = "";
+  state.projectSavedSnapshot = "";
+  state.projectDirty = false;
+  state.projectSaveInFlight = false;
+  state.projectSaveQueued = false;
+  state.projectRevisionAction = "";
+  state.sourceFileName = "";
+  state.analysisComplete = false;
+  state.activeProcessStep = "product";
+  els.fileState.textContent = "Kein Projekt geöffnet";
+  renderWorkspaceState();
+  updateProjectActions();
+  state.projectSavePaused = false;
 }
 
 function openSettingsDialog() {
@@ -1179,6 +2077,8 @@ function closeSettingsDialog() {
 }
 
 function openProjectDialog() {
+  if (!canCreateProject()) return;
+
   els.projectName.value = state.projectName;
   els.projectDescription.value = state.projectDescription;
   els.projectOverlay.hidden = false;
@@ -1198,15 +2098,12 @@ function closeOpenAiCostDialog() {
   els.openAiCostOverlay.hidden = true;
 }
 
-function createProject() {
+async function createProject() {
+  if (!canCreateProject()) return;
+
   const projectName = els.projectName.value.trim();
   if (!projectName) {
     els.projectName.focus();
-    return;
-  }
-
-  const hasWork = state.requirements.length || state.results.length || state.projectName;
-  if (hasWork && !confirm("Aktuellen Arbeitsstand verwerfen und ein neues Projekt anlegen?")) {
     return;
   }
 
@@ -1214,11 +2111,15 @@ function createProject() {
     projectName,
     projectDescription: els.projectDescription.value.trim(),
   });
+
+  const created = await createProjectInDatabase();
+  if (!created) return;
+
   closeProjectDialog();
-  setStatus("Projekt angelegt");
 }
 
 function resetProjectState({ projectName, projectDescription }) {
+  clearTimeout(state.projectSaveTimerId);
   state.workbook = null;
   state.sheetName = "Projekt";
   state.rows = [];
@@ -1252,8 +2153,13 @@ function resetProjectState({ projectName, projectDescription }) {
   state.sourceFileName = "";
   state.projectName = projectName;
   state.projectDescription = projectDescription;
-  state.projectFileHandle = null;
+  state.projectId = "";
   state.projectFileName = "";
+  state.projectSavedSnapshot = "";
+  state.projectDirty = true;
+  state.projectSaveInFlight = false;
+  state.projectSaveQueued = false;
+  state.projectRevisionAction = "";
 
   els.fileState.textContent = `${projectName} (Projekt)`;
   els.sheetSelect.innerHTML = "";
@@ -1266,7 +2172,7 @@ function resetProjectState({ projectName, projectDescription }) {
   state.techTypes = [];
   fillColumnSelects();
   fillTechTypeColumnSelects();
-  els.analyzeButton.disabled = true;
+  setMenuButtonAvailability(els.analyzeButton, false, "Importiere zuerst eine PR-Datei");
   els.analyzeProductButton.disabled = true;
   updateProjectActions();
   updateExportAvailability();
@@ -1458,7 +2364,10 @@ function fillColumnSelects() {
 }
 
 function refreshRequirements() {
+  if (!canEditProductRequirements()) return;
+
   state.requirements = buildRequirementsFromCurrentConfig();
+  setProjectRevisionAction(`Import konfiguriert: ${state.requirements.length} PR`);
   state.results = [];
   state.softwareRequirements = [];
   state.softwareSelections = new Map();
@@ -1474,13 +2383,10 @@ function refreshRequirements() {
   state.softwareWindchillTransferComplete = false;
   state.softwareWindchillTransferredAt = "";
   state.analysisComplete = false;
-  els.analyzeButton.disabled = state.requirements.length === 0;
-  els.analyzeProductButton.disabled = state.requirements.length === 0;
   updateProjectActions();
   updateExportAvailability();
   renderTable();
   renderMetrics();
-  setStatus(`${state.requirements.length} Requirements`);
 }
 
 function buildRequirementsFromCurrentConfig() {
@@ -1512,15 +2418,18 @@ function buildRequirementsFromCurrentConfig() {
 }
 
 async function analyzeRequirements() {
+  if (!canEditProductRequirements()) {
+    alert("Nur Product Requirement Owner oder Admins können Product Requirements analysieren.");
+    return;
+  }
+
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    setStatus("Server erforderlich");
     alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000. Die Analyse-API ist über file:// nicht verfügbar.");
     return;
   }
 
-  setStatus("Analysiere...");
-  els.analyzeButton.disabled = true;
+  setMenuButtonAvailability(els.analyzeButton, false, "Analyse läuft");
   els.analyzeProductButton.disabled = true;
   state.finalSelections = new Map();
   state.finalScoreUpdates = new Set();
@@ -1536,7 +2445,6 @@ async function analyzeRequirements() {
     for (let index = 0; index < state.requirements.length; index += ANALYSIS_BATCH_SIZE) {
       const batchNumber = Math.floor(index / ANALYSIS_BATCH_SIZE) + 1;
       const batch = state.requirements.slice(index, index + ANALYSIS_BATCH_SIZE);
-      setStatus(`Analysiere ${batchNumber}/${totalBatches}`);
       updateProgress({
         processed: results.length,
         total: state.requirements.length,
@@ -1568,13 +2476,12 @@ async function analyzeRequirements() {
       });
     }
 
-    setStatus("Analyse fertig");
     state.analysisComplete = true;
     completeProgress(state.results.length);
+    setProjectRevisionAction(`PR analysiert: ${state.results.length} Requirements`);
     updateProjectActions();
     updateExportAvailability();
   } catch (error) {
-    setStatus("Fehler");
     hideProgress();
     alert(error.message);
   } finally {
@@ -1697,7 +2604,11 @@ function openSelectionDialog(rowNumber) {
   els.prImprovementAttachments.value = "";
   renderImprovementAttachmentList(els.prImprovementAttachments, els.prImprovementAttachmentList);
   renderTechTypeSelection(item, state.finalSelections.get(rowNumber));
-  els.selectAiButton.disabled = !result?.rewrittenRequirement;
+  const canEditProduct = canEditProductRequirements();
+  els.selectOriginalButton.disabled = !canEditProduct;
+  els.selectAiButton.disabled = !canEditProduct || !result?.rewrittenRequirement;
+  els.excludeRequirementButton.disabled = !canEditProduct;
+  els.prImproveButton.disabled = !canEditProduct;
   els.selectionIssues.innerHTML = result
     ? renderIssues(displayProductIssues(result, state.finalSelections.get(rowNumber)))
     : "Noch keine Analysehinweise vorhanden.";
@@ -1723,7 +2634,8 @@ function renderTechTypeSelection(requirement, selection) {
   }
 
   els.techTypeSelectionPanel.hidden = false;
-  els.selectAllTechTypesButton.disabled = false;
+  const canEditProduct = canEditProductRequirements();
+  els.selectAllTechTypesButton.disabled = !canEditProduct;
   const selected = new Set(selectedTechTypesForRequirement(requirement, selection));
   const groups = groupedTechTypes();
   els.techTypeSelectionList.innerHTML = groups
@@ -1734,7 +2646,7 @@ function renderTechTypeSelection(requirement, selection) {
         <details class="techtype-group" open>
           <summary>
             <label class="techtype-group-select">
-              <input type="checkbox" data-techtype-group="${escapeHtml(group.valueClass)}" ${groupChecked ? "checked" : ""} />
+              <input type="checkbox" data-techtype-group="${escapeHtml(group.valueClass)}" ${groupChecked ? "checked" : ""} ${canEditProduct ? "" : "disabled"} />
               <span>${escapeHtml(group.valueClass)}</span>
             </label>
             <small>${groupSelectedCount} / ${group.items.length}</small>
@@ -1746,7 +2658,7 @@ function renderTechTypeSelection(requirement, selection) {
                 const designation = item.designation || `TechType ${index + 1}`;
                 return `
                   <label>
-                    <input type="checkbox" data-techtype-designation="${escapeHtml(item.designation)}" data-techtype-designation-group="${escapeHtml(item.valueClass)}" ${selected.has(item.designation) ? "checked" : ""} />
+                    <input type="checkbox" data-techtype-designation="${escapeHtml(item.designation)}" data-techtype-designation-group="${escapeHtml(item.valueClass)}" ${selected.has(item.designation) ? "checked" : ""} ${canEditProduct ? "" : "disabled"} />
                     <span title="${escapeHtml(designation)}">${escapeHtml(designation)}</span>
                   </label>
                 `;
@@ -1847,6 +2759,11 @@ function syncTechTypeGroupCheckboxes() {
 }
 
 function selectAllTechTypesForActiveRequirement() {
+  if (!canEditProductRequirements()) {
+    alert("Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten.");
+    return;
+  }
+
   els.techTypeSelectionList.querySelectorAll("input[type='checkbox']").forEach((input) => {
     input.checked = true;
     input.indeterminate = false;
@@ -1857,6 +2774,8 @@ function selectAllTechTypesForActiveRequirement() {
 }
 
 function persistActiveRequirementTechTypes() {
+  if (!canEditProductRequirements()) return;
+
   const rowNumber = state.activeSelectionRow;
   if (!rowNumber) return;
 
@@ -1880,12 +2799,20 @@ function persistActiveRequirementTechTypes() {
     resetSoftwareWindchillTransfer();
   }
   updateExportAvailability();
+  setProjectRevisionAction(projectRevisionActionFor("TechTypes fuer PR geaendert", item, "PR"));
+  updateProjectActions();
 }
 
 function excludeRequirement() {
+  if (!canEditProductRequirements()) {
+    alert("Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten.");
+    return;
+  }
+
   const rowNumber = state.activeSelectionRow;
   if (!rowNumber) return;
 
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
   state.finalSelections.set(Number(rowNumber), {
     choice: "excluded",
     text: "",
@@ -1906,12 +2833,18 @@ function excludeRequirement() {
   renderMetrics();
   renderSoftwarePage();
   updateExportAvailability();
+  setProjectRevisionAction(projectRevisionActionFor("PR ausgeschlossen", item, "PR"));
+  updateProjectActions();
 }
 
 async function improveProductRequirementWithAi() {
+  if (!canEditProductRequirements()) {
+    alert("Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten.");
+    return;
+  }
+
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    setStatus("Server erforderlich");
     alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
     return;
   }
@@ -1930,7 +2863,6 @@ async function improveProductRequirementWithAi() {
   els.prImproveButton.disabled = true;
   els.selectAiButton.disabled = true;
   els.prImproveButton.textContent = "AI verbessert...";
-  setStatus("AI verbessert Product Requirement...");
 
   try {
     const improvementAttachments = await readImprovementAttachments(els.prImprovementAttachments);
@@ -1976,9 +2908,9 @@ async function improveProductRequirementWithAi() {
   renderImprovementAttachmentList(els.prImprovementAttachments, els.prImprovementAttachmentList);
   renderTable();
     renderMetrics();
-    setStatus("Product Requirement verbessert");
+    setProjectRevisionAction(projectRevisionActionFor("AI-Vorschlag fuer PR erstellt", item, "PR"));
+    updateProjectActions();
   } catch (error) {
-    setStatus("Fehler");
     alert(error.message);
   } finally {
     els.prImproveButton.disabled = false;
@@ -1988,6 +2920,11 @@ async function improveProductRequirementWithAi() {
 }
 
 async function selectFinalText(choice) {
+  if (!canEditProductRequirements()) {
+    alert("Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten.");
+    return;
+  }
+
   const rowNumber = state.activeSelectionRow;
   if (!rowNumber) return;
 
@@ -2027,6 +2964,10 @@ async function selectFinalText(choice) {
   renderMetrics();
   renderSoftwarePage();
   updateExportAvailability();
+  setProjectRevisionAction(
+    projectRevisionActionFor(choice === "ai" ? "AI-Vorschlag uebernommen" : "Original uebernommen", item, "PR"),
+  );
+  updateProjectActions();
   await recalculateFinalScore(item, text, choice);
 }
 
@@ -2088,7 +3029,6 @@ async function recalculateFinalScore(item, finalText, choice) {
     return;
   }
 
-  setStatus("Bewerte finalen Text...");
   renderTable();
   updateExportAvailability();
 
@@ -2127,9 +3067,7 @@ async function recalculateFinalScore(item, finalText, choice) {
       renderMetrics();
     }
 
-    setStatus("Final bewertet");
   } catch (error) {
-    setStatus("Fehler");
     alert(error.message);
   } finally {
     state.finalScoreUpdates.delete(rowNumber);
@@ -2140,6 +3078,7 @@ async function recalculateFinalScore(item, finalText, choice) {
     renderTable();
     renderMetrics();
     updateExportAvailability();
+    updateProjectActions();
   }
 }
 
@@ -2406,7 +3345,8 @@ function renderSoftwarePage() {
   els.criticalSoftwareIssuesButton.classList.toggle("is-active", state.softwareScoreFilterActive);
   els.softwareScoreFilterBar.hidden = !state.softwareScoreFilterActive;
   renderSoftwareTransferState();
-  els.generateSoftwareButton.disabled = !hasProject() || !isProductStepComplete() || state.finalScoreUpdates.size > 0;
+  els.generateSoftwareButton.disabled =
+    !hasProject() || !canEditSoftwareRequirements() || !isProductStepComplete() || state.finalScoreUpdates.size > 0;
 
   if (!isProductStepComplete()) {
     els.softwareScoreFilterBar.hidden = true;
@@ -2723,12 +3663,14 @@ function deferSoftwareRequirementSelection() {
   closeSoftwareSelectionDialog();
   renderSoftwarePage();
   updateExportAvailability();
+  const item = state.softwareRequirements.find((entry) => String(entry.id || "") === String(softwareId || ""));
+  setProjectRevisionAction(projectRevisionActionFor("SR-Auswahl zurueckgestellt", item, "SR"));
+  updateProjectActions();
 }
 
 async function regenerateSoftwareRequirementFromDialog() {
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    setStatus("Server erforderlich");
     alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
     return;
   }
@@ -2748,7 +3690,6 @@ async function regenerateSoftwareRequirementFromDialog() {
   els.softwareSelectionAcceptButton.disabled = true;
   els.softwareImproveButton.disabled = true;
   els.softwareSelectionRegenerateButton.textContent = translateUiText("SR wird abgeleitet...");
-  setStatus("Leite Software Requirement neu ab...");
 
   try {
     const response = await fetch(endpoint, {
@@ -2813,9 +3754,9 @@ async function regenerateSoftwareRequirementFromDialog() {
     updateExportAvailability();
     updateWorkflowState();
     updateContextualMenuActions();
-    setStatus("Software Requirement neu abgeleitet");
+    setProjectRevisionAction(projectRevisionActionFor("SR neu abgeleitet", activeRequirement, "SR"));
+    updateProjectActions();
   } catch (error) {
-    setStatus("Fehler");
     alert(error.message);
   } finally {
     els.softwareSelectionRegenerateButton.disabled = false;
@@ -2828,7 +3769,6 @@ async function regenerateSoftwareRequirementFromDialog() {
 async function improveSoftwareRequirementWithAi() {
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    setStatus("Server erforderlich");
     alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
     return;
   }
@@ -2855,7 +3795,6 @@ async function improveSoftwareRequirementWithAi() {
   els.softwareImproveButton.disabled = true;
   els.softwareSelectionAcceptButton.disabled = true;
   els.softwareImproveButton.textContent = "AI verbessert...";
-  setStatus("AI verbessert Software Requirement...");
 
   try {
     const improvementAttachments = await readImprovementAttachments(els.softwareImprovementAttachments);
@@ -2916,9 +3855,9 @@ async function improveSoftwareRequirementWithAi() {
     renderSoftwarePage();
     renderE2ePage();
     updateWorkflowState();
-    setStatus("Software Requirement verbessert");
+    setProjectRevisionAction(projectRevisionActionFor("AI-Vorschlag fuer SR erstellt", item, "SR"));
+    updateProjectActions();
   } catch (error) {
-    setStatus("Fehler");
     alert(error.message);
   } finally {
     els.softwareImproveButton.disabled = false;
@@ -2977,6 +3916,8 @@ function acceptSoftwareRequirement() {
   closeSoftwareSelectionDialog();
   renderSoftwarePage();
   updateExportAvailability();
+  setProjectRevisionAction(projectRevisionActionFor("SR uebernommen", item, "SR"));
+  updateProjectActions();
 }
 
 function excludeSoftwareRequirement() {
@@ -3003,6 +3944,8 @@ function excludeSoftwareRequirement() {
   closeSoftwareSelectionDialog();
   renderSoftwarePage();
   updateExportAvailability();
+  setProjectRevisionAction(projectRevisionActionFor("SR ausgeschlossen", item, "SR"));
+  updateProjectActions();
 }
 
 function isSoftwareStepComplete() {
@@ -3068,9 +4011,13 @@ function getFinalProductRequirements() {
 }
 
 async function generateSoftwareRequirements() {
+  if (!canEditSoftwareRequirements()) {
+    alert("Nur Software Requirement Owner oder Admins können Software Requirements bearbeiten.");
+    return;
+  }
+
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    setStatus("Server erforderlich");
     alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
     return;
   }
@@ -3078,9 +4025,8 @@ async function generateSoftwareRequirements() {
   const requirements = getFinalProductRequirements();
   if (!requirements.length || !isProductStepComplete()) return;
 
-  setStatus("Leite Software Requirements ab...");
   els.generateSoftwareButton.disabled = true;
-  els.generateSoftwareMenuButton.disabled = true;
+  setMenuButtonAvailability(els.generateSoftwareMenuButton, false, "Software Requirements werden abgeleitet");
   await showProgress(requirements.length, { requirements, mode: "sr-derivation", batchSize: ANALYSIS_BATCH_SIZE });
 
   try {
@@ -3092,7 +4038,6 @@ async function generateSoftwareRequirements() {
     for (let index = 0; index < requirements.length; index += ANALYSIS_BATCH_SIZE) {
       const batchNumber = Math.floor(index / ANALYSIS_BATCH_SIZE) + 1;
       const batch = requirements.slice(index, index + ANALYSIS_BATCH_SIZE);
-      setStatus(`Leite Software Requirements ab ${batchNumber}/${totalBatches}`);
       updateProgress({
         processed,
         total: requirements.length,
@@ -3138,10 +4083,10 @@ async function generateSoftwareRequirements() {
     state.e2eScoreFilterActive = false;
     resetSoftwareWindchillTransfer();
     state.softwareTransferChangeIds = new Set(state.softwareRequirements.map((item) => String(item.id || "")).filter(Boolean));
-    setStatus("Software Requirements erstellt");
     completeProgress(requirements.length);
+    setProjectRevisionAction(`Software Requirements abgeleitet: ${state.softwareRequirements.length} SR`);
+    updateProjectActions();
   } catch (error) {
-    setStatus("Fehler");
     hideProgress();
     alert(error.message);
   } finally {
@@ -3157,7 +4102,6 @@ function activateScoreFilter() {
   state.scoreFilterActive = true;
   renderTable();
   renderMetrics();
-  setStatus(`Filter: Score < ${PRODUCT_STEP_MIN_SCORE}`);
 }
 
 function activateSoftwareScoreFilter() {
@@ -3165,7 +4109,6 @@ function activateSoftwareScoreFilter() {
 
   state.softwareScoreFilterActive = true;
   renderSoftwarePage();
-  setStatus(`SR-Filter: Score < ${PRODUCT_STEP_MIN_SCORE}`);
 }
 
 function normalizeSoftwareRequirements(softwareRequirements, sourceRequirements) {
@@ -3249,13 +4192,11 @@ function clearScoreFilter() {
   state.scoreFilterActive = false;
   renderTable();
   renderMetrics();
-  setStatus(state.analysisComplete ? "Analyse fertig" : `${state.requirements.length} Requirements`);
 }
 
 function clearSoftwareScoreFilter() {
   state.softwareScoreFilterActive = false;
   renderSoftwarePage();
-  setStatus(state.softwareRequirements.length ? "Software Requirements erstellt" : "Software Requirements");
 }
 
 function getCriticalSoftwareRequirements() {
@@ -3279,7 +4220,7 @@ function renderE2ePage() {
   els.criticalE2eIssuesButton.disabled = criticalE2eCount === 0;
   els.criticalE2eIssuesButton.classList.toggle("is-active", state.e2eScoreFilterActive);
   els.e2eScoreFilterBar.hidden = !state.e2eScoreFilterActive;
-  els.generateE2eButton.disabled = !hasProject() || !isSoftwareStepComplete();
+  els.generateE2eButton.disabled = !hasProject() || !canEditE2eTests() || !isSoftwareStepComplete();
 
   if (!finalSoftwareRequirements.length) {
     els.e2eScoreFilterBar.hidden = true;
@@ -3624,6 +4565,9 @@ function deferE2eSelection() {
   closeE2eSelectionDialog();
   renderE2ePage();
   updateWorkflowState();
+  const item = state.e2eTests.find((entry) => String(entry.id || "") === String(e2eId || ""));
+  setProjectRevisionAction(projectRevisionActionFor("E2E-Auswahl zurueckgestellt", item, "E2E TestCase"));
+  updateProjectActions();
 }
 
 function findSourceSoftwareRequirementForE2e(item) {
@@ -3646,7 +4590,6 @@ function areE2eTestsForSourceDecided(item) {
 async function regenerateE2eTestFromDialog() {
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    setStatus("Server erforderlich");
     alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
     return;
   }
@@ -3666,7 +4609,6 @@ async function regenerateE2eTestFromDialog() {
   els.e2eSelectionAcceptButton.disabled = true;
   els.e2eImproveButton.disabled = true;
   els.e2eSelectionRegenerateButton.textContent = translateUiText("E2E TestCase wird abgeleitet...");
-  setStatus("Leite E2E TestCase neu ab...");
 
   try {
     const response = await fetch(endpoint, {
@@ -3716,9 +4658,9 @@ async function regenerateE2eTestFromDialog() {
     renderE2ePage();
     updateWorkflowState();
     updateContextualMenuActions();
-    setStatus("E2E TestCase neu abgeleitet");
+    setProjectRevisionAction(projectRevisionActionFor("E2E TestCase neu abgeleitet", activeTest, "E2E TestCase"));
+    updateProjectActions();
   } catch (error) {
-    setStatus("Fehler");
     alert(error.message);
   } finally {
     els.e2eSelectionRegenerateButton.disabled = false;
@@ -3731,7 +4673,6 @@ async function regenerateE2eTestFromDialog() {
 async function improveE2eTestWithAi() {
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    setStatus("Server erforderlich");
     alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
     return;
   }
@@ -3754,7 +4695,6 @@ async function improveE2eTestWithAi() {
   els.e2eImproveButton.disabled = true;
   els.e2eSelectionAcceptButton.disabled = true;
   els.e2eImproveButton.textContent = "AI verbessert...";
-  setStatus("AI verbessert E2E TestCase...");
 
   try {
     const improvementAttachments = await readImprovementAttachments(els.e2eImprovementAttachments);
@@ -3802,9 +4742,9 @@ async function improveE2eTestWithAi() {
     renderImprovementAttachmentList(els.e2eImprovementAttachments, els.e2eImprovementAttachmentList);
     renderE2ePage();
     updateWorkflowState();
-    setStatus("E2E TestCase verbessert");
+    setProjectRevisionAction(projectRevisionActionFor("AI-Vorschlag fuer E2E TestCase erstellt", item, "E2E TestCase"));
+    updateProjectActions();
   } catch (error) {
-    setStatus("Fehler");
     alert(error.message);
   } finally {
     els.e2eImproveButton.disabled = false;
@@ -3853,6 +4793,8 @@ function acceptE2eTest() {
   closeE2eSelectionDialog();
   renderE2ePage();
   updateWorkflowState();
+  setProjectRevisionAction(projectRevisionActionFor("E2E TestCase uebernommen", item, "E2E TestCase"));
+  updateProjectActions();
 }
 
 function excludeE2eTest() {
@@ -3877,6 +4819,8 @@ function excludeE2eTest() {
   closeE2eSelectionDialog();
   renderE2ePage();
   updateWorkflowState();
+  setProjectRevisionAction(projectRevisionActionFor("E2E TestCase ausgeschlossen", item, "E2E TestCase"));
+  updateProjectActions();
 }
 
 function isE2eQualityReady() {
@@ -3955,9 +4899,13 @@ function buildE2eQualityAssessmentText(item) {
 }
 
 async function generateE2eTests() {
+  if (!canEditE2eTests()) {
+    alert("Nur E2E Test Owner oder Admins können E2E TestCases bearbeiten.");
+    return;
+  }
+
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    setStatus("Server erforderlich");
     alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
     return;
   }
@@ -3965,9 +4913,8 @@ async function generateE2eTests() {
   const requirements = getFinalSoftwareRequirements();
   if (!requirements.length || !isSoftwareStepComplete()) return;
 
-  setStatus("Leite E2E TestCases ab...");
   els.generateE2eButton.disabled = true;
-  els.generateE2eMenuButton.disabled = true;
+  setMenuButtonAvailability(els.generateE2eMenuButton, false, "E2E TestCases werden abgeleitet");
   await showProgress(requirements.length, { requirements, mode: "e2e-derivation", batchSize: ANALYSIS_BATCH_SIZE });
 
   try {
@@ -3978,7 +4925,6 @@ async function generateE2eTests() {
     for (let index = 0; index < requirements.length; index += ANALYSIS_BATCH_SIZE) {
       const batchNumber = Math.floor(index / ANALYSIS_BATCH_SIZE) + 1;
       const batch = requirements.slice(index, index + ANALYSIS_BATCH_SIZE);
-      setStatus(`Leite E2E TestCases ab ${batchNumber}/${totalBatches}`);
       updateProgress({
         processed,
         total: requirements.length,
@@ -4011,10 +4957,10 @@ async function generateE2eTests() {
     state.e2eSelections = new Map();
     requirements.forEach((requirement) => state.changedSoftwareRequirementIds.delete(String(requirement.id || "")));
     state.e2eScoreFilterActive = false;
-    setStatus("E2E TestCases erstellt");
     completeProgress(requirements.length);
+    setProjectRevisionAction(`E2E TestCases abgeleitet: ${state.e2eTests.length} TestCases`);
+    updateProjectActions();
   } catch (error) {
-    setStatus("Fehler");
     hideProgress();
     alert(error.message);
   } finally {
@@ -4097,13 +5043,11 @@ function activateE2eScoreFilter() {
 
   state.e2eScoreFilterActive = true;
   renderE2ePage();
-  setStatus(`E2E-Filter: Score < ${PRODUCT_STEP_MIN_SCORE}`);
 }
 
 function clearE2eScoreFilter() {
   state.e2eScoreFilterActive = false;
   renderE2ePage();
-  setStatus(state.e2eTests.length ? "E2E TestCases erstellt" : "E2E TestCases");
 }
 
 function getCriticalE2eTests() {
@@ -4216,26 +5160,37 @@ function hasWorkflowChange(processStep) {
 }
 
 function updateExportAvailability() {
-  const canTransferProduct = hasProject() && state.activeProcessStep === "product" && isProductQualityReady();
-  const canTransferSoftware = hasProject() && state.activeProcessStep === "software" && isSoftwareQualityReady();
+  const canTransferProduct = hasProject() && state.activeProcessStep === "product" && isProductQualityReady() && canEditProductRequirements();
+  const canTransferSoftware =
+    hasProject() && state.activeProcessStep === "software" && isSoftwareQualityReady() && canEditSoftwareRequirements();
 
   if (state.activeProcessStep === "software") {
-    els.exportButton.disabled = !canTransferSoftware || state.softwareWindchillTransferComplete;
-    els.exportButton.title = state.softwareWindchillTransferComplete
-      ? "Software Requirements wurden simuliert nach Windchill übertragen"
-      : canTransferSoftware
-        ? "Software Requirements simuliert nach Windchill übertragen"
-        : "SR-Übertragung ist nach abgeschlossener SR-Übernahme verfügbar";
+    setMenuButtonAvailability(
+      els.exportButton,
+      canTransferSoftware && !state.softwareWindchillTransferComplete,
+      state.softwareWindchillTransferComplete
+        ? "Software Requirements wurden simuliert nach Windchill übertragen"
+        : canTransferSoftware
+          ? "Software Requirements simuliert nach Windchill übertragen"
+          : canEditSoftwareRequirements()
+            ? "SR-Übertragung ist nach abgeschlossener SR-Übernahme verfügbar"
+            : "Nur Software Requirement Owner oder Admins können Software Requirements übertragen",
+    );
     updateWorkflowState();
     return;
   }
 
-  els.exportButton.disabled = !canTransferProduct || state.productWindchillTransferComplete;
-  els.exportButton.title = state.productWindchillTransferComplete
-    ? "Product Requirements wurden simuliert nach Windchill übertragen"
-    : canTransferProduct
-      ? "Product Requirements simuliert nach Windchill übertragen"
-      : "PR-Übertragung ist nach abgeschlossener PR-Bewertung verfügbar";
+  setMenuButtonAvailability(
+    els.exportButton,
+    canTransferProduct && !state.productWindchillTransferComplete,
+    state.productWindchillTransferComplete
+      ? "Product Requirements wurden simuliert nach Windchill übertragen"
+      : canTransferProduct
+        ? "Product Requirements simuliert nach Windchill übertragen"
+        : canEditProductRequirements()
+          ? "PR-Übertragung ist nach abgeschlossener PR-Bewertung verfügbar"
+          : "Nur Product Requirement Owner oder Admins können Product Requirements übertragen",
+  );
   updateWorkflowState();
 }
 
@@ -4250,13 +5205,18 @@ function renderProductTransferState(productReady = isProductQualityReady()) {
   els.productTransferText.textContent = state.productWindchillTransferComplete
     ? `Simulierte Übertragung abgeschlossen${state.productWindchillTransferredAt ? `: ${new Date(state.productWindchillTransferredAt).toLocaleString()}` : "."}`
     : "Übertrage die abgeschlossenen Product Requirements nach Windchill, bevor Software Requirements bearbeitet werden können.";
-  els.productTransferButton.disabled = state.productWindchillTransferComplete;
+  els.productTransferButton.disabled = state.productWindchillTransferComplete || !canEditProductRequirements();
   els.productTransferButton.textContent = state.productWindchillTransferComplete
     ? "Übertragung abgeschlossen"
     : "PRs nach Windchill übertragen";
 }
 
 async function simulateProductWindchillTransfer() {
+  if (!canEditProductRequirements()) {
+    alert("Nur Product Requirement Owner oder Admins können Product Requirements übertragen.");
+    return;
+  }
+
   if (!isProductQualityReady()) {
     alert(`Bitte schließe zuerst alle PR mit Score >= ${PRODUCT_STEP_MIN_SCORE} ab.`);
     return;
@@ -4264,18 +5224,18 @@ async function simulateProductWindchillTransfer() {
 
   if (state.productWindchillTransferComplete) return;
 
-  setStatus("Übertrage PRs nach Windchill...");
-  els.exportButton.disabled = true;
+  setMenuButtonAvailability(els.exportButton, false, "PRs werden nach Windchill übertragen");
   els.productTransferButton.disabled = true;
   els.productTransferButton.textContent = "Übertrage...";
   await delay(900);
   state.productWindchillTransferComplete = true;
   state.productWindchillTransferredAt = new Date().toISOString();
   state.productTransferChangeRows = new Set();
-  setStatus("PRs übertragen");
   renderMetrics();
   updateExportAvailability();
   updateWorkflowState();
+  setProjectRevisionAction("PRs nach Windchill uebertragen");
+  updateProjectActions();
 }
 
 function renderSoftwareTransferState() {
@@ -4290,13 +5250,18 @@ function renderSoftwareTransferState() {
   els.softwareTransferText.textContent = state.softwareWindchillTransferComplete
     ? `Simulierte Übertragung abgeschlossen${state.softwareWindchillTransferredAt ? `: ${new Date(state.softwareWindchillTransferredAt).toLocaleString()}` : "."}`
     : "Übertrage die abgeschlossenen Software Requirements nach Windchill, bevor der nächste Prozessschritt verfügbar wird.";
-  els.softwareTransferButton.disabled = state.softwareWindchillTransferComplete;
+  els.softwareTransferButton.disabled = state.softwareWindchillTransferComplete || !canEditSoftwareRequirements();
   els.softwareTransferButton.textContent = state.softwareWindchillTransferComplete
     ? "Übertragung abgeschlossen"
     : "SRs nach Windchill übertragen";
 }
 
 async function simulateSoftwareWindchillTransfer() {
+  if (!canEditSoftwareRequirements()) {
+    alert("Nur Software Requirement Owner oder Admins können Software Requirements übertragen.");
+    return;
+  }
+
   if (!isSoftwareQualityReady()) {
     alert(`Bitte übernimm oder schließe zuerst alle SR ab. Übernommene SR benötigen Score >= ${PRODUCT_STEP_MIN_SCORE}.`);
     return;
@@ -4304,18 +5269,18 @@ async function simulateSoftwareWindchillTransfer() {
 
   if (state.softwareWindchillTransferComplete) return;
 
-  setStatus("Übertrage SRs nach Windchill...");
-  els.exportButton.disabled = true;
+  setMenuButtonAvailability(els.exportButton, false, "SRs werden nach Windchill übertragen");
   els.softwareTransferButton.disabled = true;
   els.softwareTransferButton.textContent = "Übertrage...";
   await delay(900);
   state.softwareWindchillTransferComplete = true;
   state.softwareWindchillTransferredAt = new Date().toISOString();
   state.softwareTransferChangeIds = new Set();
-  setStatus("SRs übertragen");
   renderSoftwarePage();
   updateExportAvailability();
   updateWorkflowState();
+  setProjectRevisionAction("SRs nach Windchill uebertragen");
+  updateProjectActions();
 }
 
 function simulateActiveWindchillTransfer() {
@@ -4339,10 +5304,8 @@ function resetSoftwareWindchillTransfer() {
 }
 
 function updateProjectActions() {
-  const canSaveProject = Boolean(state.projectName || state.requirements.length);
-  els.saveProjectButton.disabled = !canSaveProject;
-  els.saveProjectButton.title = "Projektdatei speichern";
-  els.saveProjectAsButton.disabled = !canSaveProject;
+  updateProjectDirtyState();
+  scheduleProjectAutoSave();
   updateContextualMenuActions();
 }
 
@@ -4351,121 +5314,200 @@ function updateContextualMenuActions() {
   const isProductStep = state.activeProcessStep === "product";
   const isSoftwareStep = state.activeProcessStep === "software";
   const isE2eStep = state.activeProcessStep === "e2e";
-  const canUseProductActions = projectOpen && isProductStep;
+  const canEditProduct = canEditProductRequirements();
+  const canEditSoftware = canEditSoftwareRequirements();
+  const canEditE2e = canEditE2eTests();
+  const canUseProductActions = projectOpen && isProductStep && canEditProduct;
   const canDeriveSoftware =
-    projectOpen && isSoftwareStep && isProductStepComplete() && state.finalScoreUpdates.size === 0;
-  const canDeriveE2e = projectOpen && isE2eStep && isSoftwareStepComplete();
+    projectOpen && isSoftwareStep && canEditSoftware && isProductStepComplete() && state.finalScoreUpdates.size === 0;
+  const canDeriveE2e = projectOpen && isE2eStep && canEditE2e && isSoftwareStepComplete();
 
-  els.openFileButton.disabled = !canUseProductActions;
-  els.openFileButton.title = canUseProductActions ? "" : "Dateiimport ist nur im PR-Schritt verfügbar";
-  els.openSettingsButton.disabled = !canUseProductActions;
-  els.openSettingsButton.title = canUseProductActions ? "" : "Einstellungen sind nur im PR-Schritt verfügbar";
+  setMenuButtonAvailability(
+    els.newProjectButton,
+    canCreateProject(),
+    canCreateProject() ? "" : "Nur Admins und Owner-Rollen können Projekte erstellen",
+  );
+  setMenuButtonAvailability(
+    els.openProjectButton,
+    canLoadProject(),
+    canLoadProject() ? "" : "Keine Berechtigung zum Laden von Projekten",
+  );
+  setMenuButtonAvailability(
+    els.projectHistoryButton,
+    projectOpen && canLoadProject(),
+    projectOpen ? "" : "Öffne zuerst ein Projekt",
+  );
+  setMenuButtonAvailability(
+    els.openFileButton,
+    canUseProductActions,
+    canUseProductActions
+      ? ""
+      : canEditProduct
+        ? "Dateiimport ist nur im PR-Schritt verfügbar"
+        : "Nur Product Requirement Owner oder Admins können Product Requirements erstellen",
+  );
+  setMenuButtonAvailability(
+    els.openSettingsButton,
+    canUseProductActions,
+    canUseProductActions
+      ? ""
+      : canEditProduct
+        ? "Einstellungen sind nur im PR-Schritt verfügbar"
+        : "Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten",
+  );
   els.analyzeButton.textContent = "PR Analysieren";
-  els.analyzeButton.disabled = !canUseProductActions || state.requirements.length === 0;
-  els.analyzeButton.title = canUseProductActions ? "" : "PR-Analyse ist nur im PR-Schritt verfügbar";
+  setMenuButtonAvailability(
+    els.analyzeButton,
+    canUseProductActions && state.requirements.length > 0,
+    canUseProductActions
+      ? ""
+      : canEditProduct
+        ? "PR-Analyse ist nur im PR-Schritt verfügbar"
+        : "Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten",
+  );
   els.analyzeProductButton.disabled = !canUseProductActions || state.requirements.length === 0;
-  els.analyzeProductButton.title = canUseProductActions ? "" : "PR-Analyse ist nur im PR-Schritt verfügbar";
-  els.generateSoftwareMenuButton.disabled = !canDeriveSoftware;
-  els.generateSoftwareMenuButton.title = canDeriveSoftware
-    ? ""
-    : "Software Requirements können erst im SR-Schritt nach abgeschlossener PR-Zuordnung und Windchill-Übertragung abgeleitet werden";
-  els.generateE2eMenuButton.disabled = !canDeriveE2e;
-  els.generateE2eMenuButton.title = canDeriveE2e
-    ? ""
-    : "E2E TestCases können erst im E2E-Schritt nach abgeschlossener SR-Übernahme und Windchill-Übertragung abgeleitet werden";
+  els.analyzeProductButton.title = els.analyzeButton.title;
+  setMenuButtonAvailability(
+    els.generateSoftwareMenuButton,
+    canDeriveSoftware,
+    canDeriveSoftware
+      ? ""
+      : canEditSoftware
+        ? "Software Requirements können erst im SR-Schritt nach abgeschlossener PR-Zuordnung und Windchill-Übertragung abgeleitet werden"
+        : "Nur Software Requirement Owner oder Admins können Software Requirements bearbeiten",
+  );
+  setMenuButtonAvailability(
+    els.generateE2eMenuButton,
+    canDeriveE2e,
+    canDeriveE2e
+      ? ""
+      : canEditE2e
+        ? "E2E TestCases können erst im E2E-Schritt nach abgeschlossener SR-Übernahme und Windchill-Übertragung abgeleitet werden"
+        : "Nur E2E Test Owner oder Admins können E2E TestCases bearbeiten",
+  );
+  normalizeMenuButtonStates();
 }
 
-async function saveProjectFile() {
-  await saveProjectWithDialog();
+function setMenuButtonAvailability(button, isAvailable, title = "") {
+  if (!button) return;
+
+  button.disabled = false;
+  button.removeAttribute("disabled");
+  button.setAttribute("aria-disabled", isAvailable ? "false" : "true");
+  button.title = title;
 }
 
-async function saveProjectFileAs() {
-  await saveProjectWithDialog();
-}
-
-async function saveProjectWithDialog() {
-  if (!state.projectName && !state.requirements.length) return;
-
-  const payload = createProjectPayload();
-  const content = JSON.stringify(payload, null, 2);
-
-  if ("showSaveFilePicker" in window) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: projectFileName(),
-        types: [projectFilePickerType()],
-      });
-      await writeProjectContentToHandle(handle, content);
-      state.projectFileHandle = handle;
-      state.projectFileName = handle.name || projectFileName();
-      updateProjectActions();
-      setStatus("Projekt gespeichert");
-      return;
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        setStatus("Speichern abgebrochen");
-        return;
-      }
-
-      console.warn("Browser-Dateidialog nicht verfügbar, versuche lokalen Serverdialog.", error);
+function normalizeMenuButtonStates() {
+  document.querySelectorAll(".menu-popover button").forEach((button) => {
+    button.disabled = false;
+    button.removeAttribute("disabled");
+    if (!button.hasAttribute("aria-disabled")) {
+      button.setAttribute("aria-disabled", "false");
     }
+  });
+}
+
+function ensureMenuButtonAvailable(button) {
+  if (button?.getAttribute("aria-disabled") !== "true") return true;
+
+  return false;
+}
+
+async function createProjectInDatabase() {
+  const endpoint = getProjectsEndpoint();
+  if (!endpoint) {
+    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    return false;
   }
 
-  const serverSaved = await saveProjectViaServerDialog(content);
-  if (serverSaved) return;
-
-  downloadProjectFile(content);
-  setStatus("Projekt gespeichert");
-}
-
-async function saveProjectViaServerDialog(content) {
-  const endpoint = getSaveProjectEndpoint();
-  if (!endpoint) return false;
-
+  state.projectSavePaused = true;
   try {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        fileName: projectFileName(),
-        content,
+        content: createProjectPayload(),
+        action: "Projekt angelegt",
       }),
     });
     const data = await response.json().catch(() => ({}));
 
-    if (data.canceled) {
-      setStatus("Speichern abgebrochen");
-      return true;
-    }
-
     if (!response.ok) {
+      alert(data.error || "Projekt konnte nicht angelegt werden.");
       return false;
     }
 
-    state.projectFileName = data.fileName || projectFileName();
-    state.projectFileHandle = null;
+    state.projectId = data.projectId || data.project?.id || state.projectId;
+    state.projectFileName = projectFileName();
+    markProjectSaved();
     updateProjectActions();
-    setStatus("Projekt gespeichert");
     return true;
   } catch (error) {
-    console.warn("Lokaler Speicherdialog nicht verfügbar, nutze Download-Fallback.", error);
+    console.warn("Projekt konnte nicht angelegt werden.", error);
     return false;
+  } finally {
+    state.projectSavePaused = false;
   }
 }
 
-async function writeProjectContentToHandle(handle, content) {
-  const writable = await handle.createWritable();
-  await writable.write(content);
-  await writable.close();
+function scheduleProjectAutoSave() {
+  if (state.projectSavePaused || !state.projectId || !state.projectDirty) return;
+  if (!canSaveProject()) return;
+  if (state.projectSaveInFlight) {
+    state.projectSaveQueued = true;
+    return;
+  }
+
+  clearTimeout(state.projectSaveTimerId);
+  state.projectSaveTimerId = setTimeout(() => {
+    void saveCurrentProjectToDatabase();
+  }, 600);
 }
 
-function projectFilePickerType() {
-  return {
-    description: "Miele.DevPilot",
-    accept: {
-      "application/json": [".mdp"],
-    },
-  };
+async function saveCurrentProjectToDatabase() {
+  if (state.projectSavePaused || !state.projectId || !state.projectDirty) return false;
+
+  const endpoint = getProjectEndpoint(state.projectId);
+  if (!endpoint) return false;
+
+  if (state.projectSaveInFlight) {
+    state.projectSaveQueued = true;
+    return false;
+  }
+
+  state.projectSaveInFlight = true;
+  const revisionAction = state.projectRevisionAction || "Projekt automatisch gespeichert";
+  try {
+    const response = await fetch(endpoint, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: createProjectPayload(),
+        action: revisionAction,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      console.warn("Projekt konnte nicht automatisch gespeichert werden.", data.error || response.statusText);
+      return false;
+    }
+
+    state.projectId = data.projectId || data.project?.id || state.projectId;
+    markProjectSaved();
+    if (state.projectRevisionAction === revisionAction) {
+      state.projectRevisionAction = "";
+    }
+    return true;
+  } catch (error) {
+    console.warn("Projekt konnte nicht automatisch gespeichert werden.", error);
+    return false;
+  } finally {
+    state.projectSaveInFlight = false;
+    if (state.projectSaveQueued) {
+      state.projectSaveQueued = false;
+      scheduleProjectAutoSave();
+    }
+  }
 }
 
 function createProjectPayload() {
@@ -4474,8 +5516,9 @@ function createProjectPayload() {
     version: PROJECT_FILE_VERSION,
     savedAt: new Date().toISOString(),
     project: {
-      name: state.projectName || projectNameFromSource(),
+      name: projectDisplayName() || "Miele.DevPilot",
       description: state.projectDescription,
+      id: state.projectId,
     },
     source: {
       fileName: state.sourceFileName,
@@ -4519,19 +5562,7 @@ function createProjectPayload() {
   };
 }
 
-function downloadProjectFile(content) {
-  const blob = new Blob([content], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = projectFileName();
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-function loadProjectPayload(payload, fileName, handle = null) {
+function loadProjectPayload(payload, fileName, projectId = "") {
   if (!payload || payload.type !== PROJECT_FILE_TYPE) {
     throw new Error("Unbekanntes Projektformat");
   }
@@ -4542,7 +5573,7 @@ function loadProjectPayload(payload, fileName, handle = null) {
 
   const source = payload.source || {};
   if (!Array.isArray(source.rows) || !Array.isArray(source.headers)) {
-    throw new Error("Projektdatei enthält keine gültigen Quelldaten");
+    throw new Error("Projekt enthält keine gültigen Quelldaten");
   }
 
   state.workbook = null;
@@ -4551,10 +5582,12 @@ function loadProjectPayload(payload, fileName, handle = null) {
   state.techTypes = Array.isArray(source.techTypes) ? source.techTypes : [];
   state.sheetName = source.sheetName || "Projekt";
   state.sourceFileName = source.fileName || fileName;
-  state.projectName = payload.project?.name || projectNameFromFile(fileName);
-  state.projectDescription = payload.project?.description || "";
-  state.projectFileHandle = handle;
+  const projectMetadata = projectMetadataFromPayload(payload, fileName, state.sourceFileName);
+  state.projectName = projectMetadata.name;
+  state.projectDescription = projectMetadata.description;
+  state.projectId = projectId || payload.project?.id || "";
   state.projectFileName = fileName || "";
+  state.projectRevisionAction = "";
   state.results = Array.isArray(payload.state?.results) ? payload.state.results : [];
   state.softwareRequirements = Array.isArray(payload.state?.softwareRequirements) ? payload.state.softwareRequirements : [];
   state.softwareSelections = new Map(
@@ -4627,7 +5660,7 @@ function loadProjectPayload(payload, fileName, handle = null) {
   document.documentElement.lang = state.language;
   els.languageSelect.value = state.language;
 
-  els.fileState.textContent = state.projectName ? `${state.projectName} (Projekt)` : fileName;
+  els.fileState.textContent = `${projectDisplayName() || fileName || "Miele.DevPilot"} (Projekt)`;
   els.sheetSelect.innerHTML = "";
   els.sheetSelect.append(new Option(state.sheetName, state.sheetName));
   els.sheetSelect.value = state.sheetName;
@@ -4642,7 +5675,11 @@ function loadProjectPayload(payload, fileName, handle = null) {
     : buildRequirementsFromCurrentConfig();
   state.generatedIds = Boolean(payload.state?.generatedIds);
   setAutoIdVisible(state.generatedIds);
-  els.analyzeButton.disabled = state.requirements.length === 0;
+  setMenuButtonAvailability(
+    els.analyzeButton,
+    state.requirements.length > 0 && canEditProductRequirements(),
+    state.requirements.length > 0 ? "" : "Importiere zuerst Product Requirements",
+  );
   els.analyzeProductButton.disabled = state.requirements.length === 0;
   updateProjectActions();
   updateExportAvailability();
@@ -4650,6 +5687,7 @@ function loadProjectPayload(payload, fileName, handle = null) {
   renderProcessPages();
   renderTable();
   renderMetrics();
+  markProjectSaved();
   scheduleApplyTranslations();
 }
 
@@ -4694,18 +5732,41 @@ function setSelectValue(select, value) {
 }
 
 function projectFileName() {
-  const rawName = state.projectName || state.sourceFileName || "Miele.DevPilot";
+  const rawName = projectDisplayName() || "Miele.DevPilot";
   const baseName = rawName.replace(/\.[^.]+$/, "").replace(/[^a-z0-9._-]+/gi, "-") || "Miele.DevPilot";
   return `${baseName}.mdp`;
 }
 
+function projectDisplayName() {
+  return firstNonEmptyString(state.projectName, projectNameFromFile(state.projectFileName), projectNameFromSource());
+}
+
+function projectMetadataFromPayload(payload, fileName, sourceFileName) {
+  const project = payload.project || {};
+  return {
+    name: firstNonEmptyString(project.name, project.projectName, project.title, payload.projectName, payload.name, payload.title, projectNameFromFile(fileName), projectNameFromFile(sourceFileName)),
+    description: firstNonEmptyString(project.description, project.projectDescription, payload.projectDescription, payload.description),
+  };
+}
+
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (text) return text;
+  }
+
+  return "";
+}
+
 function projectNameFromSource() {
-  if (!state.sourceFileName) return "Miele.DevPilot";
+  if (!state.sourceFileName) return "";
   return state.sourceFileName.replace(/\.[^.]+$/, "");
 }
 
 function projectNameFromFile(fileName) {
-  return String(fileName || "Miele.DevPilot").replace(/\.mdp$|\.miele-devpilot\.json$|\.json$/i, "");
+  const name = String(fileName || "").trim();
+  if (!name) return "";
+  return name.replace(/\.mdp$|\.miele-devpilot\.json$|\.json$/i, "");
 }
 
 function delay(ms) {
@@ -4868,7 +5929,6 @@ function translateDefaultUiPattern(text) {
     [/^Remaining approx\. (.+)$/, "Restzeit ca. $1"],
     [/^(.+) remaining$/, "$1 verbleibend"],
     [/^Simulated transfer completed: (.+)$/, "Simulierte Übertragung abgeschlossen: $1"],
-    [/^Project file could not be loaded: (.+)$/, "Projektdatei konnte nicht geladen werden: $1"],
     [/^Please complete all PRs with score >= (\d+) first\.$/, "Bitte schließe zuerst alle PR mit Score >= $1 ab."],
     [
       /^Please accept or close all SRs first\. Accepted SRs require score >= (\d+)\.$/,
@@ -4927,7 +5987,6 @@ function translateUiPattern(text, dictionary) {
     [/^Restzeit ca\. (.+)$/, "Remaining approx. $1"],
     [/^(.+) verbleibend$/, "$1 remaining"],
     [/^Simulierte Übertragung abgeschlossen: (.+)$/, "Simulated transfer completed: $1"],
-    [/^Projektdatei konnte nicht geladen werden: (.+)$/, "Project file could not be loaded: $1"],
     [/^Bitte schließe zuerst alle PR mit Score >= (\d+) ab\.$/, "Please complete all PRs with score >= $1 first."],
     [
       /^Bitte übernimm oder schließe zuerst alle SR ab\. Übernommene SR benötigen Score >= (\d+)\.$/,
@@ -4974,6 +6033,7 @@ function setLanguage(language, options = {}) {
 
 async function changeLanguage(language) {
   const nextLanguage = LANGUAGES[language] ? language : DEFAULT_LANGUAGE;
+  setProjectRevisionAction(`Sprache geaendert: ${LANGUAGES[nextLanguage]}`);
   setLanguage(nextLanguage);
 
   const translated = await translateExistingFeedback(nextLanguage);
@@ -4995,7 +6055,6 @@ async function translateExistingFeedback(targetLanguage) {
   if (!entries.length) return false;
 
   try {
-    setStatus("Übersetze Hinweise...");
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -5029,11 +6088,9 @@ async function translateExistingFeedback(targetLanguage) {
       };
     });
 
-    setStatus("Hinweise übersetzt");
     return true;
   } catch (error) {
     console.warn("Feedback translation failed:", error);
-    setStatus("Hinweise nicht übersetzt");
     return false;
   }
 }
@@ -5078,6 +6135,8 @@ function applyTranslations() {
   try {
     translateKnownUiElements();
     translateStaticSelectOptions();
+    renderProjectHeader();
+    renderOpenAiCostSummary();
   } finally {
     isApplyingTranslations = false;
   }
@@ -5112,6 +6171,7 @@ function translateKnownUiElements() {
 
 function shouldSkipUiTextElement(element) {
   if (!element || element.closest("tbody")) return true;
+  if (DYNAMIC_UI_TEXT_IDS.has(element.id)) return true;
   if (element.closest(".workflow-step")) return true;
   if (element.closest(".attachment-list")) return true;
   if (element.closest("textarea, input, select, option, script, style")) return true;
@@ -5190,16 +6250,24 @@ function translateStaticSelectOptions() {
   });
 }
 
-function setStatus(text) {
-  els.statusPill.textContent = translateUiText(text);
-}
-
 function getAnalyzeEndpoint() {
   return getApiEndpoint("api/analyze");
 }
 
-function getSaveProjectEndpoint() {
-  return getApiEndpoint("api/save-project");
+function getProjectsEndpoint() {
+  return getApiEndpoint("api/projects");
+}
+
+function getProjectEndpoint(projectId) {
+  return getApiEndpoint(`api/projects/${encodeURIComponent(projectId)}`);
+}
+
+function getProjectRevisionsEndpoint(projectId) {
+  return getApiEndpoint(`api/projects/${encodeURIComponent(projectId)}/revisions`);
+}
+
+function getProjectRevisionRestoreEndpoint(projectId, revisionId) {
+  return getApiEndpoint(`api/projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/restore`);
 }
 
 function getFeedbackTranslationEndpoint() {
@@ -5208,6 +6276,30 @@ function getFeedbackTranslationEndpoint() {
 
 function getRuntimeEndpoint() {
   return getApiEndpoint("api/runtime");
+}
+
+function getSessionEndpoint() {
+  return getApiEndpoint("api/session");
+}
+
+function getLoginEndpoint() {
+  return getApiEndpoint("api/login");
+}
+
+function getLogoutEndpoint() {
+  return getApiEndpoint("api/logout");
+}
+
+function getChangePasswordEndpoint() {
+  return getApiEndpoint("api/change-password");
+}
+
+function getAdminUsersEndpoint() {
+  return getApiEndpoint("api/admin/users");
+}
+
+function getAdminUserEndpoint(userId) {
+  return getApiEndpoint(`api/admin/users/${encodeURIComponent(userId)}`);
 }
 
 function getApiEndpoint(path) {
@@ -5241,6 +6333,10 @@ function formatGitDate(value) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
+}
+
+function formatProjectDate(value) {
+  return formatGitDate(value) || "-";
 }
 
 async function showProgress(total, options = {}) {
@@ -5523,12 +6619,13 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-loadRuntimeInfo().finally(() => {
+Promise.allSettled([loadRuntimeInfo(), loadSession()]).finally(() => {
   setupTranslationObserver();
   const storedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
   state.language = LANGUAGES[storedLanguage] ? storedLanguage : DEFAULT_LANGUAGE;
   document.documentElement.lang = state.language;
   els.languageSelect.value = state.language;
+  renderAuthState();
   renderWorkspaceState();
   renderProcessPages();
   updateProjectActions();
