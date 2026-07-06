@@ -1,4 +1,7 @@
 const DEFAULT_LANGUAGE = "de";
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init = {}) => nativeFetch(input, { credentials: "include", ...init });
+
 const LANGUAGES = {
   de: "Deutsch",
   en: "English",
@@ -66,6 +69,20 @@ const state = {
   projectRevisionAction: "",
   currentUser: null,
   adminUsers: [],
+  productApprovers: [],
+  productApproversLoading: false,
+  productApproversLoaded: false,
+  productApproversError: "",
+  productApprovalApproverIds: new Set(),
+  productApprovalStartedAt: "",
+  productApprovalStartedBy: "",
+  productApprovalListSearch: "",
+  productApprovalStatusFilter: "all",
+  productApprovalActiveTab: "comments",
+  productApprovalDecisionMode: "",
+  productReviewActiveTab: "final",
+  productReviewTechTypeSearch: "",
+  productReviewTechTypeFilter: "all",
 };
 
 const PROJECT_FILE_TYPE = "miele-devpilot-project";
@@ -158,7 +175,9 @@ const UI_TRANSLATIONS = {
     "Projekt löschen": "Delete project",
     "Import": "Import",
     "Datei": "File",
-    "Requirements aus Windchill laden ist noch nicht verfügbar": "Loading requirements from Windchill is not available yet",
+    "Demo: Import aus Windchill": "Demo: Import from Windchill",
+    "Windchill Import simulieren": "Simulate Windchill import",
+    "Die Windchill-Schnittstelle ist in diesem MVP noch nicht verbunden. Der Import wird simuliert.": "The Windchill interface is not connected in this MVP yet. The import is simulated.",
     "Analyse": "Analysis",
     "Einstellungen": "Settings",
     "PR Analysieren": "Analyze PR",
@@ -168,8 +187,8 @@ const UI_TRANSLATIONS = {
     "E2E TestCases ableiten": "Derive E2E TestCases",
     "E2E TestCase neu ableiten": "Derive E2E TestCase again",
     "Export": "Export",
-    "Nach Windchill": "To Windchill",
-    "Windchill-Export ist noch nicht verfügbar": "Windchill export is not available yet",
+    "Simulierte Übergabe an Windchill": "Simulated handoff to Windchill",
+    "Noch keine echte Windchill-Verbindung": "No real Windchill connection yet",
     "Hilfe": "Help",
     "OpenAI Nutzung": "OpenAI usage",
     "OpenAI-Kosten schließen": "Close OpenAI costs",
@@ -201,9 +220,29 @@ const UI_TRANSLATIONS = {
     "Requirements": "Requirements",
     "Durchschnitt": "Average",
     "Kritische Hinweise": "Critical issues",
-    "PR-Übertragung erforderlich": "PR transfer required",
-    "Übertrage die abgeschlossenen Product Requirements nach Windchill, bevor Software Requirements bearbeitet werden können.": "Transfer the completed Product Requirements to Windchill before Software Requirements can be processed.",
-    "PRs nach Windchill übertragen": "Transfer PRs to Windchill",
+    "Simulation: PR würde nach Windchill übertragen. Noch keine echte Windchill-Verbindung.": "Simulation: PR would be transferred to Windchill. No real Windchill connection yet.",
+    "PR-Transfer simulieren": "Simulate PR transfer",
+    "PR freigeben": "Approve PR",
+    "PR freigegeben": "PR approved",
+    "PR-Approval konfigurieren": "Configure PR approval",
+    "PR-Approval wartet": "PR approval waiting",
+    "PR-Approval läuft": "PR approval in progress",
+    "PR-Approval abgeschlossen": "PR approval complete",
+    "Wähle die PR Approver aus und starte den Approval-Prozess, sobald die Product Requirements bereit sind.": "Select the PR approvers and start the approval process once the Product Requirements are ready.",
+    "Starte den Approval-Prozess, sobald die Product Requirements bereit sind. Die Approver wählst du im nächsten Schritt aus.": "Start the approval process once the Product Requirements are ready. You select the approvers in the next step.",
+    "Approval starten": "Start approval",
+    "Approval öffnen": "Open approval",
+    "Freigeben": "Approve",
+    "Noch nicht gestartet": "Not started yet",
+    "Keine PR Approver verfügbar": "No PR approvers available",
+    "Keine PR Approver ausgewählt": "No PR approvers selected",
+    "PR Approver werden geladen": "Loading PR approvers",
+    "PR-Freigabe erfasst": "PR approval recorded",
+    "Erneut laden": "Reload",
+    "Ausgewählt": "Selected",
+    "Wähle mindestens einen PR Approver aus.": "Select at least one PR approver.",
+    "Keine Requirements im Approval.": "No requirements in approval.",
+    "Product Requirements sind während des laufenden Approval-Prozesses gesperrt.": "Product Requirements are locked while the approval process is running.",
     "Filter aktiv: Requirements mit Score < 85": "Filter active: Requirements with score < 85",
     "Filter beenden": "Clear filter",
     "Status": "Status",
@@ -218,9 +257,10 @@ const UI_TRANSLATIONS = {
     "SR abgeleitet": "SR derived",
     "SR Durchschnitt": "SR average",
     "Kritische SR": "Critical SR",
-    "SR-Übertragung erforderlich": "SR transfer required",
-    "Übertrage die abgeschlossenen Software Requirements nach Windchill, bevor der nächste Prozessschritt verfügbar wird.": "Transfer the completed Software Requirements to Windchill before the next process step becomes available.",
-    "SRs nach Windchill übertragen": "Transfer SRs to Windchill",
+    "Simulation: SR würde übertragen werden. Noch keine echte Windchill-Verbindung.": "Simulation: SR would be transferred. No real Windchill connection yet.",
+    "SR-Transfer simulieren": "Simulate SR transfer",
+    "SR freigeben": "Approve SR",
+    "SR freigegeben": "SR approved",
     "Gefiltert: Software Requirements mit Score < 85": "Filtered: Software Requirements with score < 85",
     "SR-ID": "SR ID",
     "Verwendetes Product Requirement": "Used Product Requirement",
@@ -242,6 +282,8 @@ const UI_TRANSLATIONS = {
     "E2E-ID": "E2E ID",
     "Verwendetes Software Requirement": "Used Software Requirement",
     "E2E TestCase": "E2E TestCase",
+    "E2E TestCase freigeben": "Approve E2E TestCase",
+    "E2E TestCase freigegeben": "E2E TestCase approved",
     "Schließe Software Requirements ab, um E2E TestCases abzuleiten.": "Complete Software Requirements to derive E2E TestCases.",
     "App-TestCase-Erstellung und Prüfung werden als eigener Arbeitsbereich vorbereitet.": "App TestCase creation and review are prepared as a separate workspace.",
     "Import und Analyse konfigurieren": "Configure import and analysis",
@@ -354,7 +396,7 @@ const UI_TRANSLATIONS = {
     "Keine wesentlichen Hinweise": "No significant issues",
     "Aktualisiert...": "Updating...",
     "Requirements zugeordnet": "Requirements assigned",
-    "Übertrage zuerst die Product Requirements nach Windchill.": "Transfer the Product Requirements to Windchill first.",
+    "Starte zuerst die PR-Transfer-Simulation.": "Start the PR transfer simulation first.",
     "Noch nicht abgeleitet.": "Not derived yet.",
     "Noch keine Software Requirements abgeleitet.": "No Software Requirements derived yet.",
     "Software Requirement noch nicht abgeleitet": "Software Requirement not derived yet",
@@ -390,7 +432,7 @@ const UI_TRANSLATIONS = {
     "Leite E2E TestCases ab...": "Deriving E2E TestCases...",
     "E2E TestCases erstellt": "E2E TestCases created",
     "Gewählte Software Requirements": "Selected Software Requirements",
-    "SR-Übertragung nach Windchill noch erforderlich": "SR transfer to Windchill still required",
+    "SR-Transfer-Simulation noch erforderlich": "SR transfer simulation still required",
     "Dateiimport ist nur im PR-Schritt verfügbar": "File import is only available in the PR step",
     "Einstellungen sind nur im PR-Schritt verfügbar": "Settings are only available in the PR step",
     "PR-Analyse ist nur im PR-Schritt verfügbar": "PR analysis is only available in the PR step",
@@ -398,10 +440,10 @@ const UI_TRANSLATIONS = {
     "Speichern abgebrochen": "Save canceled",
     "Analyse abgeschlossen": "Analysis complete",
     "Alle verfügbaren Ergebnisse wurden verarbeitet.": "All available results have been processed.",
-    "Übertrage...": "Transferring...",
-    "Übertragung abgeschlossen": "Transfer complete",
-    "PRs übertragen": "PRs transferred",
-    "SRs übertragen": "SRs transferred",
+    "Simulation läuft...": "Simulation running...",
+    "Simulation abgeschlossen": "Simulation complete",
+    "PR Transfer-Simulation abgeschlossen": "PR transfer simulation complete",
+    "SR Transfer-Simulation abgeschlossen": "SR transfer simulation complete",
     "Änderung erkannt": "Change detected",
     "Quelle geändert - neu ableiten erforderlich": "Source changed - derivation required",
     "Software Requirement geändert - TestCase neu ableiten erforderlich": "Software Requirement changed - TestCase derivation required",
@@ -428,6 +470,7 @@ const els = {
   languageSelect: document.querySelector("#languageSelect"),
   newProjectButton: document.querySelector("#newProjectButton"),
   openFileButton: document.querySelector("#openFileButton"),
+  openWindchillButton: document.querySelector("#openWindchillButton"),
   openProjectButton: document.querySelector("#openProjectButton"),
   projectHistoryButton: document.querySelector("#projectHistoryButton"),
   adminMenu: document.querySelector("#adminMenu"),
@@ -488,8 +531,78 @@ const els = {
   projectHistoryCloseButton: document.querySelector("#projectHistoryCloseButton"),
   projectHistoryMessage: document.querySelector("#projectHistoryMessage"),
   projectHistoryBody: document.querySelector("#projectHistoryBody"),
+  productActionBar: document.querySelector("#productActionBar"),
+  productAnalyzeAction: document.querySelector("#productAnalyzeAction"),
+  productAnalyzeStatus: document.querySelector("#productAnalyzeStatus"),
+  productQualityGateCard: document.querySelector("#productQualityGateCard"),
+  productQualityGateTitle: document.querySelector("#productQualityGateTitle"),
+  productQualityGateSummary: document.querySelector("#productQualityGateSummary"),
+  productQualityGateDetail: document.querySelector("#productQualityGateDetail"),
+  productQualityGateBadge: document.querySelector("#productQualityGateBadge"),
+  productEditButton: document.querySelector("#productEditButton"),
   resultsTable: document.querySelector("#resultsTable"),
   resultsBody: document.querySelector("#resultsBody"),
+  productApprovalSearch: document.querySelector("#productApprovalSearch"),
+  productApprovalStatusFilter: document.querySelector("#productApprovalStatusFilter"),
+  productApprovalListCount: document.querySelector("#productApprovalListCount"),
+  productApprovalDetailPanel: document.querySelector("#productApprovalDetailPanel"),
+  productApprovalDetailEmpty: document.querySelector("#productApprovalDetailEmpty"),
+  productReviewDetailContent: document.querySelector("#productReviewDetailContent"),
+  productReviewDetailStatus: document.querySelector("#productReviewDetailStatus"),
+  productReviewDetailTitle: document.querySelector("#productReviewDetailTitle"),
+  productReviewDetailSubtitle: document.querySelector("#productReviewDetailSubtitle"),
+  productReviewDetailScore: document.querySelector("#productReviewDetailScore"),
+  productReviewQualityWarning: document.querySelector("#productReviewQualityWarning"),
+  productReviewTabs: document.querySelector("#productReviewTabs"),
+  productReviewFinalTab: document.querySelector("#productReviewFinalTab"),
+  productReviewTechTypesTab: document.querySelector("#productReviewTechTypesTab"),
+  productReviewAnalysisTab: document.querySelector("#productReviewAnalysisTab"),
+  productReviewHistoryTab: document.querySelector("#productReviewHistoryTab"),
+  productReviewFinalChoiceHost: document.querySelector("#productReviewFinalChoiceHost"),
+  productReviewFinalText: document.querySelector("#productReviewFinalText"),
+  productReviewFinalScore: document.querySelector("#productReviewFinalScore"),
+  productReviewFinalScoreStatus: document.querySelector("#productReviewFinalScoreStatus"),
+  productReviewFinalScoreHint: document.querySelector("#productReviewFinalScoreHint"),
+  productReviewSaveFinalTextButton: document.querySelector("#productReviewSaveFinalTextButton"),
+  productReviewRecalculateScoreButton: document.querySelector("#productReviewRecalculateScoreButton"),
+  productReviewFinalActionsHost: document.querySelector("#productReviewFinalActionsHost"),
+  productReviewTechTypeSearch: document.querySelector("#productReviewTechTypeSearch"),
+  productReviewTechTypeFilter: document.querySelector("#productReviewTechTypeFilter"),
+  productReviewSelectAllTechTypesButton: document.querySelector("#productReviewSelectAllTechTypesButton"),
+  productReviewClearTechTypesButton: document.querySelector("#productReviewClearTechTypesButton"),
+  productReviewResetTechTypesButton: document.querySelector("#productReviewResetTechTypesButton"),
+  productReviewTechTypesHost: document.querySelector("#productReviewTechTypesHost"),
+  productReviewAnalysisHost: document.querySelector("#productReviewAnalysisHost"),
+  productReviewHistory: document.querySelector("#productReviewHistory"),
+  productApprovalDetailContent: document.querySelector("#productApprovalDetailContent"),
+  productApprovalDetailStatus: document.querySelector("#productApprovalDetailStatus"),
+  productApprovalDetailTitle: document.querySelector("#productApprovalDetailTitle"),
+  productApprovalDetailSubtitle: document.querySelector("#productApprovalDetailSubtitle"),
+  productApprovalDetailProgress: document.querySelector("#productApprovalDetailProgress"),
+  productApprovalDetailId: document.querySelector("#productApprovalDetailId"),
+  productApprovalDetailScore: document.querySelector("#productApprovalDetailScore"),
+  productApprovalDetailOwner: document.querySelector("#productApprovalDetailOwner"),
+  productApprovalDetailVersion: document.querySelector("#productApprovalDetailVersion"),
+  productApprovalDetailMetaStatus: document.querySelector("#productApprovalDetailMetaStatus"),
+  productApprovalDetailOpenComments: document.querySelector("#productApprovalDetailOpenComments"),
+  productApprovalFinalText: document.querySelector("#productApprovalFinalText"),
+  productApprovalOriginalText: document.querySelector("#productApprovalOriginalText"),
+  productApprovalOwnerActions: document.querySelector("#productApprovalOwnerActions"),
+  productApprovalSaveTextButton: document.querySelector("#productApprovalSaveTextButton"),
+  productApprovalSubmitButton: document.querySelector("#productApprovalSubmitButton"),
+  productApprovalAiImprovement: document.querySelector("#productApprovalAiImprovement"),
+  productApprovalImprovementInstruction: document.querySelector("#productApprovalImprovementInstruction"),
+  productApprovalImprovementAttachments: document.querySelector("#productApprovalImprovementAttachments"),
+  productApprovalImprovementAttachmentList: document.querySelector("#productApprovalImprovementAttachmentList"),
+  productApprovalImproveButton: document.querySelector("#productApprovalImproveButton"),
+  productApprovalDecision: document.querySelector("#productApprovalDecision"),
+  productApprovalApproveButton: document.querySelector("#productApprovalApproveButton"),
+  productApprovalShowDisapproveButton: document.querySelector("#productApprovalShowDisapproveButton"),
+  productApprovalDisapproveBox: document.querySelector("#productApprovalDisapproveBox"),
+  productApprovalDisapproveComment: document.querySelector("#productApprovalDisapproveComment"),
+  productApprovalDisapproveButton: document.querySelector("#productApprovalDisapproveButton"),
+  productApprovalTabs: document.querySelector("#productApprovalTabs"),
+  productApprovalTabContent: document.querySelector("#productApprovalTabContent"),
   softwareRequirementsBody: document.querySelector("#softwareRequirementsBody"),
   softwareDerivedMetric: document.querySelector("#softwareDerivedMetric"),
   softwareScoreMetric: document.querySelector("#softwareScoreMetric"),
@@ -507,6 +620,7 @@ const els = {
   softwareSelectionExcludeButton: document.querySelector("#softwareSelectionExcludeButton"),
   softwareSelectionRegenerateButton: document.querySelector("#softwareSelectionRegenerateButton"),
   softwareSelectionAcceptButton: document.querySelector("#softwareSelectionAcceptButton"),
+  softwareSelectionApproveButton: document.querySelector("#softwareSelectionApproveButton"),
   softwareSelectionId: document.querySelector("#softwareSelectionId"),
   softwareSelectionSource: document.querySelector("#softwareSelectionSource"),
   softwareSelectionScore: document.querySelector("#softwareSelectionScore"),
@@ -532,6 +646,7 @@ const els = {
   e2eSelectionExcludeButton: document.querySelector("#e2eSelectionExcludeButton"),
   e2eSelectionRegenerateButton: document.querySelector("#e2eSelectionRegenerateButton"),
   e2eSelectionAcceptButton: document.querySelector("#e2eSelectionAcceptButton"),
+  e2eSelectionApproveButton: document.querySelector("#e2eSelectionApproveButton"),
   e2eSelectionId: document.querySelector("#e2eSelectionId"),
   e2eSelectionSource: document.querySelector("#e2eSelectionSource"),
   e2eSelectionScore: document.querySelector("#e2eSelectionScore"),
@@ -547,6 +662,7 @@ const els = {
   selectionCloseButton: document.querySelector("#selectionCloseButton"),
   selectionDeferButton: document.querySelector("#selectionDeferButton"),
   excludeRequirementButton: document.querySelector("#excludeRequirementButton"),
+  approveRequirementButton: document.querySelector("#approveRequirementButton"),
   selectOriginalButton: document.querySelector("#selectOriginalButton"),
   selectAiButton: document.querySelector("#selectAiButton"),
   selectionId: document.querySelector("#selectionId"),
@@ -575,6 +691,19 @@ const els = {
   productTransferTitle: document.querySelector("#productTransferTitle"),
   productTransferText: document.querySelector("#productTransferText"),
   productTransferButton: document.querySelector("#productTransferButton"),
+  productApprovalBar: document.querySelector("#productApprovalBar"),
+  productApprovalTitle: document.querySelector("#productApprovalTitle"),
+  productApprovalText: document.querySelector("#productApprovalText"),
+  productApproverSummary: document.querySelector("#productApproverSummary"),
+  startProductApprovalButton: document.querySelector("#startProductApprovalButton"),
+  productApprovalDetailCloseButton: document.querySelector("#productApprovalDetailCloseButton"),
+  productApprovalOverlay: document.querySelector("#productApprovalOverlay"),
+  productApprovalCloseButton: document.querySelector("#productApprovalCloseButton"),
+  productApprovalCancelButton: document.querySelector("#productApprovalCancelButton"),
+  productApprovalConfirmButton: document.querySelector("#productApprovalConfirmButton"),
+  productApprovalDialogMessage: document.querySelector("#productApprovalDialogMessage"),
+  productApprovalSelectedApprovers: document.querySelector("#productApprovalSelectedApprovers"),
+  productApprovalApproverList: document.querySelector("#productApprovalApproverList"),
   scoreFilterBar: document.querySelector("#scoreFilterBar"),
   clearScoreFilterButton: document.querySelector("#clearScoreFilterButton"),
   emptyWorkspace: document.querySelector("#emptyWorkspace"),
@@ -629,6 +758,7 @@ els.workflowSteps.forEach((step) => {
 });
 [
   [els.prImprovementAttachments, els.prImprovementAttachmentList],
+  [els.productApprovalImprovementAttachments, els.productApprovalImprovementAttachmentList],
   [els.softwareImprovementAttachments, els.softwareImprovementAttachmentList],
   [els.e2eImprovementAttachments, els.e2eImprovementAttachmentList],
 ].forEach(([input, list]) => {
@@ -732,6 +862,10 @@ els.openFileButton.addEventListener("click", () => {
   if (!ensureMenuButtonAvailable(els.openFileButton)) return;
 
   els.fileInput.click();
+});
+els.openWindchillButton.addEventListener("click", () => {
+  closeMenus();
+  alert("Die Windchill-Schnittstelle ist in diesem MVP noch nicht verbunden. Der Import wird simuliert. Bitte nutze für echte Daten den Dateiimport.");
 });
 els.openProjectButton.addEventListener("click", () => {
   closeMenus();
@@ -883,7 +1017,20 @@ els.exportButton.addEventListener("click", () => {
 
   simulateActiveWindchillTransfer();
 });
+els.productEditButton.addEventListener("click", openProductEditDialog);
 els.productTransferButton.addEventListener("click", simulateProductWindchillTransfer);
+els.startProductApprovalButton.addEventListener("click", handleProductApprovalButtonClick);
+els.productApprovalCloseButton.addEventListener("click", closeProductApprovalDialog);
+els.productApprovalCancelButton.addEventListener("click", closeProductApprovalDialog);
+els.productApprovalConfirmButton.addEventListener("click", startProductApprovalProcess);
+els.productApprovalSelectedApprovers.addEventListener("click", handleSelectedProductApproverClick);
+els.productApprovalApproverList.addEventListener("click", handleProductApproverListClick);
+els.productApprovalApproverList.addEventListener("change", updateProductApprovalConfirmState);
+els.productApprovalOverlay.addEventListener("click", (event) => {
+  if (event.target === els.productApprovalOverlay) {
+    closeProductApprovalDialog();
+  }
+});
 els.softwareTransferButton.addEventListener("click", simulateSoftwareWindchillTransfer);
 els.criticalIssuesButton.addEventListener("click", activateScoreFilter);
 els.clearScoreFilterButton.addEventListener("click", clearScoreFilter);
@@ -892,6 +1039,38 @@ els.clearSoftwareScoreFilterButton.addEventListener("click", clearSoftwareScoreF
 els.criticalE2eIssuesButton.addEventListener("click", activateE2eScoreFilter);
 els.clearE2eScoreFilterButton.addEventListener("click", clearE2eScoreFilter);
 els.resultsBody.addEventListener("click", handleResultRowClick);
+els.productApprovalSearch.addEventListener("input", handleProductApprovalSearch);
+els.productApprovalStatusFilter.addEventListener("change", handleProductApprovalStatusFilter);
+els.productReviewTabs.addEventListener("click", handleProductReviewTabClick);
+els.productReviewSaveFinalTextButton.addEventListener("click", saveProductReviewFinalText);
+els.productReviewRecalculateScoreButton.addEventListener("click", recalculateProductReviewFinalScore);
+els.productReviewFinalText.addEventListener("input", markProductReviewFinalTextStale);
+els.productReviewFinalChoiceHost.addEventListener("click", handleProductReviewFinalTabClick);
+els.productReviewTechTypeSearch.addEventListener("input", handleProductReviewTechTypeFilterChange);
+els.productReviewTechTypeFilter.addEventListener("change", handleProductReviewTechTypeFilterChange);
+els.productReviewSelectAllTechTypesButton.addEventListener("click", selectAllTechTypesForActiveRequirement);
+els.productReviewClearTechTypesButton.addEventListener("click", clearTechTypesForActiveRequirement);
+els.productReviewResetTechTypesButton.addEventListener("click", resetTechTypesForActiveRequirement);
+els.productApprovalSaveTextButton.addEventListener("click", saveProductApprovalText);
+els.productApprovalSubmitButton.addEventListener("click", submitProductRequirementForApproval);
+els.productApprovalImproveButton.addEventListener("click", improveProductApprovalRequirementWithAi);
+els.productApprovalApproveButton.addEventListener("click", async () => {
+  const pendingSave = await savePendingProductApprovalTextChange();
+  if (!pendingSave.ok) return;
+  if (pendingSave.changed) {
+    alert("Die Änderung wurde gespeichert. Bitte prüfe den neu berechneten Score und gib das Requirement anschließend erneut frei.");
+    return;
+  }
+  if (approveProductRequirement(state.activeSelectionRow)) {
+    closeProductRequirementDetailDialog();
+  }
+});
+els.productApprovalShowDisapproveButton.addEventListener("click", showProductDisapprovalForm);
+els.productApprovalDisapproveComment.addEventListener("input", updateProductDisapprovalSubmitState);
+els.productApprovalDisapproveButton.addEventListener("click", disapproveProductRequirement);
+els.productApprovalTabs.addEventListener("click", handleProductApprovalTabClick);
+els.productApprovalTabContent.addEventListener("click", handleProductApprovalCommentClick);
+els.productApprovalDetailCloseButton.addEventListener("click", closeProductRequirementDetailDialog);
 els.softwareRequirementsBody.addEventListener("click", handleSoftwareRowClick);
 els.softwareRequirementsBody.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" && event.key !== " ") return;
@@ -917,27 +1096,24 @@ els.resultsBody.addEventListener("keydown", (event) => {
   if (!row) return;
 
   event.preventDefault();
-  openSelectionDialog(Number(row.dataset.rowNumber));
+  selectProductRequirement(Number(row.dataset.rowNumber));
 });
 els.selectionCloseButton.addEventListener("click", closeSelectionDialog);
-els.selectionDeferButton.addEventListener("click", closeSelectionDialog);
+els.selectionDeferButton.addEventListener("click", closeActiveProductEditDialog);
 els.excludeRequirementButton.addEventListener("click", excludeRequirement);
+els.approveRequirementButton.addEventListener("click", handleProductReviewPrimaryAction);
 els.selectOriginalButton.addEventListener("click", () => selectFinalText("original"));
 els.selectAiButton.addEventListener("click", () => selectFinalText("ai"));
 els.prImproveButton.addEventListener("click", improveProductRequirementWithAi);
 els.selectAllTechTypesButton.addEventListener("click", selectAllTechTypesForActiveRequirement);
 els.techTypeSelectionList.addEventListener("click", handleTechTypeSelectionClick);
 els.techTypeSelectionList.addEventListener("change", handleTechTypeSelectionChange);
-els.selectionOverlay.addEventListener("click", (event) => {
-  if (event.target === els.selectionOverlay) {
-    closeSelectionDialog();
-  }
-});
 els.softwareSelectionCloseButton.addEventListener("click", closeSoftwareSelectionDialog);
 els.softwareSelectionDeferButton.addEventListener("click", deferSoftwareRequirementSelection);
 els.softwareSelectionExcludeButton.addEventListener("click", excludeSoftwareRequirement);
 els.softwareSelectionRegenerateButton.addEventListener("click", regenerateSoftwareRequirementFromDialog);
 els.softwareSelectionAcceptButton.addEventListener("click", acceptSoftwareRequirement);
+els.softwareSelectionApproveButton.addEventListener("click", approveSoftwareRequirement);
 els.softwareImproveButton.addEventListener("click", improveSoftwareRequirementWithAi);
 els.softwareSelectionOverlay.addEventListener("click", (event) => {
   if (event.target === els.softwareSelectionOverlay) {
@@ -949,6 +1125,7 @@ els.e2eSelectionDeferButton.addEventListener("click", deferE2eSelection);
 els.e2eSelectionExcludeButton.addEventListener("click", excludeE2eTest);
 els.e2eSelectionRegenerateButton.addEventListener("click", regenerateE2eTestFromDialog);
 els.e2eSelectionAcceptButton.addEventListener("click", acceptE2eTest);
+els.e2eSelectionApproveButton.addEventListener("click", approveE2eTest);
 els.e2eImproveButton.addEventListener("click", improveE2eTestWithAi);
 els.e2eSelectionOverlay.addEventListener("click", (event) => {
   if (event.target === els.e2eSelectionOverlay) {
@@ -984,10 +1161,6 @@ window.addEventListener("keydown", (event) => {
 
   if (event.key === "Escape" && !els.userDialogOverlay.hidden) {
     closeUserDialog();
-  }
-
-  if (event.key === "Escape" && !els.selectionOverlay.hidden) {
-    closeSelectionDialog();
   }
 
   if (event.key === "Escape" && !els.softwareSelectionOverlay.hidden) {
@@ -1092,12 +1265,21 @@ async function loginWithEmail() {
     }
 
     state.currentUser = data.user || null;
+    resetProductApproverCache();
     els.loginIdentifier.value = "";
     els.loginPassword.value = "";
     renderAuthState();
+    void ensureProductApproversLoaded();
   } catch {
     els.loginMessage.textContent = "Server nicht erreichbar";
   }
+}
+
+function resetProductApproverCache() {
+  state.productApprovers = [];
+  state.productApproversLoading = false;
+  state.productApproversLoaded = false;
+  state.productApproversError = "";
 }
 
 async function changeOwnPassword() {
@@ -1140,6 +1322,7 @@ async function logout() {
 
   state.currentUser = null;
   state.adminUsers = [];
+  resetProductApproverCache();
   closeUserAdminPage();
   renderAuthState();
 }
@@ -1159,6 +1342,7 @@ function renderAuthState() {
   els.logoutButton.disabled = !isSignedIn;
   closeAccountContextMenu();
   updateProjectActions();
+  void ensureProductApproversLoaded();
   if (mustChangePassword) {
     els.newPassword.focus();
     return;
@@ -1294,6 +1478,11 @@ function currentUserHasRole(role) {
   return roles.includes("admin") || roles.includes(role);
 }
 
+function currentUserHasExplicitRole(role) {
+  const roles = normalizeClientRoles(state.currentUser?.roles ?? state.currentUser?.role);
+  return roles.includes(role);
+}
+
 function currentUserHasAnyRole(roles) {
   return roles.some((role) => currentUserHasRole(role));
 }
@@ -1322,12 +1511,87 @@ function canEditProductRequirements() {
   return currentUserHasRole("productRequirementOwner");
 }
 
+function canModifyProductRequirements() {
+  return canEditProductRequirements() && !isProductApprovalLocked();
+}
+
+function isProductApprovalLocked() {
+  return isProductApprovalStarted() && !isProductQualityReady();
+}
+
+function productApprovalLockedMessage() {
+  return isProductApprovalLocked()
+    ? "Product Requirements sind während des laufenden Approval-Prozesses gesperrt."
+    : "Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten.";
+}
+
 function canEditSoftwareRequirements() {
   return currentUserHasRole("softwareRequirementOwner");
 }
 
 function canEditE2eTests() {
   return currentUserHasRole("e2eTestOwner");
+}
+
+function canApproveProductRequirements() {
+  return currentUserHasRole("productRequirementApprover");
+}
+
+function canApproveSoftwareRequirements() {
+  return currentUserHasRole("softwareRequirementApprover");
+}
+
+function canApproveE2eTests() {
+  return currentUserHasRole("e2eTestApprover");
+}
+
+function currentApprovalUserName() {
+  return state.currentUser?.name || state.currentUser?.email || "Unbekannter Benutzer";
+}
+
+function normalizeApproverIds(ids) {
+  return [...new Set((Array.isArray(ids) ? ids : [...ids || []]).map((id) => String(id || "").trim()).filter(Boolean))];
+}
+
+async function ensureProductApproversLoaded(options = {}) {
+  if (options.force) {
+    state.productApproversLoaded = false;
+    state.productApproversError = "";
+  }
+  if (!state.currentUser || state.productApproversLoaded || state.productApproversLoading || !canCreateProject()) return;
+
+  const endpoint = getApproversEndpoint("productRequirementApprover");
+  if (!endpoint) return;
+
+  state.productApproversLoading = true;
+  state.productApproversError = "";
+  renderProductApprovalState();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const cacheSeparator = endpoint.includes("?") ? "&" : "?";
+    const response = await fetch(`${endpoint}${cacheSeparator}_=${Date.now()}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      state.productApproversError = data.error || "PR Approver konnten nicht geladen werden";
+      return;
+    }
+
+    state.productApprovers = Array.isArray(data.users) ? data.users : [];
+  } catch (error) {
+    state.productApproversError =
+      error?.name === "AbortError" ? "PR Approver konnten nicht geladen werden" : "Server nicht erreichbar";
+  } finally {
+    clearTimeout(timeoutId);
+    state.productApproversLoading = false;
+    state.productApproversLoaded = true;
+    renderProductApprovalDialog();
+    renderProductApprovalState();
+    renderMetrics();
+  }
 }
 
 function editUser(userId) {
@@ -1638,9 +1902,9 @@ function firstAvailableProcessStep() {
 
 function canAccessProcessStep(processStep) {
   if (currentUserHasRole("admin")) return true;
-  if (processStep === "product") return canEditProductRequirements();
-  if (processStep === "software") return canEditSoftwareRequirements();
-  if (processStep === "e2e") return canEditE2eTests();
+  if (processStep === "product") return canEditProductRequirements() || canApproveProductRequirements();
+  if (processStep === "software") return canEditSoftwareRequirements() || canApproveSoftwareRequirements();
+  if (processStep === "e2e") return canEditE2eTests() || canApproveE2eTests();
   return false;
 }
 
@@ -1660,15 +1924,25 @@ function getLockedStepMessage(processStep) {
   if (!previousStep) return "";
 
   if (previousStep === "product") {
-    if (isProductQualityReady() && !state.productWindchillTransferComplete) {
-      return "Product Requirements zuerst nach Windchill übertragen";
+    if (isProductApprovalPending()) {
+      return isProductApprovalStarted()
+        ? "Product Requirements zuerst freigeben"
+        : "PR-Approval-Prozess zuerst starten";
     }
 
-    return `Product Requirement erst vollständig zuordnen und Score >= ${PRODUCT_STEP_MIN_SCORE} erreichen`;
+    if (isProductReadyForTransferSimulation() && !state.productWindchillTransferComplete) {
+      return "PR-Transfer-Simulation zuerst starten";
+    }
+
+    return `Product Requirement erst vollständig zuordnen und Quality Gate mit Score > ${PRODUCT_STEP_MIN_SCORE} bestehen`;
+  }
+
+  if (previousStep === "software" && isSoftwareApprovalPending()) {
+    return "Software Requirements zuerst freigeben";
   }
 
   if (previousStep === "software" && isSoftwareQualityReady() && !state.softwareWindchillTransferComplete) {
-    return "Software Requirements zuerst nach Windchill übertragen";
+    return "SR-Transfer-Simulation zuerst starten";
   }
 
   return `${PROCESS_STEP_LABELS[previousStep]} muss zuerst abgeschlossen werden`;
@@ -1683,33 +1957,209 @@ function getLockedStepShortText(processStep) {
   if (!previousStep) return "";
 
   if (previousStep === "product") {
-    if (isProductQualityReady() && !state.productWindchillTransferComplete) {
-      return "Windchill-Übertragung erforderlich";
+    if (isProductApprovalPending()) {
+      return isProductApprovalStarted() ? "Freigabe erforderlich" : "Approval starten";
     }
 
-    return `Score >= ${PRODUCT_STEP_MIN_SCORE} erforderlich`;
+    if (isProductReadyForTransferSimulation() && !state.productWindchillTransferComplete) {
+      return "Transfer-Simulation erforderlich";
+    }
+
+    return `Score > ${PRODUCT_STEP_MIN_SCORE} erforderlich`;
+  }
+
+  if (previousStep === "software" && isSoftwareApprovalPending()) {
+    return "Freigabe erforderlich";
   }
 
   if (previousStep === "software" && isSoftwareQualityReady() && !state.softwareWindchillTransferComplete) {
-    return "Windchill-Übertragung erforderlich";
+    return "Transfer-Simulation erforderlich";
   }
 
   return `${PROCESS_STEP_LABELS[previousStep]} abschließen`;
 }
 
 function isProductStepComplete() {
-  return isProductQualityReady() && state.productWindchillTransferComplete;
+  return isProductReadyForTransferSimulation() && state.productWindchillTransferComplete;
 }
 
 function isProductQualityReady() {
+  return isProductApprovalStarted() && isProductReadyForApproval() && hasApprovedFinalProductSelections();
+}
+
+function isProductReadyForTransferSimulation() {
+  return isProductReadyForApproval();
+}
+
+function isProductReadyForApproval() {
   const progress = getProductStepProgress();
+  const qualityGate = getProductQualityGate();
   return (
     progress.allAssigned &&
     progress.includedCount > 0 &&
-    progress.criticalCount === 0 &&
+    qualityGate.status === "PASSED" &&
     !hasPendingFinalProductAssessments() &&
     state.finalScoreUpdates.size === 0
   );
+}
+
+function getProductQualityGate(requirements = state.requirements) {
+  const resultByRow = new Map(state.results.map((result) => [Number(result.rowNumber), result]));
+  const totalRequirements = requirements.length;
+  let excludedRequirements = 0;
+  let finalizedRequirements = 0;
+  let readyRequirements = 0;
+  let missingScoreRequirements = 0;
+  let staleScoreRequirements = 0;
+  let failedScoreRequirements = 0;
+  let missingTechTypeRequirements = 0;
+
+  requirements.forEach((requirement) => {
+    const rowNumber = Number(requirement.rowNumber);
+    const result = resultByRow.get(rowNumber);
+    const selection = state.finalSelections.get(rowNumber);
+    if (selection?.choice === "excluded") {
+      excludedRequirements += 1;
+      return;
+    }
+
+    const scoreStatus = productFinalScoreStatus(result, selection, state.finalScoreUpdates.has(rowNumber));
+    const techTypes = selectedTechTypesForRequirement(requirement, selection);
+    if (!selection?.text) {
+      missingScoreRequirements += 1;
+      return;
+    }
+    finalizedRequirements += 1;
+
+    if (scoreStatus === "CALCULATING" || scoreStatus === "STALE") {
+      staleScoreRequirements += 1;
+      return;
+    }
+
+    if (scoreStatus === "MISSING") {
+      missingScoreRequirements += 1;
+      return;
+    }
+
+    if (scoreStatus === "FAILED") {
+      failedScoreRequirements += 1;
+      return;
+    }
+
+    if (!techTypes.length) {
+      missingTechTypeRequirements += 1;
+      return;
+    }
+
+    readyRequirements += 1;
+  });
+
+  const includedRequirements = totalRequirements - excludedRequirements;
+  const status =
+    !state.analysisComplete || totalRequirements === 0 || missingScoreRequirements > 0 || staleScoreRequirements > 0
+      ? "NOT_CHECKED"
+      : failedScoreRequirements > 0 || missingTechTypeRequirements > 0 || readyRequirements < includedRequirements
+        ? "BLOCKED"
+        : "PASSED";
+
+  return {
+    status,
+    totalRequirements,
+    excludedRequirements,
+    finalizedRequirements,
+    readyRequirements,
+    passedRequirements: readyRequirements,
+    blockedRequirements: failedScoreRequirements + missingTechTypeRequirements,
+    missingScoreRequirements,
+    staleScoreRequirements,
+    failedScoreRequirements,
+    missingTechTypeRequirements,
+  };
+}
+
+function productQualityGateScore(requirement, resultByRow = new Map(state.results.map((result) => [Number(result.rowNumber), result]))) {
+  const rowNumber = Number(requirement?.rowNumber);
+  const result = resultByRow.get(rowNumber);
+  const selection = state.finalSelections.get(rowNumber);
+  if (!result || !selection || selection.needsFinalAssessment) return null;
+
+  const score = Number(displayProductScore(result, selection, {
+    usePreviousScore: state.finalScoreUpdates.has(rowNumber),
+  }));
+  return Number.isFinite(score) ? score : null;
+}
+
+function isProductQualityGateBlockingScore(score) {
+  return Number.isFinite(Number(score)) && Number(score) < PRODUCT_STEP_MIN_SCORE;
+}
+
+function isProductApprovalPending() {
+  return isProductReadyForApproval() && (!isProductApprovalStarted() || !hasApprovedFinalProductSelections());
+}
+
+function hasApprovedFinalProductSelections() {
+  const requiredApproverIds = getRequiredProductApproverIds();
+  if (!requiredApproverIds.length) return false;
+
+  return state.requirements.length > 0 && state.requirements.every((requirement) => {
+    const selection = state.finalSelections.get(Number(requirement.rowNumber));
+    return (
+      countOpenDisapprovalComments(selection) === 0 &&
+      requiredApproverIds.every((approverId) => hasProductApprovalFrom(selection, approverId))
+    );
+  });
+}
+
+function isProductApprovalStarted() {
+  return getRequiredProductApproverIds().length > 0;
+}
+
+function getRequiredProductApproverIds() {
+  return normalizeApproverIds(state.productApprovalApproverIds);
+}
+
+function currentProductApproverSlotId() {
+  const currentUserId = String(state.currentUser?.id || "");
+  const requiredApproverIds = getRequiredProductApproverIds();
+  if (currentUserId && requiredApproverIds.includes(currentUserId)) return currentUserId;
+  return "";
+}
+
+function productApprovalRecords(selection) {
+  return Array.isArray(selection?.approvals) ? selection.approvals : [];
+}
+
+function productApprovalComments(selection) {
+  if (!selection) return [];
+  if (!Array.isArray(selection.comments)) selection.comments = [];
+  return selection.comments;
+}
+
+function productApprovalVersions(selection) {
+  if (!selection) return [];
+  if (!Array.isArray(selection.versions)) selection.versions = [];
+  return selection.versions;
+}
+
+function countOpenDisapprovalComments(selection) {
+  return productApprovalComments(selection).filter((comment) => comment.type === "disapproval" && comment.resolved !== true).length;
+}
+
+function hasProductApprovalFrom(selection, approverId) {
+  return productApprovalRecords(selection).some((approval) =>
+    String(approval.userId || "") === String(approverId || "") && approval.approvedAt,
+  );
+}
+
+function countProductApprovals(selection) {
+  const requiredApproverIds = getRequiredProductApproverIds();
+  const approvedApproverIds = new Set(
+    productApprovalRecords(selection)
+      .filter((approval) => approval.approvedAt)
+      .map((approval) => String(approval.userId || ""))
+      .filter((approverId) => requiredApproverIds.includes(approverId)),
+  );
+  return approvedApproverIds.size;
 }
 
 function hasPendingFinalProductAssessments() {
@@ -1743,13 +2193,25 @@ function getExcludedRows() {
 function getIncludedScores(excludedRows = getExcludedRows()) {
   return state.results
     .filter((result) => !excludedRows.has(Number(result.rowNumber)))
-    .map((result) => Number(displayProductScore(result, state.finalSelections.get(Number(result.rowNumber)))))
+    .map((result) => Number(productVisibleScore(
+      result,
+      state.finalSelections.get(Number(result.rowNumber)),
+      state.finalScoreUpdates.has(Number(result.rowNumber)),
+    )))
     .filter(Number.isFinite);
 }
 
 async function handleFile(event) {
   const file = event.target.files?.[0];
   if (!file) return;
+
+  const shouldCreateProjectFromFile = !hasProject();
+  if (shouldCreateProjectFromFile) {
+    resetProjectState({
+      projectName: projectNameFromSourceFile(file.name),
+      projectDescription: "",
+    });
+  }
 
   els.fileState.textContent = file.name;
   state.sourceFileName = file.name;
@@ -1771,6 +2233,14 @@ async function handleFile(event) {
   const requirementSheetName = selectableSheetNames[0];
   els.sheetSelect.value = requirementSheetName;
   loadSheet(requirementSheetName);
+  if (shouldCreateProjectFromFile) {
+    setProjectRevisionAction(`Datei importiert: ${file.name}`);
+    await createProjectInDatabase();
+  } else {
+    setProjectRevisionAction(`Datei importiert: ${file.name}`);
+    updateProjectActions();
+  }
+  event.target.value = "";
   openSettingsDialog();
 }
 
@@ -2062,10 +2532,33 @@ function clearOpenProject() {
   state.sourceFileName = "";
   state.analysisComplete = false;
   state.activeProcessStep = "product";
+  state.activeSelectionRow = null;
+  resetProjectApprovalState();
   els.fileState.textContent = "Kein Projekt geöffnet";
   renderWorkspaceState();
+  renderProductApprovalPanel();
+  renderProductApprovalState();
   updateProjectActions();
   state.projectSavePaused = false;
+}
+
+function resetProjectApprovalState() {
+  state.activeSelectionRow = null;
+  state.productApprovalApproverIds = new Set();
+  state.productApprovalStartedAt = "";
+  state.productApprovalStartedBy = "";
+  state.productApprovalListSearch = "";
+  state.productApprovalStatusFilter = "all";
+  state.productApprovalActiveTab = "comments";
+  state.productApprovalDecisionMode = "";
+  state.productReviewActiveTab = "final";
+  state.productReviewTechTypeSearch = "";
+  state.productReviewTechTypeFilter = "all";
+  if (els.productApprovalSearch) els.productApprovalSearch.value = "";
+  if (els.productApprovalStatusFilter) els.productApprovalStatusFilter.value = "all";
+  if (els.productApprovalDisapproveComment) els.productApprovalDisapproveComment.value = "";
+  if (els.productReviewTechTypeSearch) els.productReviewTechTypeSearch.value = "";
+  if (els.productReviewTechTypeFilter) els.productReviewTechTypeFilter.value = "all";
 }
 
 function openSettingsDialog() {
@@ -2160,6 +2653,7 @@ function resetProjectState({ projectName, projectDescription }) {
   state.projectSaveInFlight = false;
   state.projectSaveQueued = false;
   state.projectRevisionAction = "";
+  resetProjectApprovalState();
 
   els.fileState.textContent = `${projectName} (Projekt)`;
   els.sheetSelect.innerHTML = "";
@@ -2179,6 +2673,8 @@ function resetProjectState({ projectName, projectDescription }) {
   renderWorkspaceState();
   renderProcessPages();
   renderTable();
+  renderProductApprovalPanel();
+  renderProductApprovalState();
   renderMetrics();
 }
 
@@ -2364,7 +2860,7 @@ function fillColumnSelects() {
 }
 
 function refreshRequirements() {
-  if (!canEditProductRequirements()) return;
+  if (!canModifyProductRequirements()) return;
 
   state.requirements = buildRequirementsFromCurrentConfig();
   setProjectRevisionAction(`Import konfiguriert: ${state.requirements.length} PR`);
@@ -2375,6 +2871,7 @@ function refreshRequirements() {
   state.e2eSelections = new Map();
   state.finalSelections = new Map();
   state.finalScoreUpdates = new Set();
+  resetProjectApprovalState();
   state.scoreFilterActive = false;
   state.softwareScoreFilterActive = false;
   state.e2eScoreFilterActive = false;
@@ -2386,6 +2883,7 @@ function refreshRequirements() {
   updateProjectActions();
   updateExportAvailability();
   renderTable();
+  renderProductApprovalPanel();
   renderMetrics();
 }
 
@@ -2477,6 +2975,7 @@ async function analyzeRequirements() {
     }
 
     state.analysisComplete = true;
+    seedProductApprovalSelectionsFromAi();
     completeProgress(state.results.length);
     setProjectRevisionAction(`PR analysiert: ${state.results.length} Requirements`);
     updateProjectActions();
@@ -2495,13 +2994,17 @@ function renderTable() {
   els.resultsTable.classList.toggle("analysis-complete", state.analysisComplete);
   const resultByRow = new Map(state.results.map((result) => [Number(result.rowNumber), result]));
   const criticalRows = getCriticalScoreRows();
-  const rows = state.scoreFilterActive
+  const baseRows = state.scoreFilterActive
     ? state.requirements.filter((requirement) => criticalRows.has(Number(requirement.rowNumber)))
     : state.requirements;
+  const rows = filteredProductApprovalRows(baseRows, resultByRow);
+  renderProductApprovalListCount(rows.length, baseRows.length);
 
   if (!rows.length) {
     const message = state.scoreFilterActive
       ? `Keine Requirements mit Score unter ${PRODUCT_STEP_MIN_SCORE} gefunden.`
+      : state.productApprovalListSearch || state.productApprovalStatusFilter !== "all"
+        ? "Keine Requirements fuer den aktuellen Filter gefunden."
       : "Keine Requirements in der gewaehlten Spalte gefunden.";
     els.resultsBody.innerHTML = `<tr><td colspan="${visibleResultColumnCount()}" class="empty">${message}</td></tr>`;
     return;
@@ -2523,32 +3026,235 @@ function renderTable() {
       }
 
       const item = entry.item;
+      const rowNumber = Number(item.rowNumber);
       const result = resultByRow.get(item.rowNumber);
-      const selection = state.finalSelections.get(Number(item.rowNumber));
-      const isUpdatingFinalScore = state.finalScoreUpdates.has(Number(item.rowNumber));
-      const score = result ? displayProductScore(result, selection, { usePreviousScore: isUpdatingFinalScore }) : null;
-      const issues = result ? displayProductIssues(result, selection) : [];
+      const selection = state.finalSelections.get(rowNumber);
+      const isUpdatingFinalScore = state.finalScoreUpdates.has(rowNumber);
+      const score = result ? productVisibleScore(result, selection, isUpdatingFinalScore) : null;
       const isSelected = Boolean(selection);
       const isExcluded = selection?.choice === "excluded";
-      const status = decisionStatus(selection, score, isUpdatingFinalScore);
+      const rowIndex = state.requirements.findIndex((requirement) => Number(requirement.rowNumber) === rowNumber) + 1;
+      const issues = displayProductIssues(result, selection);
+      const openComments = countOpenDisapprovalComments(selection);
+      const gateState = productRequirementQualityGateState(item, resultByRow);
+      const processState = productRequirementProcessState(item, result, selection, isUpdatingFinalScore);
       return `
-        <tr class="requirement-row ${isSelected ? "final-selected-row" : ""} ${isExcluded ? "excluded-row" : ""} ${isUpdatingFinalScore ? "updating-row" : ""}" data-row-number="${item.rowNumber}" tabindex="0">
-          <td class="decision-cell">
-            <span class="decision-icon ${status.className}" aria-label="${escapeHtml(status.label)}">
-              ${status.icon}
-            </span>
-          </td>
-          <td>${item.rowNumber}</td>
+          <tr class="requirement-row approval-list-row ${state.activeSelectionRow === rowNumber ? "is-active-row" : ""} ${isExcluded ? "excluded-row" : ""} ${isUpdatingFinalScore ? "updating-row" : ""} process-${processState} quality-${gateState}" data-row-number="${item.rowNumber}" tabindex="0">
+          <td class="approval-index-cell">${rowIndex}/${state.requirements.length}</td>
           <td>${escapeHtml(item.id || "-")}</td>
-          <td>${escapeHtml(item.name || item.id || "-")}</td>
-          <td class="${selection?.choice === "original" ? "selected-text" : ""} ${isExcluded ? "excluded-text" : ""}">${escapeHtml(item.text)}</td>
-          <td>${renderScoreCell(result, score, isSelected, isExcluded, isUpdatingFinalScore)}</td>
-          <td>${result ? renderIssues(issues) : "-"}</td>
-          <td class="${selection?.choice === "ai" ? "selected-text" : ""} ${isExcluded ? "excluded-text" : ""}">${result ? escapeHtml(result.rewrittenRequirement || "") : "-"}</td>
+          <td>
+            <span class="approval-list-title">${escapeHtml(item.name || item.id || `Zeile ${rowNumber}`)}</span>
+          </td>
+          <td>${renderProductQualityScoreCell(result, score, isExcluded, isUpdatingFinalScore)}</td>
+          <td>${escapeHtml(productReviewSourceLabel(selection))}</td>
+          <td>${renderProductProcessCell(processState, selection)}</td>
+          <td>${escapeHtml(productTechTypeSummary(item, selection))}</td>
+          <td>${renderProductFindingSummary(issues, openComments)}</td>
         </tr>
       `;
     })
     .join("");
+}
+
+function filteredProductApprovalRows(rows, resultByRow) {
+  const search = state.productApprovalListSearch.trim().toLowerCase();
+  const statusFilter = state.productApprovalStatusFilter;
+
+  return rows.filter((requirement) => {
+    const rowNumber = Number(requirement.rowNumber);
+    const result = resultByRow.get(rowNumber);
+    const selection = state.finalSelections.get(rowNumber);
+    if (selection?.choice === "excluded") {
+      return statusFilter === "all";
+    }
+    const searchText = [
+      requirement.id,
+      requirement.name,
+      requirement.category,
+      requirement.subcategory,
+    ].join(" ").toLowerCase();
+    if (search && !searchText.includes(search)) return false;
+
+    if (statusFilter === "all") return true;
+    const processState = productRequirementProcessState(
+      requirement,
+      result,
+      selection,
+      state.finalScoreUpdates.has(rowNumber),
+    );
+    if (statusFilter === "approved") return processState === "approved";
+    if (statusFilter === "transferred") return processState === "transferred";
+    return processState === statusFilter;
+    return true;
+  });
+}
+
+function renderProductApprovalListCount(visibleCount, totalCount) {
+  if (!els.productApprovalListCount) return;
+
+  els.productApprovalListCount.textContent = visibleCount === totalCount
+    ? `${visibleCount} Requirements`
+    : `${visibleCount} / ${totalCount} Requirements`;
+}
+
+function renderProductStatusBadge(status) {
+  return `<span class="status-badge ${escapeHtml(status.className)}" title="${escapeHtml(status.label)}">${escapeHtml(productStatusShortLabel(status))}</span>`;
+}
+
+function productStatusShortLabel(status) {
+  if (status.className === "approved") return "Approved";
+  if (status.className === "critical") return "Critical";
+  if (status.className === "excluded") return "Excluded";
+  if (status.className === "updating") return "Updating";
+  if (status.className === "selected") return "Ready";
+  return "Pending";
+}
+
+function productInitialScore(result) {
+  if (!result) return null;
+  const score = Number(result.originalScore);
+  return Number.isFinite(score) ? score : Number(result.score);
+}
+
+function productVisibleScore(result, selection, isUpdatingFinalScore = false) {
+  if (!result) return null;
+  const score = Number(displayProductScore(result, selection, {
+    usePreviousScore: isUpdatingFinalScore || Boolean(selection?.needsFinalAssessment),
+  }));
+  return Number.isFinite(score) ? score : null;
+}
+
+function productFinalScore(result, selection) {
+  if (!result || !selection || selection.choice === "excluded" || selection.needsFinalAssessment) return null;
+  const score = Number(displayProductScore(result, selection));
+  return Number.isFinite(score) ? score : null;
+}
+
+function productFinalScoreStatus(result, selection, isUpdatingFinalScore = false) {
+  if (selection?.choice === "excluded") return "EXCLUDED";
+  if (isUpdatingFinalScore) return "CALCULATING";
+  if (!selection?.text) return "MISSING";
+  if (selection.needsFinalAssessment) return "STALE";
+
+  const score = productFinalScore(result, selection);
+  if (!Number.isFinite(score)) return "MISSING";
+  return score >= PRODUCT_STEP_MIN_SCORE ? "PASSED" : "FAILED";
+}
+
+function productFinalizationState(requirement, result, selection, isUpdatingFinalScore = false) {
+  if (selection?.choice === "excluded") return "EXCLUDED";
+  if (!state.analysisComplete) return "IMPORTED";
+  if (!selection) return result ? "FINALIZATION_OPEN" : "ANALYZED";
+
+  const scoreStatus = productFinalScoreStatus(result, selection, isUpdatingFinalScore);
+  if (scoreStatus === "CALCULATING") return "FINAL_SCORE_PENDING";
+  if (scoreStatus === "STALE" || scoreStatus === "MISSING") return "FINAL_SCORE_PENDING";
+  if (scoreStatus === "FAILED") return "FINAL_SCORE_FAILED";
+  if (!selectedTechTypesForRequirement(requirement, selection).length) return "FINAL_REQUIREMENT_SELECTED";
+  if (selection.finalizedAt) return "READY_FOR_APPROVAL";
+  return "FINAL_SCORE_PASSED";
+}
+
+function productReviewSourceLabel(selection) {
+  const source = productReviewSource(selection);
+  const labels = {
+    ORIGINAL: "Original",
+    AI_PROPOSAL: "AI Proposal",
+    MANUAL_EDIT: "Manual Edit",
+    AI_ASSISTED_EDIT: "AI Assisted",
+    EXCLUDED: "Ausgeschlossen",
+    OPEN: "-",
+  };
+  return labels[source] || labels.OPEN;
+}
+
+function productReviewSource(selection) {
+  if (!selection) return "OPEN";
+  if (selection.choice === "excluded") return "EXCLUDED";
+  if (selection.selectedSource) return selection.selectedSource;
+  if (selection.choice === "original") return "ORIGINAL";
+  if (selection.choice === "ai") return "AI_PROPOSAL";
+  if (selection.choice === "manual") return "MANUAL_EDIT";
+  return "OPEN";
+}
+
+function productTechTypeSummary(requirement, selection) {
+  if (selection?.choice === "excluded") return "Nicht erforderlich";
+  const selected = selectedTechTypesForRequirement(requirement, selection);
+  const total = state.techTypes.length;
+  if (!total) return "Keine TechTypes";
+  return `${selected.length}/${total}`;
+}
+
+function productRequirementProcessState(requirement, result, selection, isUpdatingFinalScore = false) {
+  if (selection?.choice === "excluded") return "excluded";
+  if (state.productWindchillTransferComplete && isProductSelectionFullyApproved(selection)) return "transferred";
+  if (isProductSelectionFullyApproved(selection)) return "approved";
+  if (isProductApprovalStarted()) return "in-approval";
+  if (!state.analysisComplete || !result) return "analysis";
+
+  const finalizationStatus = productFinalizationState(requirement, result, selection, isUpdatingFinalScore);
+  if (finalizationStatus === "READY_FOR_APPROVAL" || finalizationStatus === "FINAL_SCORE_PASSED") return "ready";
+  return "editing";
+}
+
+function renderProductProcessBadge(status) {
+  const labels = {
+    analysis: "Analyse",
+    editing: "Bearbeitung",
+    ready: "Bereit für Approval",
+    "in-approval": "In Approval",
+    approved: "Approved",
+    transferred: "Transfered",
+    excluded: "Ausgeschlossen",
+  };
+  const className =
+    status === "approved" || status === "transferred"
+      ? "approved"
+      : status === "excluded"
+        ? "excluded"
+        : status === "editing"
+          ? "selected"
+          : status === "in-approval"
+            ? "pending"
+            : "updating";
+  return `<span class="status-badge ${className}">${escapeHtml(labels[status] || labels.analysis)}</span>`;
+}
+
+function renderProductProcessCell(status, selection) {
+  return `
+    <div class="product-process-cell">
+      ${renderProductProcessBadge(status)}
+      ${renderProductApprovalProgress(selection)}
+    </div>
+  `;
+}
+
+function renderProductFindingSummary(issues, openComments) {
+  const issueText = issues.length ? displayIssueField(issues[0], "explanation") : "No major findings";
+  const commentBadge = openComments
+    ? `<span class="open-comments-badge">${openComments} open comment${openComments === 1 ? "" : "s"}</span>`
+    : "";
+  return `
+    <span class="finding-summary" title="${escapeHtml(issueText)}">${escapeHtml(issueText)}</span>
+    ${commentBadge}
+  `;
+}
+
+function productRequirementQualityGateState(requirement, resultByRow) {
+  const selection = state.finalSelections.get(Number(requirement?.rowNumber));
+  if (selection?.choice === "excluded") return "excluded";
+  const score = productQualityGateScore(requirement, resultByRow);
+  if (!Number.isFinite(score)) return "missing";
+  return score >= PRODUCT_STEP_MIN_SCORE ? "passed" : "rework";
+}
+
+function renderProductQualityScoreCell(result, score, isExcluded, isUpdatingFinalScore) {
+  if (!Number.isFinite(Number(score)) && !isUpdatingFinalScore) return `<span class="muted-cell">-</span>`;
+  const rendered = renderScoreCell(result, score, true, isExcluded, isUpdatingFinalScore);
+  if (!result || isExcluded || isUpdatingFinalScore || !isProductQualityGateBlockingScore(score)) return rendered;
+
+  return rendered;
 }
 
 function groupedRequirements(rows) {
@@ -2575,7 +3281,110 @@ function groupedRequirements(rows) {
 }
 
 function visibleResultColumnCount() {
-  return state.analysisComplete ? 8 : 7;
+  return 8;
+}
+
+function seedProductApprovalSelectionsFromAi() {
+  state.results.forEach((result) => {
+    const rowNumber = Number(result.rowNumber);
+    const requirement = state.requirements.find((item) => Number(item.rowNumber) === rowNumber);
+    const text = requirement?.text || "";
+    if (!requirement || !text || state.finalSelections.has(rowNumber)) return;
+
+    state.finalSelections.set(rowNumber, {
+      choice: "original",
+      selectedSource: "ORIGINAL",
+      text,
+      techTypes: selectedTechTypesForRequirement(requirement, null),
+      approvedAt: "",
+      approvedBy: "",
+      approvals: [],
+      comments: [],
+      versions: [
+        {
+          version: 1,
+          text,
+          changedAt: new Date().toISOString(),
+          changedBy: "Import",
+          reason: "Initial Original Requirement",
+        },
+      ],
+    });
+  });
+}
+
+function migrateProductApprovalSelections() {
+  if (!state.analysisComplete || !state.results.length) return;
+
+  seedProductApprovalSelectionsFromAi();
+  state.finalSelections.forEach((selection, rowNumber) => {
+    const result = state.results.find((entry) => Number(entry.rowNumber) === Number(rowNumber));
+    const requirement = state.requirements.find((item) => Number(item.rowNumber) === Number(rowNumber));
+    if (
+      selection?.choice === "ai" &&
+      selection?.selectedSource === "AI_PROPOSAL" &&
+      !selection.finalizedAt &&
+      !selection.approvedAt &&
+      !productApprovalRecords(selection).length &&
+      requirement?.text
+    ) {
+      selection.choice = "original";
+      selection.selectedSource = "ORIGINAL";
+      selection.text = requirement.text;
+      delete selection.previousScore;
+      selection.needsFinalAssessment = false;
+      selection.versions = [
+        {
+          version: 1,
+          text: requirement.text,
+          changedAt: new Date().toISOString(),
+          changedBy: "Migration",
+          reason: "Initial Original Requirement",
+        },
+      ];
+    }
+    if (!Array.isArray(selection.comments)) selection.comments = [];
+    if (!Array.isArray(selection.approvals)) selection.approvals = [];
+    if (!Array.isArray(selection.versions) || !selection.versions.length) {
+      selection.versions = [
+        {
+          version: 1,
+          text: selection.text || "",
+          changedAt: new Date().toISOString(),
+          changedBy: "Migration",
+          reason: "Initial approval version",
+        },
+      ];
+    }
+  });
+}
+
+function renderProductApprovalProgress(selection) {
+  if (!isProductApprovalStarted()) return "";
+
+  const requiredCount = getRequiredProductApproverIds().length;
+  if (!requiredCount) return "";
+
+  const approvedCount = countProductApprovals(selection);
+  const openComments = countOpenDisapprovalComments(selection);
+  const currentApproverId = currentProductApproverSlotId();
+  const currentApproverApproved = currentApproverId && hasProductApprovalFrom(selection, currentApproverId);
+  const fullyApproved = approvedCount >= requiredCount && openComments === 0;
+  const label = openComments
+    ? `${approvedCount}/${requiredCount} Freigaben · ${openComments} offen`
+    : `${approvedCount}/${requiredCount} Freigaben`;
+  const title = currentApproverApproved
+    ? "Deine Freigabe wurde fuer dieses Requirement erfasst."
+    : "Noch keine Freigabe von deinem Approver-Benutzer erfasst.";
+  const className = fullyApproved ? "is-complete" : currentApproverApproved ? "is-own-approved" : "is-pending";
+  const ownApproval = currentApproverApproved
+    ? `<span class="approval-own-marker">${escapeHtml(translateUiText("Meine Freigabe erfasst"))}</span>`
+    : "";
+
+  return `
+    <span class="approval-progress-mini ${className}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>
+    ${ownApproval}
+  `;
 }
 
 function handleResultRowClick(event) {
@@ -2584,7 +3393,32 @@ function handleResultRowClick(event) {
   const row = event.target.closest(".requirement-row");
   if (!row) return;
 
-  openSelectionDialog(Number(row.dataset.rowNumber));
+  selectProductRequirement(Number(row.dataset.rowNumber));
+}
+
+function selectProductRequirement(rowNumber) {
+  state.activeSelectionRow = Number(rowNumber);
+  state.productApprovalDecisionMode = "";
+  renderTable();
+  renderProductApprovalPanel();
+}
+
+function handleProductApprovalSearch(event) {
+  state.productApprovalListSearch = event.target.value || "";
+  renderTable();
+}
+
+function handleProductApprovalStatusFilter(event) {
+  state.productApprovalStatusFilter = event.target.value || "all";
+  renderTable();
+}
+
+function handleProductApprovalTabClick(event) {
+  const button = event.target.closest("[data-approval-tab]");
+  if (!button) return;
+
+  state.productApprovalActiveTab = button.dataset.approvalTab || "comments";
+  renderProductApprovalPanel();
 }
 
 function openSelectionDialog(rowNumber) {
@@ -2592,23 +3426,30 @@ function openSelectionDialog(rowNumber) {
   if (!item) return;
 
   const result = state.results.find((entry) => Number(entry.rowNumber) === rowNumber);
+  const score = result ? productVisibleScore(result, state.finalSelections.get(rowNumber), state.finalScoreUpdates.has(rowNumber)) : null;
   state.activeSelectionRow = rowNumber;
 
   els.selectionId.textContent = item.id || "-";
   els.selectionName.textContent = item.name || item.id || "-";
   els.selectionGroup.textContent = `${item.category || "Ohne Kategorie"} / ${item.subcategory || "Ohne Subkategorie"}`;
-  els.selectionScore.textContent = result ? displayProductScore(result, state.finalSelections.get(rowNumber)) : "-";
+  els.selectionScore.textContent = Number.isFinite(Number(score)) ? String(score) : "-";
   els.selectionOriginalText.textContent = item.text;
   els.selectionAiText.textContent = result?.rewrittenRequirement || "Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen.";
   els.prImprovementInstruction.value = "";
   els.prImprovementAttachments.value = "";
   renderImprovementAttachmentList(els.prImprovementAttachments, els.prImprovementAttachmentList);
   renderTechTypeSelection(item, state.finalSelections.get(rowNumber));
-  const canEditProduct = canEditProductRequirements();
+  const canEditProduct = canModifyProductRequirements();
   els.selectOriginalButton.disabled = !canEditProduct;
+  els.selectOriginalButton.hidden = true;
   els.selectAiButton.disabled = !canEditProduct || !result?.rewrittenRequirement;
+  els.selectAiButton.title = isProductQualityGateBlockingScore(score)
+    ? "Dieser Vorschlag kann vorbereitet werden, blockiert den Approval-Start aber weiter, solange der Score 85 oder niedriger ist."
+    : "";
   els.excludeRequirementButton.disabled = !canEditProduct;
   els.prImproveButton.disabled = !canEditProduct;
+  els.approveRequirementButton.disabled = !canApproveProductRequirement(rowNumber);
+  els.approveRequirementButton.textContent = translateUiText(productApprovalButtonText(rowNumber));
   els.selectionIssues.innerHTML = result
     ? renderIssues(displayProductIssues(result, state.finalSelections.get(rowNumber)))
     : "Noch keine Analysehinweise vorhanden.";
@@ -2616,8 +3457,824 @@ function openSelectionDialog(rowNumber) {
 }
 
 function closeSelectionDialog() {
-  state.activeSelectionRow = null;
   els.selectionOverlay.hidden = true;
+}
+
+function closeActiveProductEditDialog() {
+  closeSelectionDialog();
+  closeProductRequirementDetailDialog();
+}
+
+function closeProductRequirementDetailDialog() {
+  if (!els.productApprovalDetailPanel) return;
+
+  els.productApprovalDetailPanel.hidden = true;
+  state.activeSelectionRow = null;
+  state.productApprovalDecisionMode = "";
+  renderTable();
+}
+
+function openProductEditDialog() {
+  if (!state.analysisComplete || !state.requirements.length) return;
+
+  const currentRow = state.requirements.some((item) => Number(item.rowNumber) === Number(state.activeSelectionRow))
+    ? Number(state.activeSelectionRow)
+    : Number(state.requirements[0].rowNumber);
+  selectProductRequirement(currentRow);
+}
+
+function renderProductApprovalPanel() {
+  if (!els.productApprovalDetailPanel) return;
+
+  const hasActiveRequirement = state.analysisComplete && Boolean(state.activeSelectionRow);
+  els.productApprovalDetailPanel.hidden = !hasActiveRequirement;
+  if (els.productApprovalDetailPanel.hidden) return;
+
+  if (!isProductApprovalStarted()) {
+    renderProductReviewPanel();
+    return;
+  }
+
+  const rowNumber = Number(state.activeSelectionRow);
+  const requirement = state.requirements.find((item) => Number(item.rowNumber) === rowNumber);
+  const selection = state.finalSelections.get(rowNumber);
+  const result = state.results.find((entry) => Number(entry.rowNumber) === rowNumber);
+  els.productReviewDetailContent.hidden = true;
+  if (!requirement || !selection) {
+    els.productApprovalDetailEmpty.hidden = false;
+    els.productApprovalDetailContent.hidden = true;
+    return;
+  }
+
+  const score = productVisibleScore(result, selection, state.finalScoreUpdates.has(rowNumber));
+  const openDisapprovals = countOpenDisapprovalComments(selection);
+  const fullyApproved = isProductSelectionFullyApproved(selection) && openDisapprovals === 0;
+  const requiredApproverIds = getRequiredProductApproverIds();
+  const approvedCount = countProductApprovals(selection);
+  const versions = productApprovalVersions(selection);
+  const statusLabel = fullyApproved ? "Final approved" : "Ready for Approval";
+  const canEdit = canReviseProductApprovalRequirement(rowNumber);
+  const canApprove = canApproveProductRequirement(rowNumber);
+  const canDisapprove = canDisapproveProductRequirement(rowNumber);
+  els.productApprovalDetailEmpty.hidden = true;
+  els.productApprovalDetailContent.hidden = false;
+  els.productApprovalDetailStatus.textContent = statusLabel;
+  els.productApprovalDetailStatus.className = `status-badge ${fullyApproved ? "approved" : "pending"}`;
+  els.productApprovalDetailTitle.textContent = requirement.name || requirement.id || `Zeile ${rowNumber}`;
+  els.productApprovalDetailSubtitle.textContent = requirement.id || `Zeile ${rowNumber}`;
+  els.productApprovalDetailProgress.textContent = `${approvedCount} / ${requiredApproverIds.length}`;
+  els.productApprovalDetailId.textContent = requirement.id || "-";
+  els.productApprovalDetailScore.textContent = Number.isFinite(Number(score)) ? String(score) : "-";
+  els.productApprovalDetailOwner.textContent = state.productApprovalStartedBy || state.projectName || currentApprovalUserName();
+  els.productApprovalDetailVersion.textContent = versions.length ? `v${versions.length}` : "v1";
+  els.productApprovalDetailMetaStatus.textContent = statusLabel;
+  els.productApprovalDetailOpenComments.textContent = String(openDisapprovals);
+  els.productApprovalFinalText.value = selection.text || result?.rewrittenRequirement || requirement.text || "";
+  els.productApprovalFinalText.disabled = !canEdit;
+  els.productApprovalOriginalText.textContent = requirement.text || "-";
+  els.productApprovalOwnerActions.hidden = !canEdit;
+  els.productApprovalSaveTextButton.disabled = !canEdit;
+  els.productApprovalSubmitButton.disabled = !canEdit;
+  els.productApprovalAiImprovement.hidden = !canEdit;
+  els.productApprovalImprovementInstruction.disabled = !canEdit;
+  els.productApprovalImprovementAttachments.disabled = !canEdit;
+  els.productApprovalImproveButton.disabled = !canEdit;
+  els.productApprovalDecision.hidden = !canApproveProductRequirements();
+  els.productApprovalApproveButton.disabled = !canApprove || openDisapprovals > 0;
+  els.productApprovalShowDisapproveButton.disabled = !canDisapprove;
+  els.productApprovalDisapproveBox.hidden = state.productApprovalDecisionMode !== "disapprove";
+  els.productApprovalDisapproveComment.disabled = !canDisapprove;
+  updateProductDisapprovalSubmitState();
+  renderProductApprovalTabs(selection);
+}
+
+function renderProductReviewPanel() {
+  ensureProductReviewToolsInSidebar();
+  const rowNumber = Number(state.activeSelectionRow);
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === rowNumber);
+  if (!item) {
+    els.productApprovalDetailEmpty.hidden = false;
+    els.productReviewDetailContent.hidden = true;
+    els.productApprovalDetailContent.hidden = true;
+    return;
+  }
+
+  const result = state.results.find((entry) => Number(entry.rowNumber) === rowNumber);
+  const selection = state.finalSelections.get(rowNumber);
+  els.productApprovalDetailEmpty.hidden = true;
+  els.productApprovalDetailContent.hidden = true;
+  els.productReviewDetailContent.hidden = false;
+  els.productReviewDetailTitle.textContent = item.name || item.id || `Zeile ${rowNumber}`;
+  els.productReviewDetailSubtitle.textContent = `${item.id || "Ohne ID"} · ${item.category || "Ohne Kategorie"} / ${item.subcategory || "Ohne Subkategorie"}`;
+  const isUpdatingFinalScore = state.finalScoreUpdates.has(rowNumber);
+  const visibleScore = productVisibleScore(result, selection, isUpdatingFinalScore);
+  const finalScore = productFinalScore(result, selection);
+  const finalScoreStatus = productFinalScoreStatus(result, selection, isUpdatingFinalScore);
+  const finalizationStatus = productFinalizationState(item, result, selection, isUpdatingFinalScore);
+  els.productReviewDetailStatus.textContent = productFinalizationStatusLabel(finalizationStatus);
+  els.productReviewDetailStatus.className = `status-badge ${productFinalizationStatusClass(finalizationStatus)}`;
+  els.productReviewDetailScore.textContent = Number.isFinite(visibleScore) ? `Score ${visibleScore}` : "Score -";
+  els.productReviewDetailScore.classList.toggle("is-blocking-score", finalScoreStatus === "FAILED");
+  els.productReviewQualityWarning.hidden = finalScoreStatus !== "FAILED" && finalScoreStatus !== "STALE" && finalScoreStatus !== "MISSING";
+
+  els.selectionId.textContent = item.id || "-";
+  els.selectionName.textContent = item.name || item.id || "-";
+  els.selectionGroup.textContent = `${item.category || "Ohne Kategorie"} / ${item.subcategory || "Ohne Subkategorie"}`;
+  els.selectionScore.textContent = Number.isFinite(visibleScore) ? String(visibleScore) : "-";
+  els.selectionOriginalText.textContent = item.text;
+  els.selectionAiText.textContent = result?.rewrittenRequirement || "Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen.";
+  els.productReviewFinalText.value = selection?.text || result?.rewrittenRequirement || "";
+  els.productReviewFinalText.disabled = true;
+  els.productReviewFinalScore.textContent = Number.isFinite(visibleScore) ? `Score ${visibleScore}` : "Score -";
+  els.productReviewFinalScoreStatus.textContent = finalScoreStatus;
+  els.productReviewFinalScoreStatus.className = `quality-badge ${productFinalScoreStatusClass(finalScoreStatus)}`;
+  els.productReviewFinalScoreHint.textContent = productFinalScoreHint(finalScoreStatus);
+  els.productReviewSaveFinalTextButton.disabled = true;
+  els.productReviewRecalculateScoreButton.disabled = true;
+  renderTechTypeSelection(item, selection);
+  applyProductReviewTechTypeFilter();
+  const canEditProduct = canModifyProductRequirements();
+  els.selectOriginalButton.disabled = true;
+  els.selectOriginalButton.hidden = true;
+  els.selectAiButton.disabled = !canEditProduct || !result?.rewrittenRequirement;
+  els.excludeRequirementButton.disabled = !canEditProduct;
+  els.prImproveButton.disabled = !canEditProduct;
+  els.approveRequirementButton.hidden = false;
+  els.approveRequirementButton.textContent = "PR freigeben";
+  els.approveRequirementButton.disabled =
+    !canEditProduct ||
+    isUpdatingFinalScore ||
+    !selection?.text?.trim() ||
+    !selectedTechTypesForRequirement(item, selection).length;
+  els.selectionDeferButton.hidden = false;
+  els.selectionDeferButton.textContent = "Später entscheiden";
+  const initialScore = productInitialScore(result);
+  els.selectionIssues.innerHTML = result
+    ? `
+      <div class="analysis-summary-grid">
+        <div><span>Score</span><strong>${Number.isFinite(visibleScore) ? visibleScore : Number.isFinite(initialScore) ? initialScore : "-"}</strong></div>
+        <div><span>Score Status</span><strong>${escapeHtml(finalScoreStatus)}</strong></div>
+        <div><span>Finalization</span><strong>${escapeHtml(productFinalizationStatusLabel(finalizationStatus))}</strong></div>
+      </div>
+      ${renderIssues(displayProductIssues(result, selection))}
+    `
+    : "Noch keine Analysehinweise vorhanden.";
+  renderProductReviewHistory(selection);
+}
+
+function ensureProductReviewToolsInSidebar() {
+  if (els.productReviewFinalChoiceHost?.dataset.mounted === "true") return;
+
+  const nodes = [
+    els.selectionId.closest(".selection-meta"),
+    els.selectionOriginalText.closest(".selection-grid"),
+  ].filter(Boolean);
+  nodes.forEach((node) => els.productReviewFinalChoiceHost.append(node));
+  const originalCard = els.selectionOriginalText.closest(".choice-card");
+  if (originalCard) originalCard.append(els.selectionIssues.closest(".selection-issues"));
+  els.productReviewFinalActionsHost.append(els.excludeRequirementButton.closest(".selection-actions"));
+  els.productReviewFinalChoiceHost.dataset.mounted = "true";
+}
+
+function renderProductReviewTabs() {
+  const activeTab = state.productReviewActiveTab || "final";
+  const tabMap = {
+    final: els.productReviewFinalTab,
+    techtypes: els.productReviewTechTypesTab,
+    analysis: els.productReviewAnalysisTab,
+    history: els.productReviewHistoryTab,
+  };
+  els.productReviewTabs.querySelectorAll("[data-review-tab]").forEach((button) => {
+    const isActive = button.dataset.reviewTab === activeTab;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+  Object.entries(tabMap).forEach(([tab, element]) => {
+    if (element) element.hidden = tab !== activeTab;
+  });
+}
+
+function productFinalizationStatusLabel(status) {
+  const labels = {
+    IMPORTED: "Importiert",
+    ANALYZED: "Analysiert",
+    FINALIZATION_OPEN: "Finalisierung offen",
+    FINAL_REQUIREMENT_SELECTED: "Finales Requirement gewählt",
+    FINAL_SCORE_PENDING: "Score neu berechnen",
+    FINAL_SCORE_PASSED: "Score bestanden",
+    FINAL_SCORE_FAILED: "Nacharbeit erforderlich",
+    EXCLUDED: "Ausgeschlossen",
+    READY_FOR_APPROVAL: "Für Approval vorbereitet",
+  };
+  return labels[status] || status;
+}
+
+function productFinalizationStatusClass(status) {
+  if (status === "READY_FOR_APPROVAL" || status === "FINAL_SCORE_PASSED") return "approved";
+  if (status === "FINAL_SCORE_FAILED") return "critical";
+  if (status === "EXCLUDED") return "excluded";
+  return "pending";
+}
+
+function productFinalScoreStatusClass(status) {
+  if (status === "PASSED") return "passed";
+  if (status === "FAILED") return "rework";
+  return "missing";
+}
+
+function productFinalScoreHint(status) {
+  if (status === "PASSED") return "Score erfüllt die Voraussetzung für den späteren Approval-Prozess.";
+  if (status === "FAILED") return "Nacharbeit erforderlich.";
+  if (status === "STALE") return "Score neu berechnen erforderlich.";
+  if (status === "CALCULATING") return "Score wird berechnet.";
+  if (status === "EXCLUDED") return "Ausgeschlossene Requirements benötigen keinen Score.";
+  return "Score neu berechnen erforderlich.";
+}
+
+function renderProductReviewHistory(selection) {
+  const versions = productApprovalVersions(selection);
+  els.productReviewHistory.innerHTML = versions.length
+    ? versions
+        .slice()
+        .reverse()
+        .map((version) => `
+          <article class="approval-history-entry">
+            <strong>${escapeHtml(version.reason || "Änderung")}</strong>
+            <small>${escapeHtml(version.changedBy || "-")} · ${escapeHtml(new Date(version.changedAt || Date.now()).toLocaleString())}</small>
+            ${version.text ? `<p>${escapeHtml(version.text)}</p>` : ""}
+          </article>
+        `)
+        .join("")
+    : `<p class="muted-cell">Noch keine Finalisierungshistorie vorhanden.</p>`;
+}
+
+function renderProductApprovalTabs(selection) {
+  const activeTab = state.productApprovalActiveTab || "comments";
+  els.productApprovalTabs.querySelectorAll("[data-approval-tab]").forEach((button) => {
+    const isActive = button.dataset.approvalTab === activeTab;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+
+  if (activeTab === "approvals") {
+    els.productApprovalTabContent.innerHTML = renderProductApprovalApprovals(selection);
+    return;
+  }
+
+  if (activeTab === "versions") {
+    els.productApprovalTabContent.innerHTML = renderProductApprovalHistory(selection);
+    return;
+  }
+
+  els.productApprovalTabContent.innerHTML = renderProductApprovalComments(selection);
+}
+
+function showProductDisapprovalForm() {
+  state.productApprovalDecisionMode = "disapprove";
+  renderProductApprovalPanel();
+  els.productApprovalDisapproveComment.focus();
+}
+
+function updateProductDisapprovalSubmitState() {
+  if (!els.productApprovalDisapproveButton) return;
+
+  const rowNumber = Number(state.activeSelectionRow);
+  const hasComment = Boolean(els.productApprovalDisapproveComment.value.trim());
+  els.productApprovalDisapproveButton.disabled = !canDisapproveProductRequirement(rowNumber) || !hasComment;
+}
+
+function submitProductRequirementForApproval() {
+  const rowNumber = Number(state.activeSelectionRow);
+  if (!state.finalSelections.has(rowNumber) || !canReviseProductApprovalRequirement(rowNumber)) return;
+
+  setProjectRevisionAction("PR erneut zur Freigabe bereitgestellt");
+  renderProductApprovalPanel();
+  updateProjectActions();
+}
+
+async function handleProductReviewPrimaryAction() {
+  if (isProductApprovalStarted()) {
+    if (approveProductRequirement(state.activeSelectionRow)) {
+      closeActiveProductEditDialog();
+    }
+    return;
+  }
+
+  await finalizeProductRequirement();
+}
+
+function handleProductReviewTabClick(event) {
+  const button = event.target.closest("[data-review-tab]");
+  if (!button) return;
+
+  state.productReviewActiveTab = button.dataset.reviewTab || "final";
+  renderProductReviewPanel();
+}
+
+function handleProductReviewFinalTabClick(event) {
+  const assistButton = event.target.closest("[data-ai-assist]");
+  if (!assistButton) return;
+
+  els.prImprovementInstruction.value = assistButton.dataset.aiAssist || "";
+  void improveProductRequirementWithAi();
+}
+
+function markProductReviewFinalTextStale() {
+  const selection = ensureActiveProductSelection("manual");
+  if (!selection || !canModifyProductRequirements()) return;
+
+  selection.text = els.productReviewFinalText.value;
+  selection.choice = "manual";
+  selection.selectedSource = "MANUAL_EDIT";
+  selection.needsFinalAssessment = true;
+  selection.finalizedAt = "";
+  els.productReviewFinalScoreStatus.textContent = "STALE";
+  els.productReviewFinalScoreStatus.className = "quality-badge missing";
+  els.productReviewFinalScoreHint.textContent = "Score neu berechnen erforderlich.";
+  updateProjectActions();
+}
+
+function saveProductReviewFinalText() {
+  const selection = ensureActiveProductSelection("manual");
+  if (!selection || !canModifyProductRequirements()) return;
+
+  const text = els.productReviewFinalText.value.trim();
+  if (!text) {
+    alert("Finales Product Requirement darf nicht leer sein.");
+    return;
+  }
+
+  selection.text = text;
+  selection.choice = selection.choice || "manual";
+  selection.selectedSource = selection.selectedSource || "MANUAL_EDIT";
+  selection.needsFinalAssessment = true;
+  selection.finalizedAt = "";
+  addProductReviewHistory(selection, "Manuelle Änderung", text);
+  setProjectRevisionAction("Finales PR gespeichert");
+  renderTable();
+  renderProductReviewPanel();
+  renderMetrics();
+  updateProjectActions();
+}
+
+async function recalculateProductReviewFinalScore() {
+  const rowNumber = Number(state.activeSelectionRow);
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === rowNumber);
+  const selection = state.finalSelections.get(rowNumber);
+  if (!item || !selection?.text || !canModifyProductRequirements()) return;
+
+  addProductReviewHistory(selection, "Score-Neuberechnung gestartet", selection.text);
+  await recalculateFinalScore(item, selection.text, selection.choice || "manual");
+  const updatedSelection = state.finalSelections.get(rowNumber);
+  if (updatedSelection) {
+    addProductReviewHistory(updatedSelection, "Score neu berechnet", updatedSelection.text);
+  }
+  renderProductReviewPanel();
+}
+
+async function finalizeProductRequirement() {
+  const rowNumber = Number(state.activeSelectionRow);
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === rowNumber);
+  const selection = state.finalSelections.get(rowNumber);
+  if (!item || !selection || !canModifyProductRequirements()) return;
+
+  if (!selection.text?.trim()) {
+    alert("Bitte lege zuerst ein finales Product Requirement fest.");
+    return;
+  }
+  if (!selectedTechTypesForRequirement(item, selection).length) {
+    alert("Bitte wähle mindestens einen TechType aus.");
+    return;
+  }
+
+  els.approveRequirementButton.disabled = true;
+  els.approveRequirementButton.textContent = "Score wird berechnet...";
+  if (selection.needsFinalAssessment) {
+    addProductReviewHistory(selection, "Score-Neuberechnung gestartet", selection.text);
+    await recalculateFinalScore(item, selection.text, selection.choice || "manual");
+  }
+
+  const updatedResult = state.results.find((entry) => Number(entry.rowNumber) === rowNumber);
+  const updatedSelection = state.finalSelections.get(rowNumber);
+  const finalScore = productFinalScore(updatedResult, updatedSelection);
+  if (!updatedSelection || !Number.isFinite(finalScore) || finalScore < PRODUCT_STEP_MIN_SCORE) {
+    alert(`Requirement kann erst mit Score >= ${PRODUCT_STEP_MIN_SCORE} fertiggestellt werden.`);
+    renderProductReviewPanel();
+    return;
+  }
+
+  const selectionToFinalize = updatedSelection;
+  selectionToFinalize.finalizedAt = new Date().toISOString();
+  addProductReviewHistory(selectionToFinalize, "Requirement fertiggestellt", selectionToFinalize.text);
+  setProjectRevisionAction(projectRevisionActionFor("PR finalisiert", item, "PR"));
+  closeActiveProductEditDialog();
+  renderTable();
+  renderMetrics();
+  updateProjectActions();
+}
+
+function ensureActiveProductSelection(choice = "manual") {
+  const rowNumber = Number(state.activeSelectionRow);
+  if (!rowNumber) return null;
+  let selection = state.finalSelections.get(rowNumber);
+  if (selection) return selection;
+
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === rowNumber);
+  if (!item) return null;
+  selection = {
+    choice,
+    selectedSource: "MANUAL_EDIT",
+    text: "",
+    techTypes: selectedTechTypesForRequirement(item, null),
+    approvedAt: "",
+    approvedBy: "",
+    approvals: [],
+    comments: [],
+    versions: [],
+    needsFinalAssessment: true,
+  };
+  state.finalSelections.set(rowNumber, selection);
+  return selection;
+}
+
+function addProductReviewHistory(selection, reason, text = selection?.text || "") {
+  if (!selection) return;
+  selection.versions = productApprovalVersions(selection);
+  selection.versions.push({
+    version: selection.versions.length + 1,
+    text,
+    changedAt: new Date().toISOString(),
+    changedBy: currentApprovalUserName(),
+    reason,
+  });
+}
+
+function handleProductReviewTechTypeFilterChange(event) {
+  if (event.target === els.productReviewTechTypeSearch) {
+    state.productReviewTechTypeSearch = event.target.value || "";
+  } else {
+    state.productReviewTechTypeFilter = event.target.value || "all";
+  }
+  applyProductReviewTechTypeFilter();
+}
+
+function applyProductReviewTechTypeFilter() {
+  const search = state.productReviewTechTypeSearch.trim().toLowerCase();
+  const filter = state.productReviewTechTypeFilter;
+  els.techTypeSelectionList.querySelectorAll("[data-techtype-designation]").forEach((input) => {
+    const label = input.closest("label");
+    const text = String(input.dataset.techtypeDesignation || "").toLowerCase();
+    const matchesSearch = !search || text.includes(search);
+    const matchesFilter =
+      filter === "all" ||
+      (filter === "selected" && input.checked) ||
+      (filter === "unselected" && !input.checked);
+    if (label) label.hidden = !matchesSearch || !matchesFilter;
+  });
+}
+
+function clearTechTypesForActiveRequirement() {
+  if (!canModifyProductRequirements()) return;
+
+  els.techTypeSelectionList.querySelectorAll("input[type='checkbox']").forEach((input) => {
+    input.checked = false;
+    input.indeterminate = false;
+  });
+  syncTechTypeGroupCheckboxes();
+  renderTechTypeSummary(0);
+  persistActiveRequirementTechTypes();
+}
+
+function resetTechTypesForActiveRequirement() {
+  if (!canModifyProductRequirements()) return;
+
+  const selected = new Set(allTechTypeDesignations());
+  els.techTypeSelectionList.querySelectorAll("[data-techtype-designation]").forEach((input) => {
+    input.checked = selected.has(input.dataset.techtypeDesignation);
+  });
+  syncTechTypeGroupCheckboxes();
+  renderTechTypeSummary(selected.size);
+  persistActiveRequirementTechTypes();
+}
+
+function canReviseProductApprovalRequirement(rowNumber = state.activeSelectionRow) {
+  if (!isProductApprovalStarted() || state.productWindchillTransferComplete) return false;
+  if (!state.finalSelections.has(Number(rowNumber))) return false;
+  return canEditProductRequirements() || Boolean(currentProductApproverSlotId());
+}
+
+async function saveProductApprovalText() {
+  await savePendingProductApprovalTextChange();
+}
+
+async function savePendingProductApprovalTextChange() {
+  const rowNumber = Number(state.activeSelectionRow);
+  const selection = state.finalSelections.get(rowNumber);
+  if (!selection || !canReviseProductApprovalRequirement(rowNumber)) return { ok: false, changed: false };
+
+  const nextText = els.productApprovalFinalText.value.trim();
+  if (!nextText) {
+    alert("Der Requirement-Text darf nicht leer sein.");
+    return { ok: false, changed: false };
+  }
+  if (nextText === selection.text) return { ok: true, changed: false };
+
+  await applyProductApprovalTextChange(rowNumber, nextText, {
+    choice: "manual",
+    selectedSource: "MANUAL_EDIT",
+    historyReason: "Approval-Änderung",
+    revisionAction: "PR-Text im Approval geaendert",
+  });
+  return { ok: true, changed: true };
+}
+
+async function applyProductApprovalTextChange(rowNumber, nextText, options = {}) {
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
+  const selection = state.finalSelections.get(Number(rowNumber));
+  if (!item || !selection) return null;
+
+  selection.text = nextText;
+  selection.choice = options.choice || selection.choice || "manual";
+  selection.selectedSource = options.selectedSource || selection.selectedSource || "MANUAL_EDIT";
+  selection.needsFinalAssessment = true;
+  selection.finalizedAt = "";
+  clearApproval(selection);
+  addProductReviewHistory(selection, options.historyReason || "Approval-Änderung", nextText);
+  setProjectRevisionAction(projectRevisionActionFor(options.revisionAction || "PR im Approval geaendert", item, "PR"));
+  renderTable();
+  renderProductApprovalPanel();
+  renderMetrics();
+  updateProjectActions();
+  await recalculateFinalScore(item, nextText, selection.choice || "manual");
+  const updatedSelection = state.finalSelections.get(Number(rowNumber));
+  if (updatedSelection) {
+    addProductReviewHistory(updatedSelection, "Score neu berechnet", updatedSelection.text);
+  }
+  renderProductApprovalPanel();
+  updateProjectActions();
+  return updatedSelection;
+}
+
+async function improveProductApprovalRequirementWithAi() {
+  const rowNumber = Number(state.activeSelectionRow);
+  if (!canReviseProductApprovalRequirement(rowNumber)) return;
+
+  const endpoint = getAnalyzeEndpoint();
+  if (!endpoint) {
+    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    return;
+  }
+
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
+  const result = state.results.find((entry) => Number(entry.rowNumber) === Number(rowNumber));
+  const instruction = els.productApprovalImprovementInstruction.value.trim();
+  const currentText = els.productApprovalFinalText.value.trim();
+  if (!item || !currentText || !instruction) {
+    alert("Bitte beschreibe, was die AI am Product Requirement verbessern soll.");
+    return;
+  }
+
+  const previousStatus = els.productApprovalImproveButton.textContent;
+  els.productApprovalImproveButton.disabled = true;
+  els.productApprovalSaveTextButton.disabled = true;
+  els.productApprovalImproveButton.textContent = "AI verbessert...";
+
+  try {
+    const improvementAttachments = await readImprovementAttachments(els.productApprovalImprovementAttachments);
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requirementType: "product-improvement",
+        uiLanguage: selectedUiLanguage(),
+        improvementInstruction: instruction,
+        improvementAttachments,
+        requirements: [
+          {
+            ...item,
+            text: currentText,
+            score: result?.score,
+          },
+        ],
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Product Requirement konnte nicht verbessert werden");
+    }
+
+    addOpenAiUsage(data.openAiUsage);
+    const improved = data.result || data.results?.[0];
+    const improvedText = improved?.rewrittenRequirement || improved?.text || "";
+    if (!improvedText) return;
+
+    upsertResult({
+      ...improved,
+      rowNumber,
+      id: item.id || improved.id || "",
+      rewrittenRequirement: improvedText,
+      originalScore: result?.originalScore ?? improved.originalScore ?? improved.score,
+      originalIssues: result?.originalIssues || improved.originalIssues || [],
+    });
+    els.productApprovalFinalText.value = improvedText;
+    els.productApprovalImprovementInstruction.value = "";
+    els.productApprovalImprovementAttachments.value = "";
+    renderImprovementAttachmentList(
+      els.productApprovalImprovementAttachments,
+      els.productApprovalImprovementAttachmentList,
+    );
+    await applyProductApprovalTextChange(rowNumber, improvedText, {
+      choice: "ai",
+      selectedSource: "AI_ASSISTED_EDIT",
+      historyReason: "AI-unterstützte Approval-Änderung",
+      revisionAction: "AI-Vorschlag fuer PR im Approval erstellt",
+    });
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    els.productApprovalImproveButton.disabled = !canReviseProductApprovalRequirement(rowNumber);
+    els.productApprovalSaveTextButton.disabled = !canReviseProductApprovalRequirement(rowNumber);
+    els.productApprovalImproveButton.textContent = previousStatus;
+  }
+}
+
+function canDisapproveProductRequirement(rowNumber) {
+  if (!isProductApprovalStarted() || !canApproveProductRequirements()) return false;
+  return Boolean(currentProductApproverSlotId()) && Boolean(state.finalSelections.get(Number(rowNumber)));
+}
+
+function disapproveProductRequirement() {
+  const rowNumber = Number(state.activeSelectionRow);
+  const selection = state.finalSelections.get(rowNumber);
+  if (!selection || !canDisapproveProductRequirement(rowNumber)) return;
+
+  const text = els.productApprovalDisapproveComment.value.trim();
+  if (!text) {
+    alert("Disapprove benötigt einen Pflichtkommentar.");
+    return;
+  }
+
+  selection.approvals = productApprovalRecords(selection).filter(
+    (approval) => String(approval.userId || "") !== String(currentProductApproverSlotId()),
+  );
+  selection.approvedAt = "";
+  selection.approvedBy = "";
+  selection.comments = productApprovalComments(selection);
+  selection.comments.push({
+    id: crypto.randomUUID(),
+    type: "disapproval",
+    text,
+    authorId: state.currentUser?.id || "",
+    authorName: currentApprovalUserName(),
+    createdAt: new Date().toISOString(),
+    resolved: false,
+    replies: [],
+  });
+  els.productApprovalDisapproveComment.value = "";
+  state.productApprovalDecisionMode = "";
+  setProjectRevisionAction("PR disapproved");
+  renderTable();
+  renderProductApprovalPanel();
+  renderMetrics();
+  updateProjectActions();
+  closeProductRequirementDetailDialog();
+}
+
+function handleProductApprovalCommentClick(event) {
+  const replyButton = event.target.closest("[data-comment-reply]");
+  const resolveButton = event.target.closest("[data-comment-resolve]");
+  if (!replyButton && !resolveButton) return;
+
+  const rowNumber = Number(state.activeSelectionRow);
+  const selection = state.finalSelections.get(rowNumber);
+  if (!selection) return;
+
+  if (replyButton) {
+    event.preventDefault();
+    const comment = productApprovalComments(selection).find((item) => item.id === replyButton.dataset.commentReply);
+    if (!comment || !canEditProductRequirements()) return;
+    const input = replyButton.closest(".approval-comment")?.querySelector("[data-comment-reply-text]");
+    const text = input?.value.trim() || "";
+    if (!text) {
+      input?.focus();
+      return;
+    }
+    comment.replies = Array.isArray(comment.replies) ? comment.replies : [];
+    comment.replies.push({
+      text,
+      authorId: state.currentUser?.id || "",
+      authorName: currentApprovalUserName(),
+      createdAt: new Date().toISOString(),
+    });
+    comment.resolved = true;
+    comment.resolvedAt = new Date().toISOString();
+    comment.resolvedBy = currentApprovalUserName();
+    updateFinalProductApproval(selection);
+    setProjectRevisionAction("PR-Approval-Kommentar beantwortet");
+  }
+
+  if (resolveButton) {
+    const comment = productApprovalComments(selection).find((item) => item.id === resolveButton.dataset.commentResolve);
+    if (!comment || !canResolveProductApprovalComment(comment)) return;
+    comment.resolved = true;
+    comment.resolvedAt = new Date().toISOString();
+    comment.resolvedBy = currentApprovalUserName();
+    updateFinalProductApproval(selection);
+    setProjectRevisionAction("PR-Approval-Kommentar geloest");
+  }
+
+  renderProductApprovalPanel();
+  renderTable();
+  renderMetrics();
+  updateProjectActions();
+}
+
+function renderProductApprovalComments(selection) {
+  const comments = productApprovalComments(selection);
+  if (!comments.length) return `<p class="muted-cell">${escapeHtml(translateUiText("Keine Kommentare vorhanden."))}</p>`;
+
+  return comments
+    .map((comment) => `
+      <article class="approval-comment ${comment.resolved ? "is-resolved" : ""}" data-comment-id="${escapeHtml(comment.id)}">
+        <div>
+          <strong>${escapeHtml(comment.authorName || "Approver")}</strong>
+          <small>${escapeHtml(new Date(comment.createdAt || Date.now()).toLocaleString())}</small>
+        </div>
+        <p>${escapeHtml(comment.text || "")}</p>
+        ${(Array.isArray(comment.replies) ? comment.replies : [])
+          .map((reply) => `
+            <div class="approval-reply">
+              <strong>${escapeHtml(reply.authorName || "Owner")}</strong>
+              <small>${escapeHtml(new Date(reply.createdAt || Date.now()).toLocaleString())}</small>
+              <p>${escapeHtml(reply.text || "")}</p>
+            </div>
+          `)
+          .join("")}
+        ${comment.resolved ? `<span class="approver-chip">${escapeHtml(translateUiText("Gelöst"))}</span>` : ""}
+        ${canEditProductRequirements() && !comment.resolved ? `
+          <textarea data-comment-reply-text="${escapeHtml(comment.id)}" rows="2" placeholder="Antwort des Owners"></textarea>
+          <button type="button" data-comment-reply="${escapeHtml(comment.id)}">${escapeHtml(translateUiText("Antworten"))}</button>
+        ` : ""}
+        ${canResolveProductApprovalComment(comment) && !comment.resolved ? `
+          <button type="button" data-comment-resolve="${escapeHtml(comment.id)}">${escapeHtml(translateUiText("Kommentar lösen"))}</button>
+        ` : ""}
+      </article>
+    `)
+    .join("");
+}
+
+function canResolveProductApprovalComment(comment) {
+  if (!comment || comment.resolved) return false;
+  return String(comment.authorId || "") === String(state.currentUser?.id || "");
+}
+
+function renderProductApprovalApprovals(selection) {
+  const requiredApproverIds = getRequiredProductApproverIds();
+  if (!requiredApproverIds.length) return `<p class="muted-cell">${escapeHtml(translateUiText("Keine PR Approver ausgewählt"))}</p>`;
+
+  const approvals = productApprovalRecords(selection);
+  return `
+    <div class="approval-status-list">
+      ${requiredApproverIds
+        .map((approverId) => {
+          const approver = productApprovalApproverById(approverId);
+          const approval = approvals.find((item) => String(item.userId || "") === String(approverId));
+          const hasApproved = Boolean(approval?.approvedAt);
+          const label = hasApproved ? "Approved" : "Pending";
+          return `
+            <article class="approval-status-item">
+              <div>
+                <strong>${escapeHtml(approver?.name || approver?.email || approverId)}</strong>
+                <small>${hasApproved ? escapeHtml(new Date(approval.approvedAt).toLocaleString()) : "Awaiting decision"}</small>
+              </div>
+              <span class="status-badge ${hasApproved ? "approved" : "pending"}">${label}</span>
+            </article>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function productApprovalApproverById(approverId) {
+  return state.productApprovers.find((user) => String(user.id || "") === String(approverId || ""));
+}
+
+function renderProductApprovalHistory(selection) {
+  const versions = productApprovalVersions(selection);
+  if (!versions.length) return `<p class="muted-cell">${escapeHtml(translateUiText("Keine Historie vorhanden."))}</p>`;
+
+  return versions
+    .slice()
+    .reverse()
+    .map((version) => `
+      <article class="approval-history-entry">
+        <strong>Version ${Number(version.version) || "-"}</strong>
+        <small>${escapeHtml(version.changedBy || "-")} · ${escapeHtml(new Date(version.changedAt || Date.now()).toLocaleString())}</small>
+        <p>${escapeHtml(version.reason || "")}</p>
+      </article>
+    `)
+    .join("");
 }
 
 function renderTechTypeSelection(requirement, selection) {
@@ -2634,7 +4291,7 @@ function renderTechTypeSelection(requirement, selection) {
   }
 
   els.techTypeSelectionPanel.hidden = false;
-  const canEditProduct = canEditProductRequirements();
+  const canEditProduct = canModifyProductRequirements();
   els.selectAllTechTypesButton.disabled = !canEditProduct;
   const selected = new Set(selectedTechTypesForRequirement(requirement, selection));
   const groups = groupedTechTypes();
@@ -2759,8 +4416,8 @@ function syncTechTypeGroupCheckboxes() {
 }
 
 function selectAllTechTypesForActiveRequirement() {
-  if (!canEditProductRequirements()) {
-    alert("Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten.");
+  if (!canModifyProductRequirements()) {
+    alert(productApprovalLockedMessage());
     return;
   }
 
@@ -2774,7 +4431,7 @@ function selectAllTechTypesForActiveRequirement() {
 }
 
 function persistActiveRequirementTechTypes() {
-  if (!canEditProductRequirements()) return;
+  if (!canModifyProductRequirements()) return;
 
   const rowNumber = state.activeSelectionRow;
   if (!rowNumber) return;
@@ -2788,6 +4445,9 @@ function persistActiveRequirementTechTypes() {
   if (!selection) return;
 
   selection.techTypes = techTypes;
+  selection.finalizedAt = "";
+  addProductReviewHistory(selection, "TechType-Änderung", `${techTypes.length} TechTypes ausgewählt`);
+  clearApproval(selection);
   if (state.productWindchillTransferComplete) {
     markProductRequirementChanged(rowNumber);
   } else {
@@ -2800,12 +4460,13 @@ function persistActiveRequirementTechTypes() {
   }
   updateExportAvailability();
   setProjectRevisionAction(projectRevisionActionFor("TechTypes fuer PR geaendert", item, "PR"));
+  renderProductApprovalPanel();
   updateProjectActions();
 }
 
 function excludeRequirement() {
-  if (!canEditProductRequirements()) {
-    alert("Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten.");
+  if (!canModifyProductRequirements()) {
+    alert(productApprovalLockedMessage());
     return;
   }
 
@@ -2813,10 +4474,30 @@ function excludeRequirement() {
   if (!rowNumber) return;
 
   const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
+  const exclusionReason = prompt("Bitte gib einen Ausschlussgrund an.");
+  if (!exclusionReason || !exclusionReason.trim()) {
+    alert("Ausgeschlossene Requirements benötigen einen Ausschlussgrund.");
+    return;
+  }
   state.finalSelections.set(Number(rowNumber), {
     choice: "excluded",
+    selectedSource: "EXCLUDED",
     text: "",
     excluded: true,
+    exclusionReason: exclusionReason.trim(),
+    finalizedAt: new Date().toISOString(),
+    approvedAt: "",
+    approvedBy: "",
+    approvals: [],
+    versions: [
+      {
+        version: 1,
+        text: exclusionReason.trim(),
+        changedAt: new Date().toISOString(),
+        changedBy: currentApprovalUserName(),
+        reason: "Requirement ausgeschlossen",
+      },
+    ],
   });
   if (state.productWindchillTransferComplete) {
     markProductRequirementChanged(rowNumber);
@@ -2830,6 +4511,7 @@ function excludeRequirement() {
   }
   closeSelectionDialog();
   renderTable();
+  renderProductApprovalPanel();
   renderMetrics();
   renderSoftwarePage();
   updateExportAvailability();
@@ -2838,8 +4520,8 @@ function excludeRequirement() {
 }
 
 async function improveProductRequirementWithAi() {
-  if (!canEditProductRequirements()) {
-    alert("Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten.");
+  if (!canModifyProductRequirements()) {
+    alert(productApprovalLockedMessage());
     return;
   }
 
@@ -2859,6 +4541,11 @@ async function improveProductRequirementWithAi() {
   }
 
   const currentText = result?.rewrittenRequirement || item.text;
+  const previousVisibleScore = result ? productVisibleScore(
+    result,
+    state.finalSelections.get(Number(rowNumber)),
+    state.finalScoreUpdates.has(Number(rowNumber)),
+  ) : null;
   const previousStatus = els.prImproveButton.textContent;
   els.prImproveButton.disabled = true;
   els.selectAiButton.disabled = true;
@@ -2900,13 +4587,26 @@ async function improveProductRequirementWithAi() {
       originalIssues: result?.originalIssues || improved.originalIssues || [],
     });
     els.selectionAiText.textContent = improved.rewrittenRequirement || currentText;
-    els.selectionScore.textContent = displayProductScore(improved, state.finalSelections.get(Number(rowNumber)));
+    els.selectionScore.textContent = Number.isFinite(Number(previousVisibleScore))
+      ? String(previousVisibleScore)
+      : String(displayProductScore(improved, state.finalSelections.get(Number(rowNumber))) ?? "-");
     els.selectionIssues.innerHTML = renderIssues(displayProductIssues(improved, state.finalSelections.get(Number(rowNumber))));
+    const selection = ensureActiveProductSelection("ai");
+    if (selection) {
+      selection.choice = "ai";
+      selection.selectedSource = "AI_ASSISTED_EDIT";
+      selection.text = improved.rewrittenRequirement || currentText;
+      selection.previousScore = previousVisibleScore;
+      selection.needsFinalAssessment = true;
+      selection.finalizedAt = "";
+      addProductReviewHistory(selection, "AI-unterstützte Änderung", selection.text);
+    }
   els.selectAiButton.disabled = false;
   els.prImprovementInstruction.value = "";
   els.prImprovementAttachments.value = "";
   renderImprovementAttachmentList(els.prImprovementAttachments, els.prImprovementAttachmentList);
   renderTable();
+    renderProductApprovalPanel();
     renderMetrics();
     setProjectRevisionAction(projectRevisionActionFor("AI-Vorschlag fuer PR erstellt", item, "PR"));
     updateProjectActions();
@@ -2920,8 +4620,8 @@ async function improveProductRequirementWithAi() {
 }
 
 async function selectFinalText(choice) {
-  if (!canEditProductRequirements()) {
-    alert("Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten.");
+  if (!canModifyProductRequirements()) {
+    alert(productApprovalLockedMessage());
     return;
   }
 
@@ -2943,12 +4643,29 @@ async function selectFinalText(choice) {
 
   state.finalSelections.set(Number(rowNumber), {
     choice,
+    selectedSource: choice === "ai" ? "AI_PROPOSAL" : "ORIGINAL",
     text,
     techTypes: currentTechTypeSelection(),
-    previousScore: result ? displayProductScore(result, state.finalSelections.get(Number(rowNumber))) : null,
+    previousScore: result ? productVisibleScore(
+      result,
+      state.finalSelections.get(Number(rowNumber)),
+      state.finalScoreUpdates.has(Number(rowNumber)),
+    ) : null,
     needsFinalAssessment: true,
+    finalizedAt: "",
+    approvedAt: "",
+    approvedBy: "",
+    approvals: [],
+    versions: [
+      {
+        version: 1,
+        text,
+        changedAt: new Date().toISOString(),
+        changedBy: currentApprovalUserName(),
+        reason: choice === "ai" ? "AI-Vorschlag verwendet" : "Original verwendet",
+      },
+    ],
   });
-  state.finalScoreUpdates.add(Number(rowNumber));
   if (state.productWindchillTransferComplete) {
     markProductRequirementChanged(rowNumber);
   } else {
@@ -2959,8 +4676,23 @@ async function selectFinalText(choice) {
     resetProductWindchillTransfer();
     resetSoftwareWindchillTransfer();
   }
+
+  if (choice === "ai") {
+    const previousLabel = els.selectAiButton.textContent;
+    els.selectAiButton.disabled = true;
+    els.selectAiButton.textContent = "Score wird berechnet...";
+    addProductReviewHistory(state.finalSelections.get(Number(rowNumber)), "Score-Neuberechnung gestartet", text);
+    const recalculatedScore = await recalculateFinalScore(item, text, choice);
+    const updatedSelection = state.finalSelections.get(Number(rowNumber));
+    if (updatedSelection && Number.isFinite(Number(recalculatedScore))) {
+      addProductReviewHistory(updatedSelection, "Score und Findings neu berechnet", updatedSelection.text);
+    }
+    els.selectAiButton.textContent = previousLabel;
+  }
+
   closeSelectionDialog();
   renderTable();
+  renderProductApprovalPanel();
   renderMetrics();
   renderSoftwarePage();
   updateExportAvailability();
@@ -2968,7 +4700,93 @@ async function selectFinalText(choice) {
     projectRevisionActionFor(choice === "ai" ? "AI-Vorschlag uebernommen" : "Original uebernommen", item, "PR"),
   );
   updateProjectActions();
-  await recalculateFinalScore(item, text, choice);
+}
+
+function canApproveProductRequirement(rowNumber) {
+  if (!canApproveProductRequirements() || !isProductApprovalStarted()) return false;
+
+  const selection = state.finalSelections.get(Number(rowNumber));
+  const approverSlotId = currentProductApproverSlotId();
+  if (!selection || selection.needsFinalAssessment || !approverSlotId) return false;
+  if (hasProductApprovalFrom(selection, approverSlotId)) return false;
+  if (countOpenDisapprovalComments(selection) > 0) return false;
+  if (selection.choice !== "excluded" && isProductQualityGateBlockingScore(displayProductScore(
+    state.results.find((entry) => Number(entry.rowNumber) === Number(rowNumber)),
+    selection,
+  ))) {
+    return false;
+  }
+
+  return true;
+}
+
+function productApprovalButtonText(rowNumber) {
+  const selection = state.finalSelections.get(Number(rowNumber));
+  const approverSlotId = currentProductApproverSlotId();
+  if (selection && approverSlotId && hasProductApprovalFrom(selection, approverSlotId)) return "PR-Freigabe erfasst";
+  if (selection && isProductSelectionFullyApproved(selection)) return "PR freigegeben";
+  return "PR freigeben";
+}
+
+function isProductSelectionFullyApproved(selection) {
+  const requiredApproverIds = getRequiredProductApproverIds();
+  return (
+    requiredApproverIds.length > 0 &&
+    countOpenDisapprovalComments(selection) === 0 &&
+    requiredApproverIds.every((approverId) => hasProductApprovalFrom(selection, approverId))
+  );
+}
+
+function approveProductRequirement(rowNumber = state.activeSelectionRow) {
+  if (!canApproveProductRequirement(rowNumber)) {
+    alert("Nur die konfigurierten PR Approver können abgeschlossene Product Requirements freigeben.");
+    return false;
+  }
+
+  const selection = state.finalSelections.get(Number(rowNumber));
+  const approverSlotId = currentProductApproverSlotId();
+  selection.approvals = productApprovalRecords(selection).filter((approval) => String(approval.userId || "") !== String(approverSlotId));
+  selection.approvals.push({
+    userId: approverSlotId,
+    name: currentApprovalUserName(),
+    approvedAt: new Date().toISOString(),
+  });
+  updateFinalProductApproval(selection);
+  renderTable();
+  renderMetrics();
+  renderProductApprovalPanel();
+  updateExportAvailability();
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
+  setProjectRevisionAction(projectRevisionActionFor("PR freigegeben", item, "PR"));
+  updateProjectActions();
+  return true;
+}
+
+function clearApproval(selection) {
+  if (!selection) return;
+  selection.approvedAt = "";
+  selection.approvedBy = "";
+  selection.approvals = [];
+}
+
+function updateFinalProductApproval(selection) {
+  if (!selection) return;
+  if (isProductSelectionFullyApproved(selection)) {
+    selection.approvedAt = new Date().toISOString();
+    selection.approvedBy = "Alle konfigurierten PR Approver";
+    return;
+  }
+
+  selection.approvedAt = "";
+  selection.approvedBy = "";
+}
+
+function approvalLabel(baseLabel, selection) {
+  const approvedAt = selection?.approvedAt ? new Date(selection.approvedAt).toLocaleString() : "";
+  const approvedBy = selection?.approvedBy || "";
+  if (approvedAt && approvedBy) return `${baseLabel} von ${approvedBy} am ${approvedAt}`;
+  if (approvedAt) return `${baseLabel} am ${approvedAt}`;
+  return baseLabel;
 }
 
 function decisionStatus(selection, score, isUpdatingFinalScore = false) {
@@ -2989,10 +4807,18 @@ function decisionStatus(selection, score, isUpdatingFinalScore = false) {
   }
 
   if (selection.choice === "excluded") {
+    if (isProductSelectionFullyApproved(selection)) {
+      return {
+        className: "approved",
+        icon: "&#10003;",
+        label: productApprovalStatusLabel("Requirement ausgeschlossen und freigegeben", selection),
+      };
+    }
+
     return {
       className: "excluded",
       icon: "×",
-      label: "Requirement ausgeschlossen",
+      label: "Requirement ausgeschlossen - Freigabe offen",
     };
   }
 
@@ -3012,11 +4838,34 @@ function decisionStatus(selection, score, isUpdatingFinalScore = false) {
     };
   }
 
+  if (!isProductSelectionFullyApproved(selection)) {
+    if (!isProductApprovalStarted()) {
+      return {
+        className: "selected",
+        icon: "&#10003;",
+        label: "Ready for Approval",
+      };
+    }
+
+    return {
+      className: "pending",
+      icon: "?",
+      label: productApprovalStatusLabel("Requirement wartet auf Freigabe", selection),
+    };
+  }
+
   return {
-    className: "selected",
+    className: "approved",
     icon: "&#10003;",
-    label: "Finaler Text ausgewählt",
+    label: productApprovalStatusLabel("Requirement freigegeben", selection),
   };
+}
+
+function productApprovalStatusLabel(baseLabel, selection) {
+  const requiredCount = getRequiredProductApproverIds().length;
+  if (!requiredCount) return baseLabel;
+
+  return `${baseLabel} (${countProductApprovals(selection)}/${requiredCount})`;
 }
 
 async function recalculateFinalScore(item, finalText, choice) {
@@ -3026,7 +4875,7 @@ async function recalculateFinalScore(item, finalText, choice) {
   if (!endpoint) {
     state.finalScoreUpdates.delete(rowNumber);
     updateExportAvailability();
-    return;
+    return null;
   }
 
   renderTable();
@@ -3060,21 +4909,22 @@ async function recalculateFinalScore(item, finalText, choice) {
     if (updatedResult) {
       upsertResult(updatedResult);
       const selection = state.finalSelections.get(rowNumber);
+      let recalculatedScore = null;
       if (selection) {
         delete selection.needsFinalAssessment;
+        delete selection.previousScore;
+        recalculatedScore = Number(displayProductScore(updatedResult, selection));
       }
       renderTable();
       renderMetrics();
+      return Number.isFinite(recalculatedScore) ? recalculatedScore : null;
     }
 
   } catch (error) {
     alert(error.message);
+    return null;
   } finally {
     state.finalScoreUpdates.delete(rowNumber);
-    const selection = state.finalSelections.get(rowNumber);
-    if (selection && "previousScore" in selection) {
-      delete selection.previousScore;
-    }
     renderTable();
     renderMetrics();
     updateExportAvailability();
@@ -3292,7 +5142,7 @@ function displayProductScore(result, selection = null, options = {}) {
     if (Number.isFinite(previousScore)) return previousScore;
   }
 
-  if (!selection) {
+  if (!selection || selection.choice === "original") {
     const originalScore = Number(result.originalScore);
     return Number.isFinite(originalScore) ? originalScore : Number(result.score);
   }
@@ -3306,6 +5156,14 @@ function displayProductIssues(result, selection = null) {
     return Array.isArray(result.originalIssues) ? result.originalIssues : Array.isArray(result.issues) ? result.issues : [];
   }
 
+  if (!isProductSelectionFullyApproved(selection)) {
+    return Array.isArray(result.originalIssues) && result.originalIssues.length
+      ? result.originalIssues
+      : Array.isArray(result.issues)
+        ? result.issues
+        : [];
+  }
+
   return Array.isArray(result.issues) ? result.issues : [];
 }
 
@@ -3313,7 +5171,7 @@ function renderMetrics() {
   const progress = getProductStepProgress();
   const scores = getIncludedScores();
   const criticalScoreCount = getCriticalScoreRows().size;
-  const productReady = isProductQualityReady();
+  const productReady = isProductReadyForTransferSimulation();
 
   els.countMetric.textContent = state.analysisComplete
     ? `${progress.assignedCount} / ${state.requirements.length}`
@@ -3324,10 +5182,85 @@ function renderMetrics() {
   els.criticalIssuesButton.disabled = criticalScoreCount === 0;
   els.criticalIssuesButton.classList.toggle("is-active", state.scoreFilterActive);
   els.scoreFilterBar.hidden = !state.scoreFilterActive;
+  renderProductAnalyzeState();
+  renderProductQualityGate();
+  renderProductApprovalState();
   renderProductTransferState(productReady);
   updateWorkflowState();
   renderSoftwarePage();
   renderE2ePage();
+}
+
+function renderProductAnalyzeState() {
+  if (!els.productActionBar) return;
+
+  const projectOpen = hasProject();
+  const canAnalyzeProduct = projectOpen && state.requirements.length > 0 && canModifyProductRequirements() && !state.analysisComplete;
+  els.productActionBar.hidden = !projectOpen;
+  if (!projectOpen) return;
+
+  els.productAnalyzeAction.classList.toggle("is-complete", state.analysisComplete);
+  els.productAnalyzeAction.classList.toggle("is-blocked", !state.analysisComplete && !canAnalyzeProduct);
+  els.productAnalyzeStatus.textContent = state.analysisComplete
+    ? `${state.results.length}/${state.requirements.length} Requirements analysiert.`
+    : state.requirements.length
+      ? "Bereit zur Bewertung der importierten Requirements."
+      : "Importiere zuerst Product Requirements.";
+  els.productAnalyzeAction.title = els.productAnalyzeStatus.textContent;
+  els.analyzeProductButton.hidden = false;
+  els.analyzeProductButton.textContent = state.analysisComplete ? "Analysiert" : "PR analysieren";
+  els.analyzeProductButton.disabled = !canAnalyzeProduct;
+}
+
+function renderProductQualityGate() {
+  if (!els.productQualityGateCard) return;
+
+  const gate = getProductQualityGate();
+  const canEdit = state.analysisComplete && state.requirements.length > 0 && canModifyProductRequirements();
+  els.productQualityGateCard.hidden = !hasProject();
+  if (els.productQualityGateCard.hidden) return;
+
+  els.productQualityGateCard.classList.toggle("is-passed", gate.status === "PASSED");
+  els.productQualityGateCard.classList.toggle("is-blocked", gate.status === "BLOCKED");
+  els.productQualityGateCard.classList.toggle("is-not-checked", gate.status === "NOT_CHECKED");
+  els.productQualityGateBadge.className = `status-badge ${
+    gate.status === "PASSED" ? "approved" : gate.status === "BLOCKED" ? "critical" : "pending"
+  }`;
+  els.productQualityGateBadge.textContent = gate.status.replace("_", " ");
+  els.productEditButton.disabled = !canEdit;
+  els.productEditButton.title = canEdit
+    ? ""
+    : state.analysisComplete
+      ? productApprovalLockedMessage()
+      : "PR-Bearbeitung ist nach der Analyse verfügbar.";
+
+  if (gate.status === "PASSED") {
+    els.productQualityGateTitle.textContent = "PR Bearbeitung abgeschlossen";
+    els.productQualityGateSummary.textContent = `${gate.readyRequirements}/${gate.totalRequirements - gate.excludedRequirements} Requirements ready with score >= ${PRODUCT_STEP_MIN_SCORE}`;
+    els.productQualityGateDetail.textContent = "Approval-Prozess kann gestartet werden.";
+    els.productQualityGateCard.title = `${els.productQualityGateSummary.textContent} ${els.productQualityGateDetail.textContent}`;
+    els.productEditButton.textContent = "PR öffnen";
+    return;
+  }
+
+  if (gate.status === "BLOCKED") {
+    els.productQualityGateTitle.textContent = "PR Bearbeitung offen";
+    els.productQualityGateSummary.textContent = `${gate.readyRequirements}/${gate.totalRequirements - gate.excludedRequirements} Requirements ready for approval`;
+    els.productQualityGateDetail.textContent = `${gate.failedScoreRequirements} with rework, ${gate.missingTechTypeRequirements} without TechTypes. Approval process cannot be started until all non-excluded Requirements have score >= ${PRODUCT_STEP_MIN_SCORE}.`;
+    els.productQualityGateCard.title = `${els.productQualityGateSummary.textContent} ${els.productQualityGateDetail.textContent}`;
+    els.productEditButton.textContent = "PR bearbeiten";
+    return;
+  }
+
+  els.productQualityGateTitle.textContent = state.analysisComplete ? "PR Bearbeitung erforderlich" : "PR Bearbeitung wartet";
+  els.productQualityGateSummary.textContent = state.analysisComplete
+    ? "Final scores are missing or stale for one or more Requirements"
+    : "Analyse zuerst ausführen.";
+  els.productQualityGateDetail.textContent = state.analysisComplete
+    ? `${gate.missingScoreRequirements} missing score, ${gate.staleScoreRequirements} stale or calculating.`
+    : "Nach der Analyse können finale Requirements, Scores und TechTypes bearbeitet werden.";
+  els.productQualityGateCard.title = `${els.productQualityGateSummary.textContent} ${els.productQualityGateDetail.textContent}`;
+  els.productEditButton.textContent = "PR bearbeiten";
 }
 
 function renderSoftwarePage() {
@@ -3350,8 +5283,15 @@ function renderSoftwarePage() {
 
   if (!isProductStepComplete()) {
     els.softwareScoreFilterBar.hidden = true;
+    const productStepMessage = isProductReadyForTransferSimulation()
+      ? "Starte zuerst die PR-Transfer-Simulation."
+      : isProductApprovalPending()
+      ? isProductApprovalStarted()
+        ? "Gib zuerst die Product Requirements frei."
+        : "Starte zuerst den PR-Approval-Prozess."
+      : "Schließe Product Requirements ab, um Software Requirements abzuleiten.";
     els.softwareRequirementsBody.innerHTML =
-      `<tr><td colspan="5" class="empty">${isProductQualityReady() ? "Übertrage zuerst die Product Requirements nach Windchill." : "Schließe Product Requirements ab, um Software Requirements abzuleiten."}</td></tr>`;
+      `<tr><td colspan="5" class="empty">${productStepMessage}</td></tr>`;
     return;
   }
 
@@ -3560,10 +5500,18 @@ function softwareDecisionStatus(item) {
   }
 
   if (selection.excluded) {
+    if (selection.approvedAt) {
+      return {
+        className: "approved",
+        icon: "&#10003;",
+        label: approvalLabel("Software Requirement ausgeschlossen und freigegeben", selection),
+      };
+    }
+
     return {
       className: "excluded",
       icon: "×",
-      label: "Software Requirement ausgeschlossen",
+      label: "Software Requirement ausgeschlossen - Freigabe offen",
     };
   }
 
@@ -3576,10 +5524,18 @@ function softwareDecisionStatus(item) {
     };
   }
 
+  if (!selection.approvedAt) {
+    return {
+      className: "pending",
+      icon: "?",
+      label: "Software Requirement wartet auf Freigabe",
+    };
+  }
+
   return {
-    className: "selected",
+    className: "approved",
     icon: "&#10003;",
-    label: "Software Requirement abgeleitet",
+    label: approvalLabel("Software Requirement freigegeben", selection),
   };
 }
 
@@ -3608,6 +5564,8 @@ function openSoftwareSelectionDialog(softwareId) {
   const isImpacted = isSoftwareRequirementImpacted(item);
   els.softwareSelectionRegenerateButton.hidden = !isImpacted;
   els.softwareSelectionRegenerateButton.disabled = !isImpacted;
+  els.softwareSelectionApproveButton.disabled = !canApproveSoftwareRequirement(item);
+  els.softwareSelectionApproveButton.textContent = translateUiText(selection?.approvedAt ? "SR freigegeben" : "SR freigeben");
   const acceptanceCriteriaLabel = acceptanceCriteriaLabelForSoftwareRequirement(item);
   els.softwareSelectionAcceptanceCriteriaTitle.textContent = acceptanceCriteriaLabel;
   els.softwareSelectionAcceptanceCriteria.innerHTML = renderAcceptanceCriteriaList(item.acceptanceCriteria, acceptanceCriteriaLabel);
@@ -3665,6 +5623,35 @@ function deferSoftwareRequirementSelection() {
   updateExportAvailability();
   const item = state.softwareRequirements.find((entry) => String(entry.id || "") === String(softwareId || ""));
   setProjectRevisionAction(projectRevisionActionFor("SR-Auswahl zurueckgestellt", item, "SR"));
+  updateProjectActions();
+}
+
+function canApproveSoftwareRequirement(item) {
+  if (!canApproveSoftwareRequirements() || !item || isSoftwareRequirementImpacted(item)) return false;
+
+  const selection = state.softwareSelections.get(String(item.id || ""));
+  if (!selection || selection.approvedAt) return false;
+  if (selection.excluded) return true;
+
+  return !isCriticalScore(Number(item.score));
+}
+
+function approveSoftwareRequirement() {
+  const softwareId = state.activeSoftwareRequirementId;
+  const item = state.softwareRequirements.find((entry) => String(entry.id || "") === String(softwareId || ""));
+  if (!canApproveSoftwareRequirement(item)) {
+    alert("Nur Software Requirement Approver oder Admins können abgeschlossene Software Requirements freigeben.");
+    return;
+  }
+
+  const selection = state.softwareSelections.get(String(item.id || ""));
+  selection.approvedAt = new Date().toISOString();
+  selection.approvedBy = currentApprovalUserName();
+  closeSoftwareSelectionDialog();
+  renderSoftwarePage();
+  updateExportAvailability();
+  updateWorkflowState();
+  setProjectRevisionAction(projectRevisionActionFor("SR freigegeben", item, "SR"));
   updateProjectActions();
 }
 
@@ -3833,6 +5820,7 @@ async function improveSoftwareRequirementWithAi() {
       score: Number(improved.score),
       issues: Array.isArray(improved.issues) ? improved.issues : [],
     });
+    state.softwareSelections.delete(String(item.id || ""));
 
     els.softwareSelectionScore.textContent = item.score ?? "-";
     els.softwareSelectionText.value = item.text || "";
@@ -3841,6 +5829,8 @@ async function improveSoftwareRequirementWithAi() {
     els.softwareSelectionAcceptanceCriteria.innerHTML = renderAcceptanceCriteriaList(item.acceptanceCriteria, acceptanceCriteriaLabel);
     els.softwareSelectionTechTypes.innerHTML = renderReadOnlyTechTypes(item.techTypes);
     els.softwareSelectionIssues.innerHTML = item.issues.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
+    els.softwareSelectionApproveButton.disabled = true;
+    els.softwareSelectionApproveButton.textContent = translateUiText("SR freigeben");
     els.softwareImprovementInstruction.value = "";
     els.softwareImprovementAttachments.value = "";
     renderImprovementAttachmentList(els.softwareImprovementAttachments, els.softwareImprovementAttachmentList);
@@ -3894,6 +5884,8 @@ function acceptSoftwareRequirement() {
     score: updatedScore,
     excluded: false,
     acceptedAt: new Date().toISOString(),
+    approvedAt: "",
+    approvedBy: "",
   });
   if (wasImpacted && areSoftwareRequirementsForSourceDecided(item)) {
     state.changedProductRequirementRows.delete(Number(item.sourceRowNumber));
@@ -3932,6 +5924,8 @@ function excludeSoftwareRequirement() {
     score: Number(item.score),
     excluded: true,
     acceptedAt: new Date().toISOString(),
+    approvedAt: "",
+    approvedBy: "",
   });
   if (state.softwareWindchillTransferComplete) {
     markSoftwareRequirementChanged(item.id);
@@ -3953,6 +5947,13 @@ function isSoftwareStepComplete() {
 }
 
 function isSoftwareQualityReady() {
+  return isSoftwareReadyForApproval() && state.softwareRequirements.every((item) => {
+    const selection = state.softwareSelections.get(String(item.id || ""));
+    return Boolean(selection?.approvedAt);
+  });
+}
+
+function isSoftwareReadyForApproval() {
   if (!state.softwareRequirements.length) return false;
 
   return state.softwareRequirements.every((item) => {
@@ -3962,6 +5963,10 @@ function isSoftwareQualityReady() {
     if (selection.excluded) return true;
     return !isCriticalScore(Number(item.score));
   });
+}
+
+function isSoftwareApprovalPending() {
+  return isSoftwareReadyForApproval() && !isSoftwareQualityReady();
 }
 
 function scoreAcceptedSoftwareRequirement(item, text) {
@@ -4310,7 +6315,7 @@ function renderE2ePage() {
       <tr class="group-row">
         <td colspan="5">
           <span class="group-title">Gewählte Software Requirements</span>
-          <span class="group-count">SR-Übertragung nach Windchill noch erforderlich</span>
+          <span class="group-count">${isSoftwareApprovalPending() ? "SR-Freigabe noch erforderlich" : "SR-Transfer-Simulation noch erforderlich"}</span>
         </td>
       </tr>
     `);
@@ -4491,10 +6496,18 @@ function e2eDecisionStatus(item) {
   }
 
   if (selection.excluded) {
+    if (selection.approvedAt) {
+      return {
+        className: "approved",
+        icon: "&#10003;",
+        label: approvalLabel("E2E TestCase ausgeschlossen und freigegeben", selection),
+      };
+    }
+
     return {
       className: "excluded",
       icon: "×",
-      label: "E2E TestCase ausgeschlossen",
+      label: "E2E TestCase ausgeschlossen - Freigabe offen",
     };
   }
 
@@ -4507,10 +6520,18 @@ function e2eDecisionStatus(item) {
     };
   }
 
+  if (!selection.approvedAt) {
+    return {
+      className: "pending",
+      icon: "?",
+      label: "E2E TestCase wartet auf Freigabe",
+    };
+  }
+
   return {
-    className: "selected",
+    className: "approved",
     icon: "&#10003;",
-    label: "E2E TestCase übernommen",
+    label: approvalLabel("E2E TestCase freigegeben", selection),
   };
 }
 
@@ -4545,6 +6566,8 @@ function openE2eSelectionDialog(e2eId) {
   const isImpacted = isE2eTestImpacted(item);
   els.e2eSelectionRegenerateButton.hidden = !isImpacted;
   els.e2eSelectionRegenerateButton.disabled = !isImpacted;
+  els.e2eSelectionApproveButton.disabled = !canApproveE2eTest(item);
+  els.e2eSelectionApproveButton.textContent = translateUiText(selection?.approvedAt ? "E2E TestCase freigegeben" : "E2E TestCase freigeben");
   els.e2eSelectionTable.innerHTML = renderE2eTestCaseTable(item);
   els.e2eSelectionTechTypes.innerHTML = renderReadOnlyTechTypes(item.techTypes);
   els.e2eSelectionIssues.innerHTML = item.issues?.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
@@ -4567,6 +6590,34 @@ function deferE2eSelection() {
   updateWorkflowState();
   const item = state.e2eTests.find((entry) => String(entry.id || "") === String(e2eId || ""));
   setProjectRevisionAction(projectRevisionActionFor("E2E-Auswahl zurueckgestellt", item, "E2E TestCase"));
+  updateProjectActions();
+}
+
+function canApproveE2eTest(item) {
+  if (!canApproveE2eTests() || !item || isE2eTestImpacted(item)) return false;
+
+  const selection = state.e2eSelections.get(String(item.id || ""));
+  if (!selection || selection.approvedAt) return false;
+  if (selection.excluded) return true;
+
+  return !isCriticalScore(Number(selection.score));
+}
+
+function approveE2eTest() {
+  const e2eId = state.activeE2eTestId;
+  const item = state.e2eTests.find((entry) => String(entry.id || "") === String(e2eId || ""));
+  if (!canApproveE2eTest(item)) {
+    alert("Nur E2E Test Approver oder Admins können abgeschlossene E2E TestCases freigeben.");
+    return;
+  }
+
+  const selection = state.e2eSelections.get(String(item.id || ""));
+  selection.approvedAt = new Date().toISOString();
+  selection.approvedBy = currentApprovalUserName();
+  closeE2eSelectionDialog();
+  renderE2ePage();
+  updateWorkflowState();
+  setProjectRevisionAction(projectRevisionActionFor("E2E TestCase freigegeben", item, "E2E TestCase"));
   updateProjectActions();
 }
 
@@ -4731,12 +6782,15 @@ async function improveE2eTestWithAi() {
       score: Number(improved.score),
       issues: Array.isArray(improved.issues) ? improved.issues : [],
     });
+    state.e2eSelections.delete(String(item.id || ""));
 
     els.e2eSelectionScore.textContent = item.score ?? "-";
     els.e2eSelectionText.value = item.description || item.text || "";
     els.e2eSelectionTable.innerHTML = renderE2eTestCaseTable(item);
     els.e2eSelectionTechTypes.innerHTML = renderReadOnlyTechTypes(item.techTypes);
     els.e2eSelectionIssues.innerHTML = item.issues.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
+    els.e2eSelectionApproveButton.disabled = true;
+    els.e2eSelectionApproveButton.textContent = translateUiText("E2E TestCase freigeben");
     els.e2eImprovementInstruction.value = "";
     els.e2eImprovementAttachments.value = "";
     renderImprovementAttachmentList(els.e2eImprovementAttachments, els.e2eImprovementAttachmentList);
@@ -4785,6 +6839,8 @@ function acceptE2eTest() {
     score: updatedScore,
     excluded: false,
     acceptedAt: new Date().toISOString(),
+    approvedAt: "",
+    approvedBy: "",
   });
   if (wasImpacted && areE2eTestsForSourceDecided(item)) {
     state.changedSoftwareRequirementIds.delete(String(item.sourceId || ""));
@@ -4811,6 +6867,8 @@ function excludeE2eTest() {
     score: Number(item.score),
     excluded: true,
     acceptedAt: new Date().toISOString(),
+    approvedAt: "",
+    approvedBy: "",
   });
   if (wasImpacted && areE2eTestsForSourceDecided(item)) {
     state.changedSoftwareRequirementIds.delete(String(item.sourceId || ""));
@@ -4830,8 +6888,8 @@ function isE2eQualityReady() {
     if (isE2eTestImpacted(item)) return false;
     const selection = state.e2eSelections.get(String(item.id || ""));
     if (!selection) return false;
-    if (selection.excluded) return true;
-    return !isCriticalScore(Number(selection.score));
+    if (selection.excluded) return Boolean(selection.approvedAt);
+    return !isCriticalScore(Number(selection.score)) && Boolean(selection.approvedAt);
   });
 }
 
@@ -5061,8 +7119,11 @@ function getCriticalScoreRows(excludedRows = getExcludedRows()) {
   return new Set(
     state.results
       .filter((result) => !excludedRows.has(Number(result.rowNumber)))
-      .filter((result) => state.finalSelections.has(Number(result.rowNumber)))
-      .filter((result) => isCriticalScore(Number(displayProductScore(result, state.finalSelections.get(Number(result.rowNumber))))))
+      .filter((result) => isCriticalScore(Number(productVisibleScore(
+        result,
+        state.finalSelections.get(Number(result.rowNumber)),
+        state.finalScoreUpdates.has(Number(result.rowNumber)),
+      ))))
       .map((result) => Number(result.rowNumber)),
   );
 }
@@ -5160,7 +7221,12 @@ function hasWorkflowChange(processStep) {
 }
 
 function updateExportAvailability() {
-  const canTransferProduct = hasProject() && state.activeProcessStep === "product" && isProductQualityReady() && canEditProductRequirements();
+  const canTransferProduct =
+    hasProject() &&
+    state.activeProcessStep === "product" &&
+    isProductReadyForTransferSimulation() &&
+    !isProductApprovalPending() &&
+    canEditProductRequirements();
   const canTransferSoftware =
     hasProject() && state.activeProcessStep === "software" && isSoftwareQualityReady() && canEditSoftwareRequirements();
 
@@ -5169,12 +7235,14 @@ function updateExportAvailability() {
       els.exportButton,
       canTransferSoftware && !state.softwareWindchillTransferComplete,
       state.softwareWindchillTransferComplete
-        ? "Software Requirements wurden simuliert nach Windchill übertragen"
+        ? "Simulation abgeschlossen"
         : canTransferSoftware
-          ? "Software Requirements simuliert nach Windchill übertragen"
+          ? "SR würde übertragen werden"
+          : isSoftwareApprovalPending()
+            ? "SR-Freigabe ist vor der Transfer-Simulation erforderlich"
           : canEditSoftwareRequirements()
-            ? "SR-Übertragung ist nach abgeschlossener SR-Übernahme verfügbar"
-            : "Nur Software Requirement Owner oder Admins können Software Requirements übertragen",
+            ? "SR-Transfer-Simulation ist nach abgeschlossener SR-Übernahme verfügbar"
+            : "Nur Software Requirement Owner oder Admins können die Transfer-Simulation starten",
     );
     updateWorkflowState();
     return;
@@ -5184,49 +7252,387 @@ function updateExportAvailability() {
     els.exportButton,
     canTransferProduct && !state.productWindchillTransferComplete,
     state.productWindchillTransferComplete
-      ? "Product Requirements wurden simuliert nach Windchill übertragen"
+      ? "Simulation abgeschlossen"
       : canTransferProduct
-        ? "Product Requirements simuliert nach Windchill übertragen"
+        ? "PR würde nach Windchill übertragen"
+        : isProductApprovalPending()
+          ? "PR-Freigabe ist vor der Transfer-Simulation erforderlich"
         : canEditProductRequirements()
-          ? "PR-Übertragung ist nach abgeschlossener PR-Bewertung verfügbar"
-          : "Nur Product Requirement Owner oder Admins können Product Requirements übertragen",
+          ? "Transfer-Simulation ist nach abgeschlossener PR-Finalisierung verfügbar"
+          : "Nur Product Requirement Owner oder Admins können die Transfer-Simulation starten",
   );
   updateWorkflowState();
 }
 
-function renderProductTransferState(productReady = isProductQualityReady()) {
+function renderProductApprovalState() {
+  if (!els.productApprovalBar) return;
+
+  const readyForApproval = isProductReadyForApproval();
+  const qualityGate = getProductQualityGate();
+  const started = isProductApprovalStarted();
+  const approved = started && hasApprovedFinalProductSelections();
+  els.productApprovalBar.hidden = !hasProject();
+  if (els.productApprovalBar.hidden) return;
+
+  els.productApprovalBar.classList.toggle("is-started", started && !approved);
+  els.productApprovalBar.classList.toggle("is-complete", approved);
+  els.productApprovalBar.classList.toggle("is-blocked", !started && qualityGate.status !== "PASSED");
+  els.productApprovalTitle.textContent = translateUiText(
+    approved ? "PR-Approval abgeschlossen" : started ? "PR-Approval läuft" : "PR-Approval wartet",
+  );
+  els.productApprovalText.textContent = started ? productApprovalProgressText() : productApprovalStartHint(qualityGate);
+  els.productApprovalBar.title = els.productApprovalText.textContent;
+  els.startProductApprovalButton.hidden = false;
+  els.startProductApprovalButton.textContent = translateUiText(started ? "Approval öffnen" : "Approval-Prozess starten");
+  els.startProductApprovalButton.disabled = !state.requirements.length || !canEditProductRequirements() || (!started && !readyForApproval);
+  els.startProductApprovalButton.title = els.startProductApprovalButton.disabled && !started
+    ? productApprovalStartBlockReason(qualityGate)
+    : "";
+  renderProductApproverSummary(started);
+}
+
+function productApprovalStartHint(qualityGate = getProductQualityGate()) {
+  if (qualityGate.status === "PASSED") {
+    return "Alle Product Requirements erfüllen das Gate. Der Approval-Prozess kann gestartet werden.";
+  }
+  if (qualityGate.status === "BLOCKED") {
+    return "Approval process cannot be started until all non-excluded Requirements have score >= 85.";
+  }
+  return "Final scores are missing or stale for one or more Requirements.";
+}
+
+function productApprovalStartBlockReason(qualityGate = getProductQualityGate()) {
+  if (!canEditProductRequirements()) return "Nur Product Requirement Owner können den Approval-Prozess starten.";
+  if (qualityGate.status === "BLOCKED") return "Finalization Gate blocked: mindestens ein Requirement benötigt Nacharbeit oder TechTypes.";
+  if (qualityGate.status === "NOT_CHECKED") return "Finalization Gate not complete: Scores fehlen oder sind veraltet.";
+  if (hasPendingFinalProductAssessments()) return "Finale Score-Bewertung läuft oder fehlt.";
+  return "";
+}
+
+function handleProductApprovalButtonClick() {
+  if (isProductApprovalStarted()) {
+    focusProductApprovalPanel();
+    return;
+  }
+
+  void openProductApprovalDialog();
+}
+
+function renderProductApproverSummary(started) {
+  if (!els.productApproverSummary) return;
+
+  const selectedApproverIds = new Set(getRequiredProductApproverIds());
+  const approvers = state.productApprovers.filter((user) => currentUserHasRole("admin") || user.active !== false);
+
+  if (!started) {
+    els.productApproverSummary.innerHTML = `<span class="approver-chip">${escapeHtml(translateUiText("Noch nicht gestartet"))}</span>`;
+    return;
+  }
+
+  const selectedApprovers = approvers.filter((user) => selectedApproverIds.has(String(user.id)));
+  const knownApproverIds = new Set(selectedApprovers.map((user) => String(user.id)));
+  const missingApproverIds = [...selectedApproverIds].filter((id) => !knownApproverIds.has(String(id)));
+  const chips = [
+    ...selectedApprovers.map((user) => approverChipLabel(user)),
+    ...missingApproverIds.map((id) => `Unbekannter Approver (${id.slice(0, 8)}...)`),
+  ];
+  els.productApproverSummary.innerHTML = chips.length
+    ? chips.map((label) => `<span class="approver-chip">${escapeHtml(label)}</span>`).join("")
+    : `<span class="approver-chip">${escapeHtml(translateUiText("Keine PR Approver ausgewählt"))}</span>`;
+}
+
+function approverChipLabel(user) {
+  if (!user) return "Unbekannter Approver";
+  if (user.name && user.email) return `${user.name} (${user.email})`;
+  return user.name || user.email || "Unbenannter Approver";
+}
+
+async function openProductApprovalDialog() {
+  if (!canEditProductRequirements()) {
+    alert("Nur Product Requirement Owner können den PR-Approval-Prozess starten.");
+    return;
+  }
+
+  const qualityGate = getProductQualityGate();
+  if (qualityGate.status !== "PASSED" || !isProductReadyForApproval()) {
+    alert(productApprovalStartBlockReason(qualityGate) || `Bitte finalisiere zuerst alle PR mit Score >= ${PRODUCT_STEP_MIN_SCORE}.`);
+    return;
+  }
+
+  state.productApproversLoaded = false;
+  state.productApproversError = "";
+  els.productApprovalOverlay.hidden = false;
+  renderProductApprovalDialog();
+  await ensureProductApproversLoaded({ force: true });
+  renderProductApprovalDialog();
+}
+
+function closeProductApprovalDialog() {
+  els.productApprovalOverlay.hidden = true;
+  els.productApprovalDialogMessage.textContent = "";
+}
+
+function focusProductApprovalPanel() {
+  if (!isProductApprovalStarted()) return;
+
+  if (!state.activeSelectionRow && state.requirements.length) {
+    state.activeSelectionRow = Number(state.requirements[0].rowNumber);
+  }
+  renderTable();
+  renderProductApprovalPanel();
+  if (!els.productApprovalDetailPanel.hidden) {
+    els.productApprovalDetailPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+}
+
+function renderProductApprovalDialog() {
+  if (!els.productApprovalApproverList) return;
+
+  if (state.productApproversLoading) {
+    els.productApprovalDialogMessage.textContent = translateUiText("PR Approver werden geladen");
+    els.productApprovalApproverList.innerHTML = "";
+    renderProductApprovalSelectedApprovers([]);
+    els.productApprovalConfirmButton.disabled = true;
+    return;
+  }
+
+  if (state.productApproversError) {
+    els.productApprovalDialogMessage.textContent = translateUiText(state.productApproversError);
+    els.productApprovalApproverList.innerHTML = `
+      <button type="button" data-reload-product-approvers>${escapeHtml(translateUiText("Erneut laden"))}</button>
+    `;
+    renderProductApprovalSelectedApprovers([]);
+    els.productApprovalConfirmButton.disabled = true;
+    return;
+  }
+
+  const selectedApproverIds = new Set(getRequiredProductApproverIds());
+  const approvers = state.productApprovers.filter((user) => user.active !== false);
+  els.productApprovalDialogMessage.textContent = approvers.length
+    ? translateUiText("Wähle mindestens einen PR Approver aus.")
+    : translateUiText("Keine PR Approver verfügbar");
+  els.productApprovalApproverList.innerHTML = approvers.length
+    ? approvers
+        .map((user) => {
+          const isSelected = selectedApproverIds.has(String(user.id));
+          const displayName = user.name || user.email || "Unbenannter Approver";
+          const email = user.email && user.email !== displayName ? user.email : "";
+          return `
+          <label class="approval-approver-option${isSelected ? " is-selected" : ""}">
+            <input type="checkbox" data-product-approver-id="${escapeHtml(user.id)}" ${isSelected ? "checked" : ""} ${canEditProductRequirements() ? "" : "disabled"} />
+            <span class="approval-approver-check" aria-hidden="true"></span>
+            <span class="approval-approver-copy">
+              <strong>${escapeHtml(displayName)}</strong>
+              ${email ? `<small>${escapeHtml(email)}</small>` : ""}
+              <small>${escapeHtml(formatRoleList(user.roles ?? user.role))}</small>
+            </span>
+          </label>
+        `;
+        })
+        .join("")
+    : `<span class="approver-chip">${escapeHtml(translateUiText("Keine PR Approver verfügbar"))}</span>`;
+  updateProductApprovalConfirmState();
+}
+
+function productApprovalUserLabel(user) {
+  return user?.name || user?.email || "Unbenannter Approver";
+}
+
+function handleProductApproverListClick(event) {
+  const reloadButton = event.target.closest("[data-reload-product-approvers]");
+  if (!reloadButton) return;
+
+  state.productApproversLoaded = false;
+  state.productApproversError = "";
+  renderProductApprovalDialog();
+  void ensureProductApproversLoaded({ force: true });
+}
+
+function handleSelectedProductApproverClick(event) {
+  const removeButton = event.target.closest("[data-remove-product-approver-id]");
+  if (!removeButton || !canEditProductRequirements()) return;
+
+  const approverId = String(removeButton.dataset.removeProductApproverId || "");
+  const approverInput = [...els.productApprovalApproverList.querySelectorAll("[data-product-approver-id]")]
+    .find((input) => String(input.dataset.productApproverId || "") === approverId);
+  if (approverInput) {
+    approverInput.checked = false;
+    updateProductApprovalConfirmState();
+  }
+}
+
+function selectedProductApprovalDialogApproverIds() {
+  return [...els.productApprovalApproverList.querySelectorAll("[data-product-approver-id]")]
+    .filter((input) => input.checked)
+    .map((input) => String(input.dataset.productApproverId || ""))
+    .filter(Boolean);
+}
+
+function renderProductApprovalSelectedApprovers(selectedApproverIds) {
+  if (!els.productApprovalSelectedApprovers) return;
+
+  const approverById = new Map(state.productApprovers.map((user) => [String(user.id), user]));
+  if (!selectedApproverIds.length) {
+    els.productApprovalSelectedApprovers.innerHTML = `
+      <span class="approval-selected-empty">${escapeHtml(translateUiText("Noch keine Approver ausgewählt."))}</span>
+    `;
+    return;
+  }
+
+  els.productApprovalSelectedApprovers.innerHTML = selectedApproverIds
+    .map((approverId) => {
+      const user = approverById.get(String(approverId));
+      const label = user ? productApprovalUserLabel(user) : `Approver ${String(approverId).slice(0, 8)}`;
+      return `
+        <button
+          class="approval-selected-chip"
+          type="button"
+          data-remove-product-approver-id="${escapeHtml(approverId)}"
+          title="${escapeHtml(translateUiText("Approver entfernen"))}"
+          ${canEditProductRequirements() ? "" : "disabled"}
+        >
+          <span>${escapeHtml(label)}</span>
+          <strong aria-hidden="true">×</strong>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function updateProductApprovalConfirmState() {
+  els.productApprovalApproverList.querySelectorAll(".approval-approver-option").forEach((option) => {
+    const input = option.querySelector("[data-product-approver-id]");
+    option.classList.toggle("is-selected", Boolean(input?.checked));
+  });
+
+  const selectedApproverIds = selectedProductApprovalDialogApproverIds();
+  const selectedCount = selectedApproverIds.length;
+  renderProductApprovalSelectedApprovers(selectedApproverIds);
+  els.productApprovalConfirmButton.disabled =
+    state.productApproversLoading || Boolean(state.productApproversError) || selectedCount === 0;
+  if (!state.productApproversLoading && !state.productApproversError) {
+    els.productApprovalDialogMessage.textContent = selectedCount
+      ? `${selectedCount} PR Approver ausgewählt.`
+      : translateUiText("Wähle mindestens einen PR Approver aus.");
+  }
+}
+
+function productApprovalProgressText() {
+  const requiredCount = getRequiredProductApproverIds().length;
+  const totalRequiredApprovals = state.requirements.length * requiredCount;
+  const completedApprovals = state.requirements.reduce((sum, requirement) => {
+    const selection = state.finalSelections.get(Number(requirement.rowNumber));
+    return sum + countProductApprovals(selection);
+  }, 0);
+  const approvalScope = `${state.requirements.length} Requirements x ${requiredCount} Approver`;
+  const startedAt = state.productApprovalStartedAt
+    ? ` Gestartet: ${new Date(state.productApprovalStartedAt).toLocaleString()}.`
+    : "";
+  const completeText = totalRequiredApprovals > 0 && completedApprovals >= totalRequiredApprovals
+    ? " Alle PR-Freigaben sind abgeschlossen."
+    : "";
+  return `${completedApprovals} von ${totalRequiredApprovals} PR-Freigaben erfasst (${approvalScope}).${completeText}${startedAt}`;
+}
+
+function startProductApprovalProcess() {
+  if (isProductApprovalStarted()) {
+    closeProductApprovalDialog();
+    focusProductApprovalPanel();
+    return;
+  }
+
+  if (!canEditProductRequirements()) {
+    alert("Nur Product Requirement Owner können den PR-Approval-Prozess starten.");
+    return;
+  }
+
+  const qualityGate = getProductQualityGate();
+  if (qualityGate.status !== "PASSED" || !isProductReadyForApproval()) {
+    alert(productApprovalStartBlockReason(qualityGate) || `Bitte finalisiere zuerst alle PR mit Score >= ${PRODUCT_STEP_MIN_SCORE}.`);
+    return;
+  }
+
+  const selectedApproverIds = normalizeApproverIds(selectedProductApprovalDialogApproverIds());
+  if (!selectedApproverIds.length) {
+    alert("Bitte wähle mindestens einen PR Approver aus.");
+    return;
+  }
+
+  state.productApprovalApproverIds = new Set(selectedApproverIds);
+  state.productApprovalStartedAt = new Date().toISOString();
+  state.productApprovalStartedBy = currentApprovalUserName();
+  state.finalSelections.forEach((selection) => clearApproval(selection));
+  if (!state.activeSelectionRow && state.requirements.length) {
+    state.activeSelectionRow = Number(state.requirements[0].rowNumber);
+  }
+  closeProductApprovalDialog();
+  renderTable();
+  renderProductApprovalPanel();
+  renderMetrics();
+  updateExportAvailability();
+  setProjectRevisionAction("PR-Approval gestartet");
+  updateProjectActions();
+}
+
+function renderProductTransferState(productReady = isProductReadyForTransferSimulation()) {
   if (!els.productTransferBar) return;
 
-  els.productTransferBar.hidden = !hasProject() || !state.analysisComplete || !productReady;
+  const approvalPending = isProductApprovalPending();
+  const transferReady = productReady && !approvalPending;
+  els.productTransferBar.hidden = !hasProject();
   els.productTransferBar.classList.toggle("is-complete", state.productWindchillTransferComplete);
+  els.productTransferBar.classList.toggle("is-blocked", !state.productWindchillTransferComplete && !transferReady);
   els.productTransferTitle.textContent = state.productWindchillTransferComplete
-    ? "PRs nach Windchill übertragen"
-    : "PR-Übertragung erforderlich";
+    ? "Simulation abgeschlossen"
+    : transferReady
+      ? "PR bereit zur Übergabe"
+      : "PR-Transfer wartet";
   els.productTransferText.textContent = state.productWindchillTransferComplete
-    ? `Simulierte Übertragung abgeschlossen${state.productWindchillTransferredAt ? `: ${new Date(state.productWindchillTransferredAt).toLocaleString()}` : "."}`
-    : "Übertrage die abgeschlossenen Product Requirements nach Windchill, bevor Software Requirements bearbeitet werden können.";
-  els.productTransferButton.disabled = state.productWindchillTransferComplete || !canEditProductRequirements();
+    ? `Demo Transfer angezeigt${state.productWindchillTransferredAt ? `: ${new Date(state.productWindchillTransferredAt).toLocaleString()}` : "."}`
+    : !state.analysisComplete
+      ? "Analyse, Bearbeitung und Approval müssen vorher abgeschlossen sein."
+      : !productReady
+        ? "Alle nicht ausgeschlossenen Requirements benötigen Score >= 85 und TechTypes."
+        : approvalPending
+          ? isProductApprovalStarted()
+            ? `${productApprovalProgressText()} Die Übergabe ist erst nach vollständiger PR-Freigabe möglich.`
+            : "Starte und schließe zuerst den PR-Approval-Prozess ab."
+          : "Simulation: PR würde nach Windchill übertragen. Noch keine echte Windchill-Verbindung.";
+  els.productTransferBar.title = els.productTransferText.textContent;
+  els.productTransferButton.disabled = state.productWindchillTransferComplete || !canEditProductRequirements() || !transferReady;
+  els.productTransferButton.title = state.productWindchillTransferComplete
+    ? "Simulation abgeschlossen"
+    : !canEditProductRequirements()
+      ? "Nur Product Requirement Owner oder Admins können die Transfer-Simulation starten"
+      : approvalPending
+        ? "PR-Freigabe ist vor der Transfer-Simulation erforderlich"
+        : "";
   els.productTransferButton.textContent = state.productWindchillTransferComplete
-    ? "Übertragung abgeschlossen"
-    : "PRs nach Windchill übertragen";
+    ? "Simulation abgeschlossen"
+    : "PR-Transfer simulieren";
 }
 
 async function simulateProductWindchillTransfer() {
   if (!canEditProductRequirements()) {
-    alert("Nur Product Requirement Owner oder Admins können Product Requirements übertragen.");
+    alert("Nur Product Requirement Owner oder Admins können die Transfer-Simulation starten.");
     return;
   }
 
-  if (!isProductQualityReady()) {
-    alert(`Bitte schließe zuerst alle PR mit Score >= ${PRODUCT_STEP_MIN_SCORE} ab.`);
+  if (!isProductReadyForTransferSimulation()) {
+    alert(`Bitte finalisiere zuerst alle PR mit Score >= ${PRODUCT_STEP_MIN_SCORE} und ausgewählten TechTypes.`);
+    return;
+  }
+
+  if (isProductApprovalPending()) {
+    alert("Bitte starte und schließe zuerst den PR-Approval-Prozess ab. Danach kann die Windchill-Übergabe simuliert werden.");
     return;
   }
 
   if (state.productWindchillTransferComplete) return;
 
-  setMenuButtonAvailability(els.exportButton, false, "PRs werden nach Windchill übertragen");
+  setMenuButtonAvailability(els.exportButton, false, "Demo Transfer wird angezeigt");
   els.productTransferButton.disabled = true;
-  els.productTransferButton.textContent = "Übertrage...";
+  els.productTransferButton.textContent = "Simulation läuft...";
   await delay(900);
   state.productWindchillTransferComplete = true;
   state.productWindchillTransferredAt = new Date().toISOString();
@@ -5234,7 +7640,7 @@ async function simulateProductWindchillTransfer() {
   renderMetrics();
   updateExportAvailability();
   updateWorkflowState();
-  setProjectRevisionAction("PRs nach Windchill uebertragen");
+  setProjectRevisionAction("PR Transfer-Simulation abgeschlossen");
   updateProjectActions();
 }
 
@@ -5245,33 +7651,35 @@ function renderSoftwareTransferState() {
   els.softwareTransferBar.hidden = !hasProject() || !state.softwareRequirements.length || !softwareReady;
   els.softwareTransferBar.classList.toggle("is-complete", state.softwareWindchillTransferComplete);
   els.softwareTransferTitle.textContent = state.softwareWindchillTransferComplete
-    ? "SRs nach Windchill übertragen"
-    : "SR-Übertragung erforderlich";
+    ? "Simulation abgeschlossen"
+    : "Simulierte Übergabe an Windchill";
   els.softwareTransferText.textContent = state.softwareWindchillTransferComplete
-    ? `Simulierte Übertragung abgeschlossen${state.softwareWindchillTransferredAt ? `: ${new Date(state.softwareWindchillTransferredAt).toLocaleString()}` : "."}`
-    : "Übertrage die abgeschlossenen Software Requirements nach Windchill, bevor der nächste Prozessschritt verfügbar wird.";
+    ? `Demo Transfer angezeigt${state.softwareWindchillTransferredAt ? `: ${new Date(state.softwareWindchillTransferredAt).toLocaleString()}` : "."}`
+    : "Simulation: SR würde übertragen werden. Noch keine echte Windchill-Verbindung.";
   els.softwareTransferButton.disabled = state.softwareWindchillTransferComplete || !canEditSoftwareRequirements();
   els.softwareTransferButton.textContent = state.softwareWindchillTransferComplete
-    ? "Übertragung abgeschlossen"
-    : "SRs nach Windchill übertragen";
+    ? "Simulation abgeschlossen"
+    : "SR-Transfer simulieren";
 }
 
 async function simulateSoftwareWindchillTransfer() {
   if (!canEditSoftwareRequirements()) {
-    alert("Nur Software Requirement Owner oder Admins können Software Requirements übertragen.");
+    alert("Nur Software Requirement Owner oder Admins können die Transfer-Simulation starten.");
     return;
   }
 
   if (!isSoftwareQualityReady()) {
-    alert(`Bitte übernimm oder schließe zuerst alle SR ab. Übernommene SR benötigen Score >= ${PRODUCT_STEP_MIN_SCORE}.`);
+    alert(isSoftwareApprovalPending()
+      ? "Bitte gib zuerst alle abgeschlossenen Software Requirements frei."
+      : `Bitte übernimm oder schließe zuerst alle SR ab. Übernommene SR benötigen Score >= ${PRODUCT_STEP_MIN_SCORE}.`);
     return;
   }
 
   if (state.softwareWindchillTransferComplete) return;
 
-  setMenuButtonAvailability(els.exportButton, false, "SRs werden nach Windchill übertragen");
+  setMenuButtonAvailability(els.exportButton, false, "Demo Transfer wird angezeigt");
   els.softwareTransferButton.disabled = true;
-  els.softwareTransferButton.textContent = "Übertrage...";
+  els.softwareTransferButton.textContent = "Simulation läuft...";
   await delay(900);
   state.softwareWindchillTransferComplete = true;
   state.softwareWindchillTransferredAt = new Date().toISOString();
@@ -5279,7 +7687,7 @@ async function simulateSoftwareWindchillTransfer() {
   renderSoftwarePage();
   updateExportAvailability();
   updateWorkflowState();
-  setProjectRevisionAction("SRs nach Windchill uebertragen");
+  setProjectRevisionAction("SR Transfer-Simulation abgeschlossen");
   updateProjectActions();
 }
 
@@ -5315,9 +7723,12 @@ function updateContextualMenuActions() {
   const isSoftwareStep = state.activeProcessStep === "software";
   const isE2eStep = state.activeProcessStep === "e2e";
   const canEditProduct = canEditProductRequirements();
+  const canModifyProduct = canModifyProductRequirements();
   const canEditSoftware = canEditSoftwareRequirements();
   const canEditE2e = canEditE2eTests();
-  const canUseProductActions = projectOpen && isProductStep && canEditProduct;
+  const canUseProductActions = projectOpen && isProductStep && canModifyProduct;
+  const canImportFile = isProductStep && canModifyProduct;
+  const canAnalyzeProduct = canUseProductActions && !state.analysisComplete && state.requirements.length > 0;
   const canDeriveSoftware =
     projectOpen && isSoftwareStep && canEditSoftware && isProductStepComplete() && state.finalScoreUpdates.size === 0;
   const canDeriveE2e = projectOpen && isE2eStep && canEditE2e && isSoftwareStepComplete();
@@ -5339,12 +7750,21 @@ function updateContextualMenuActions() {
   );
   setMenuButtonAvailability(
     els.openFileButton,
-    canUseProductActions,
-    canUseProductActions
+    canImportFile,
+    canImportFile
       ? ""
       : canEditProduct
-        ? "Dateiimport ist nur im PR-Schritt verfügbar"
+        ? isProductApprovalLocked()
+          ? "Product Requirements sind während des Approval-Prozesses gesperrt"
+          : "Dateiimport ist nur im PR-Schritt verfügbar"
         : "Nur Product Requirement Owner oder Admins können Product Requirements erstellen",
+  );
+  setMenuButtonAvailability(
+    els.openWindchillButton,
+    projectOpen && isProductStep,
+    projectOpen && isProductStep
+      ? "Die Windchill-Schnittstelle ist in diesem MVP noch nicht verbunden. Der Import wird simuliert."
+      : "Demo-Import aus Windchill ist nur im PR-Schritt verfügbar",
   );
   setMenuButtonAvailability(
     els.openSettingsButton,
@@ -5352,20 +7772,28 @@ function updateContextualMenuActions() {
     canUseProductActions
       ? ""
       : canEditProduct
-        ? "Einstellungen sind nur im PR-Schritt verfügbar"
+        ? isProductApprovalLocked()
+          ? "Product Requirements sind während des Approval-Prozesses gesperrt"
+          : "Einstellungen sind nur im PR-Schritt verfügbar"
         : "Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten",
   );
   els.analyzeButton.textContent = "PR Analysieren";
+  els.analyzeButton.hidden = state.analysisComplete;
   setMenuButtonAvailability(
     els.analyzeButton,
-    canUseProductActions && state.requirements.length > 0,
-    canUseProductActions
+    canAnalyzeProduct,
+    state.analysisComplete
+      ? "PRs wurden bereits analysiert. Nutze die AI-Verbesserung in den einzelnen Requirements."
+      : canUseProductActions
       ? ""
       : canEditProduct
-        ? "PR-Analyse ist nur im PR-Schritt verfügbar"
+        ? isProductApprovalLocked()
+          ? "Product Requirements sind während des Approval-Prozesses gesperrt"
+          : "PR-Analyse ist nur im PR-Schritt verfügbar"
         : "Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten",
   );
-  els.analyzeProductButton.disabled = !canUseProductActions || state.requirements.length === 0;
+  els.analyzeProductButton.hidden = false;
+  els.analyzeProductButton.disabled = !canAnalyzeProduct;
   els.analyzeProductButton.title = els.analyzeButton.title;
   setMenuButtonAvailability(
     els.generateSoftwareMenuButton,
@@ -5373,7 +7801,7 @@ function updateContextualMenuActions() {
     canDeriveSoftware
       ? ""
       : canEditSoftware
-        ? "Software Requirements können erst im SR-Schritt nach abgeschlossener PR-Zuordnung und Windchill-Übertragung abgeleitet werden"
+        ? "Software Requirements können erst im SR-Schritt nach abgeschlossener PR-Finalisierung und Transfer-Simulation abgeleitet werden"
         : "Nur Software Requirement Owner oder Admins können Software Requirements bearbeiten",
   );
   setMenuButtonAvailability(
@@ -5382,7 +7810,7 @@ function updateContextualMenuActions() {
     canDeriveE2e
       ? ""
       : canEditE2e
-        ? "E2E TestCases können erst im E2E-Schritt nach abgeschlossener SR-Übernahme und Windchill-Übertragung abgeleitet werden"
+        ? "E2E TestCases können erst im E2E-Schritt nach abgeschlossener SR-Übernahme und Transfer-Simulation abgeleitet werden"
         : "Nur E2E Test Owner oder Admins können E2E TestCases bearbeiten",
   );
   normalizeMenuButtonStates();
@@ -5545,6 +7973,9 @@ function createProjectPayload() {
         rowNumber: Number(rowNumber),
         ...selection,
       })),
+      productApprovalApproverIds: getRequiredProductApproverIds(),
+      productApprovalStartedAt: state.productApprovalStartedAt,
+      productApprovalStartedBy: state.productApprovalStartedBy,
       analysisComplete: state.analysisComplete,
       generatedIds: state.generatedIds,
       activeProcessStep: state.activeProcessStep,
@@ -5576,6 +8007,7 @@ function loadProjectPayload(payload, fileName, projectId = "") {
     throw new Error("Projekt enthält keine gültigen Quelldaten");
   }
 
+  resetProjectApprovalState();
   state.workbook = null;
   state.rows = source.rows;
   state.headers = source.headers.map((header) => String(header || ""));
@@ -5599,6 +8031,8 @@ function loadProjectPayload(payload, fileName, projectId = "") {
         score: Number(selection.score),
         excluded: Boolean(selection.excluded),
         acceptedAt: selection.acceptedAt || "",
+        approvedAt: selection.approvedAt || "",
+        approvedBy: selection.approvedBy || "",
       },
     ]),
   );
@@ -5611,6 +8045,8 @@ function loadProjectPayload(payload, fileName, projectId = "") {
         score: Number(selection.score),
         excluded: Boolean(selection.excluded),
         acceptedAt: selection.acceptedAt || "",
+        approvedAt: selection.approvedAt || "",
+        approvedBy: selection.approvedBy || "",
       },
     ]),
   );
@@ -5619,12 +8055,25 @@ function loadProjectPayload(payload, fileName, projectId = "") {
       Number(selection.rowNumber),
       {
         choice: selection.choice,
+        selectedSource: selection.selectedSource || "",
         text: selection.text || "",
         ...(Array.isArray(selection.techTypes) ? { techTypes: selection.techTypes } : {}),
         excluded: Boolean(selection.excluded),
+        exclusionReason: selection.exclusionReason || "",
+        finalizedAt: selection.finalizedAt || "",
+        approvedAt: selection.approvedAt || "",
+        approvedBy: selection.approvedBy || "",
+        approvals: Array.isArray(selection.approvals) ? selection.approvals : [],
+        comments: Array.isArray(selection.comments) ? selection.comments : [],
+        versions: Array.isArray(selection.versions) ? selection.versions : [],
       },
     ]),
   );
+  state.productApprovalApproverIds = new Set(
+    normalizeApproverIds(Array.isArray(payload.state?.productApprovalApproverIds) ? payload.state.productApprovalApproverIds : []),
+  );
+  state.productApprovalStartedAt = payload.state?.productApprovalStartedAt || "";
+  state.productApprovalStartedBy = payload.state?.productApprovalStartedBy || "";
   state.finalScoreUpdates = new Set();
   state.openAiCostSummary = normalizedOpenAiCostSummary(payload.state?.openAiCostSummary);
   state.scoreFilterActive = false;
@@ -5673,6 +8122,7 @@ function loadProjectPayload(payload, fileName, projectId = "") {
   state.requirements = Array.isArray(payload.state?.requirements)
     ? payload.state.requirements
     : buildRequirementsFromCurrentConfig();
+  migrateProductApprovalSelections();
   state.generatedIds = Boolean(payload.state?.generatedIds);
   setAutoIdVisible(state.generatedIds);
   setMenuButtonAvailability(
@@ -5761,6 +8211,11 @@ function firstNonEmptyString(...values) {
 function projectNameFromSource() {
   if (!state.sourceFileName) return "";
   return state.sourceFileName.replace(/\.[^.]+$/, "");
+}
+
+function projectNameFromSourceFile(fileName) {
+  const name = String(fileName || "").trim();
+  return name ? name.replace(/\.[^.]+$/, "") : "Miele.DevPilot";
 }
 
 function projectNameFromFile(fileName) {
@@ -5928,7 +8383,7 @@ function translateDefaultUiPattern(text) {
     [/^(\d+) requirements analyzed · Duration (.+)$/, "$1 Requirements analysiert · Dauer $2"],
     [/^Remaining approx\. (.+)$/, "Restzeit ca. $1"],
     [/^(.+) remaining$/, "$1 verbleibend"],
-    [/^Simulated transfer completed: (.+)$/, "Simulierte Übertragung abgeschlossen: $1"],
+    [/^Simulated transfer completed: (.+)$/, "Simulation abgeschlossen: $1"],
     [/^Please complete all PRs with score >= (\d+) first\.$/, "Bitte schließe zuerst alle PR mit Score >= $1 ab."],
     [
       /^Please accept or close all SRs first\. Accepted SRs require score >= (\d+)\.$/,
@@ -5986,7 +8441,7 @@ function translateUiPattern(text, dictionary) {
     [/^(\d+) Requirements analysiert · Dauer (.+)$/, "$1 requirements analyzed · Duration $2"],
     [/^Restzeit ca\. (.+)$/, "Remaining approx. $1"],
     [/^(.+) verbleibend$/, "$1 remaining"],
-    [/^Simulierte Übertragung abgeschlossen: (.+)$/, "Simulated transfer completed: $1"],
+    [/^Simulation abgeschlossen: (.+)$/, "Simulated transfer completed: $1"],
     [/^Bitte schließe zuerst alle PR mit Score >= (\d+) ab\.$/, "Please complete all PRs with score >= $1 first."],
     [
       /^Bitte übernimm oder schließe zuerst alle SR ab\. Übernommene SR benötigen Score >= (\d+)\.$/,
@@ -6298,6 +8753,10 @@ function getAdminUsersEndpoint() {
   return getApiEndpoint("api/admin/users");
 }
 
+function getApproversEndpoint(role) {
+  return getApiEndpoint(`api/users/approvers?role=${encodeURIComponent(role)}`);
+}
+
 function getAdminUserEndpoint(userId) {
   return getApiEndpoint(`api/admin/users/${encodeURIComponent(userId)}`);
 }
@@ -6307,7 +8766,8 @@ function getApiEndpoint(path) {
     return new URL(path, LOCAL_SERVER_APP_URL).href;
   }
 
-  return new URL(path, window.location.href).pathname;
+  const url = new URL(path, window.location.href);
+  return `${url.pathname}${url.search}`;
 }
 
 async function loadRuntimeInfo() {

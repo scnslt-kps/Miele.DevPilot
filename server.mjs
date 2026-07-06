@@ -37,7 +37,7 @@ const mimeTypes = {
 
 const server = createServer(async (req, res) => {
   try {
-    setCorsHeaders(res);
+    setCorsHeaders(req, res);
     if (req.method === "OPTIONS") {
       res.writeHead(204);
       res.end();
@@ -82,6 +82,19 @@ const server = createServer(async (req, res) => {
       if (!session) return;
 
       await handleChangePassword(req, res, session.user.id);
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/api/users/approvers") {
+      const session = await requireSession(req, res);
+      if (!session) return;
+
+      if (!userCanLoadApprovers(session.user)) {
+        sendJson(res, 403, { error: "Approver list permission required." });
+        return;
+      }
+
+      await handleListApprovers(res, url.searchParams.get("role"));
       return;
     }
 
@@ -262,6 +275,21 @@ async function handleLogout(req, res) {
 async function handleListUsers(res) {
   const users = await loadUsers();
   sendJson(res, 200, { users: users.map(publicUser) });
+}
+
+async function handleListApprovers(res, role) {
+  const approverRole = normalizeRoles([role])[0];
+  if (!approverRole || !approverRole.endsWith("Approver")) {
+    sendJson(res, 400, { error: "Valid approver role required." });
+    return;
+  }
+
+  const users = await loadUsers();
+  sendJson(res, 200, {
+    users: users
+      .filter((user) => user.active !== false && userHasRole(user, approverRole))
+      .map(publicUser),
+  });
 }
 
 async function handleChangePassword(req, res, userId) {
@@ -622,6 +650,11 @@ function normalizeRoles(value) {
   return [...new Set(roles)];
 }
 
+function normalizeApproverIds(value) {
+  const rawIds = Array.isArray(value) ? value : [];
+  return [...new Set(rawIds.map((id) => String(id || "").trim()).filter(Boolean))];
+}
+
 function userHasRole(user, role) {
   const roles = normalizeRoles(user?.roles ?? user?.role);
   return roles.includes("admin") || roles.includes(role);
@@ -644,6 +677,15 @@ function userCanSaveProject(user) {
 }
 
 function userCanCreateProject(user) {
+  return userHasAnyRole(user, [
+    "admin",
+    "productRequirementOwner",
+    "softwareRequirementOwner",
+    "e2eTestOwner",
+  ]);
+}
+
+function userCanLoadApprovers(user) {
   return userHasAnyRole(user, [
     "admin",
     "productRequirementOwner",
@@ -1391,6 +1433,7 @@ async function handleUpdateProject(req, res, user, projectId) {
         content: data.content,
       },
     });
+    await syncProjectApprovalMembers(tx, projectId, data.content, existingProject.ownerId);
     await pruneProjectRevisions(tx, projectId);
     return updatedProject;
   });
@@ -1449,6 +1492,7 @@ async function handleRestoreProjectRevision(res, user, projectId, revisionId) {
         content: data.content,
       },
     });
+    await syncProjectApprovalMembers(tx, projectId, data.content, existingProject.ownerId);
     await pruneProjectRevisions(tx, projectId);
     return restoredProject;
   });
@@ -1496,8 +1540,36 @@ async function createNewProject(user, data, action = "created") {
         content: data.content,
       },
     });
+    await syncProjectApprovalMembers(tx, project.id, data.content, user.id);
     return project;
   });
+}
+
+async function syncProjectApprovalMembers(tx, projectId, content, ownerId = "") {
+  const approverIds = normalizeApproverIds(
+    Array.isArray(content?.state?.productApprovalApproverIds)
+      ? content.state.productApprovalApproverIds
+      : [],
+  ).filter((approverId) => approverId && approverId !== ownerId);
+
+  await Promise.all(approverIds.map((approverId) =>
+    tx.projectMember.upsert({
+      where: {
+        projectId_userId: {
+          projectId,
+          userId: approverId,
+        },
+      },
+      update: {
+        role: "productRequirementApprover",
+      },
+      create: {
+        projectId,
+        userId: approverId,
+        role: "productRequirementApprover",
+      },
+    }),
+  ));
 }
 
 function projectAccessWhere(user) {
@@ -1513,6 +1585,12 @@ function projectAccessWhere(user) {
           },
         },
       },
+      {
+        content: {
+          path: ["state", "productApprovalApproverIds"],
+          array_contains: [user.id],
+        },
+      },
     ],
   };
 }
@@ -1526,6 +1604,11 @@ function parseProjectPayload(body, fallbackProjectId = "") {
 
   if (payload.type !== "miele-devpilot-project") {
     return { status: 400, error: "Unsupported project format." };
+  }
+
+  const validationError = validateProjectApprovalState(payload);
+  if (validationError) {
+    return { status: 400, error: validationError };
   }
 
   const id = String(fallbackProjectId || body.projectId || payload.project?.id || randomUUID()).trim();
@@ -1547,6 +1630,59 @@ function parseProjectPayload(body, fallbackProjectId = "") {
     description,
     content,
   };
+}
+
+function validateProjectApprovalState(payload) {
+  const projectState = payload.state || {};
+  const requirements = Array.isArray(projectState.requirements) ? projectState.requirements : [];
+  const selections = Array.isArray(projectState.finalSelections) ? projectState.finalSelections : [];
+  const requiredApproverIds = new Set(
+    (Array.isArray(projectState.productApprovalApproverIds) ? projectState.productApprovalApproverIds : [])
+      .map((id) => String(id || ""))
+      .filter(Boolean),
+  );
+  const approvalStarted = Boolean(projectState.productApprovalStartedAt);
+  if (approvalStarted && !requiredApproverIds.size) {
+    return "PR approval requires at least one approver.";
+  }
+
+  const requirementRows = new Set(requirements.map((item) => Number(item.rowNumber)).filter(Number.isFinite));
+  for (const selection of selections) {
+    const rowNumber = Number(selection.rowNumber);
+    if (!requirementRows.has(rowNumber)) {
+      return "PR approval references an unknown requirement.";
+    }
+
+    const approvals = Array.isArray(selection.approvals) ? selection.approvals : [];
+    for (const approval of approvals) {
+      const userId = String(approval.userId || "");
+      if (!requiredApproverIds.has(userId)) {
+        return "PR approval contains an approval from a non-required approver.";
+      }
+      if (!approval.approvedAt) {
+        return "PR approval entries require a timestamp.";
+      }
+    }
+
+    const comments = Array.isArray(selection.comments) ? selection.comments : [];
+    for (const comment of comments) {
+      if (comment?.type === "disapproval" && !String(comment.text || "").trim()) {
+        return "Disapproval comments require text.";
+      }
+    }
+
+    const openDisapprovals = comments.some((comment) => comment?.type === "disapproval" && comment.resolved !== true);
+    const fullyApproved =
+      requiredApproverIds.size > 0 &&
+      [...requiredApproverIds].every((approverId) =>
+        approvals.some((approval) => String(approval.userId || "") === approverId && approval.approvedAt),
+      );
+    if (selection.approvedAt && (!fullyApproved || openDisapprovals)) {
+      return "A PR can be final approved only after all required approvals and no open disapproval comments.";
+    }
+  }
+
+  return "";
 }
 
 function parseJson(value) {
@@ -2329,7 +2465,10 @@ async function serveStatic(pathname, res, headOnly = false) {
 
   try {
     const data = await readFile(filePath);
-    res.writeHead(200, { "Content-Type": mimeTypes[extname(filePath)] || "application/octet-stream" });
+    res.writeHead(200, {
+      "Content-Type": mimeTypes[extname(filePath)] || "application/octet-stream",
+      "Cache-Control": "no-store",
+    });
     res.end(headOnly ? undefined : data);
   } catch {
     sendJson(res, 404, { error: "Not found" });
@@ -2362,8 +2501,13 @@ function sendJson(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
-function setCorsHeaders(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+function setCorsHeaders(req, res) {
+  const origin = req.headers.origin;
+  res.setHeader("Access-Control-Allow-Origin", origin || "*");
+  if (origin) {
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
