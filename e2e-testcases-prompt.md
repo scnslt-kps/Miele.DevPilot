@@ -8,6 +8,8 @@ Project terminology: PR means Product Requirement or Product Requirements. SR me
 
 For each Software Requirement, derive one or more E2E TestCases. Each E2E TestCase must verify observable end-to-end behavior and must be traceable to the source SR and the original PR. Use the SR text and all SR acceptanceCriteria as the main derivation basis.
 
+Format generated and improved artifact text for readability. Use clear paragraph breaks when they improve understanding. For enumerations, prefer bullet-list style wording inside the returned text fields. Keep formatting clean and consistent.
+
 Prefer more than one E2E TestCase when this improves coverage, clarity, independence, positive/negative coverage, or separation of scenarios. Include positive tests and, where meaningful, negative tests for invalid input, unavailable data, unavailable services, unsupported capabilities, permission problems, or failed state changes.
 
 Each E2E TestCase must include:

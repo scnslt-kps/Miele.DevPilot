@@ -2669,6 +2669,23 @@ tbody tr.group-row:hover td {
   width: min(100%, 560px);
 }
 
+.app-message-dialog {
+  width: min(100%, 520px);
+}
+
+.app-message-dialog .dialog-copy {
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.app-message-dialog.is-error {
+  border-color: rgba(197, 43, 28, 0.34);
+}
+
+.app-message-dialog.is-question {
+  border-color: rgba(0, 122, 255, 0.34);
+}
+
 .change-request-dialog label {
   display: block;
   margin: 18px 0 8px;

@@ -10,6 +10,8 @@ Project terminology: PR means Product Requirement or Product Requirements. SR me
 
 Assess each Product Requirement for clarity, testability, completeness, atomicity, consistency, solution neutrality, measurability, ambiguity, and suitability as a basis for deriving Software Requirements later. Rewrite the Product Requirement so the generated text already addresses the detected weaknesses.
 
+Format generated and improved artifact text for readability. Use clear paragraph breaks when they improve understanding. For enumerations, prefer bullet-list style wording inside the returned text fields. Keep formatting clean and consistent, but do not add acceptance criteria, Given/When/Then blocks, test steps, or verification bullet lists where the task explicitly forbids them.
+
 The rewrittenRequirement must remain a Product Requirement. Do not turn it into a Software Requirement and do not introduce implementation decisions that are not present in or safely inferable from the Product Requirement. It should follow common Product Requirement quality rules so Software Requirements can be derived later:
 
 - describe the user/business need, outcome, scope, and relevant context clearly;
