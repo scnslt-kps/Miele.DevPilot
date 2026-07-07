@@ -8,6 +8,8 @@ Project terminology: PR means Product Requirement or Product Requirements. SR me
 
 For each Product Requirement, derive one or more Software Requirements that specify observable system behavior, inputs, outputs, constraints, quality constraints, and verification-relevant acceptance criteria. Use clear shall-style wording. Preserve traceability to the source Product Requirement. Actively check whether the PR contains more than one actor goal, system responsibility, observable behavior, condition, business rule, data object, alternative flow, exception flow, or quality constraint. If it does, split it into multiple atomic SRs. Prefer multiple SRs whenever this is needed to preserve atomicity, clarity, testability, flow coverage, or separation of concerns. Derive only one SR when the PR is truly atomic.
 
+Format generated and improved artifact text for readability. Use clear paragraph breaks when they improve understanding. For enumerations, prefer bullet-list style wording inside the returned text fields. Keep formatting clean and consistent.
+
 The derived SR must include:
 
 - the main system behavior for the main flow;

@@ -939,6 +939,25 @@
       </div>
     </div>
 
+    <div class="selection-overlay app-dialog-overlay" id="appDialogOverlay" hidden>
+      <div class="selection-dialog app-message-dialog" id="appDialogBox" role="dialog" aria-modal="true" aria-labelledby="appDialogTitle" aria-describedby="appDialogMessage">
+        <div class="selection-header">
+          <div>
+            <p class="eyebrow" id="appDialogEyebrow">Hinweis</p>
+            <h2 id="appDialogTitle">Hinweis</h2>
+          </div>
+          <button class="icon-button" id="appDialogCloseButton" type="button" aria-label="Dialog schließen">×</button>
+        </div>
+
+        <p class="dialog-copy" id="appDialogMessage"></p>
+
+        <div class="selection-actions">
+          <button id="appDialogCancelButton" type="button" hidden>Abbrechen</button>
+          <button id="appDialogConfirmButton" class="primary" type="button">Schließen</button>
+        </div>
+      </div>
+    </div>
+
     <div class="selection-overlay" id="selectionOverlay" hidden>
       <div class="selection-dialog" role="dialog" aria-modal="true" aria-labelledby="selectionTitle">
         <div class="selection-header">

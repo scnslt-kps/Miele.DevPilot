@@ -875,6 +875,7 @@ async function handleAnalyze(req, res, user) {
               scoring:
                 "Return originalScore and originalIssues for the original input Product Requirement. Return score, verdict, and issues for the rewrittenRequirement. Score 0-100 where 100 is a high-quality Product Requirement from which high-quality Software Requirements can be derived later. If the rewrittenRequirement addresses all relevant weaknesses, return score 100 and no issues. Severity must be low, medium, or high.",
               languageRules: preserveSourceLanguageInstruction(uiLanguage),
+              formattingRules: readableArtifactFormattingInstruction(),
               rewritingRules:
                 "The rewrittenRequirement must remain a Product Requirement. Do not turn it into a Software Requirement and do not introduce implementation decisions that are not present in or safely inferable from the Product Requirement. It should describe the user or business need, outcome, scope, and relevant context clearly; remain solution-neutral; be complete enough to derive one or more Software Requirements in a later step; and stay verifiable, measurable, consistent, unambiguous, and as atomic as practical at Product Requirement level. It must not include acceptance criteria, Given/When/Then blocks, test steps, or bullet-style verification criteria. Apply the improvement suggestions internally while rewriting. Report issues only for remaining weaknesses in the rewrittenRequirement.",
               requirements: cleaned,
@@ -1114,6 +1115,10 @@ function preserveSourceLanguageInstruction(uiLanguage = "de") {
   return `Preserve the source language of each requirement or test case for PR text, SR text, acceptance criteria, E2E descriptions, groups, preconditions, test data, test steps, and expected results. German source artifacts must remain German; English source artifacts must remain English. However, write all user-facing quality feedback fields in ${uiLanguageName(uiLanguage)}: criterion, explanation, suggestion, verdict, rationale, and any remaining issue descriptions. Keep the severity enum values exactly low, medium, or high. Preserve IDs and technical names unchanged.`;
 }
 
+function readableArtifactFormattingInstruction() {
+  return "Format generated and improved artifact text for readability. Use clear paragraph breaks when they improve understanding. For enumerations, prefer bullet-list style wording inside the returned text fields. Keep formatting clean and consistent, but do not add acceptance criteria, Given/When/Then blocks, test steps, or verification bullet lists where the task explicitly forbids them.";
+}
+
 function cleanImprovementAttachments(value) {
   if (!Array.isArray(value)) return [];
 
@@ -1188,6 +1193,7 @@ async function handleProductImprovement(requirement, improvementInstruction, imp
               task:
                 "Improve the Product Requirement according to the improvement instruction. Preserve the intent, scope, product level, and solution neutrality. Do not turn it into a Software Requirement. Do not add acceptance criteria, Given/When/Then blocks, test steps, or implementation details. Make it clearer, more atomic, measurable, unambiguous, complete, and suitable for deriving Software Requirements. Return no issues when the rewritten requirement is production-ready.",
               languageRules: preserveSourceLanguageInstruction(uiLanguage),
+              formattingRules: readableArtifactFormattingInstruction(),
               attachmentRules: attachmentInstruction(improvementAttachments),
               improvementInstruction,
               improvementAttachments,
@@ -1327,7 +1333,7 @@ function softwareRequirementSchema() {
 }
 
 async function handleCreateProject(req, res, user) {
-  const body = await readJsonBody(req, 25_000_000);
+  const body = await readJsonBody(req, 75_000_000);
   const data = parseProjectPayload(body);
   if (data.error) {
     sendJson(res, data.status, { error: data.error });
@@ -1397,7 +1403,7 @@ async function handleListProjectRevisions(res, user, projectId) {
 }
 
 async function handleUpdateProject(req, res, user, projectId) {
-  const body = await readJsonBody(req, 25_000_000);
+  const body = await readJsonBody(req, 75_000_000);
   const data = parseProjectPayload(body, projectId);
   if (data.error) {
     sendJson(res, data.status, { error: data.error });
@@ -1776,6 +1782,7 @@ async function handleSoftwareDerivation(requirements, uiLanguage, res) {
               scoring:
                 "Score 85-100. 100 means excellent SR quality. 85 is the minimum acceptable quality threshold. A source PR with score 100 requires a derived SR with score 100. Evaluate clarity, atomicity, traceability, consistency, completeness, feasibility, testability, measurability, unambiguity, flow coverage, exception handling, acceptance-criteria quality, and suitability for deriving Use Cases and Test Cases.",
               languageRules: preserveSourceLanguageInstruction(uiLanguage),
+              formattingRules: readableArtifactFormattingInstruction(),
               requirements,
             }),
           },
@@ -1938,6 +1945,7 @@ async function handleSoftwareImprovement(sourceRequirement, softwareRequirement,
               task:
                 "Improve the provided Software Requirement according to the improvement instruction while preserving traceability to the source Product Requirement. Keep the SR concise, atomic, measurable, unambiguous, feasible, and testable. Improve acceptance criteria so they are concrete, directly assigned to the SR, and written in the same language as the SR. Do not add informal flow prose into the SR text. Score 85-100. If the source Product Requirement has score 100, improve the SR until it is excellent and return score 100 with no remaining quality issues.",
               languageRules: preserveSourceLanguageInstruction(uiLanguage),
+              formattingRules: readableArtifactFormattingInstruction(),
               attachmentRules: attachmentInstruction(improvementAttachments),
               improvementInstruction,
               improvementAttachments,
@@ -2082,6 +2090,7 @@ async function handleE2eDerivation(requirements, uiLanguage, res) {
               task:
                 "For each Software Requirement, derive one or more E2E TestCases. Use the SR text, all SR acceptanceCriteria, and selected techTypes as the main derivation basis. Treat techTypes as the appliance designation applicability context and reflect device-specific preconditions, test data, or expected behavior only when relevant. Each TestCase must include E2E-ID, grouping information, a unique concise description, all acceptance criteria that led to this TestCase, reference to the source SR, reference to the source PR, and formal test steps. Prefer more than one TestCase when this improves coverage, independence, positive/negative coverage, or scenario separation. Include positive tests and, where meaningful, negative tests for invalid input, unavailable data, unavailable services, unsupported capabilities, permission problems, or failed state changes. Each TestCase must be production-ready: preconditions must precisely describe user role, system state, data state, permissions, connected devices, services, and feature flags required for execution; each action must be atomic and executable; each expectedResult must contain observable and verifiable outcomes such as UI state, data persistence, API/system response, error handling, or state transition. Include nachvollziehbare Prüfpunkte by making it clear which acceptance criteria are verified by the steps. Never return an issue that asks to precise preconditions, test steps, expected results, or verifiable checkpoints; fix the TestCase before returning it. Score each TestCase from 86-100, prefer 95-100, and never return a score of 85 or lower. Assign score 100 only when the returned JSON objectively contains a specific description, group, source SR, source PR, covered acceptance criteria, concrete preconditions, concrete test data, at least two executable steps with precise actions and expected results, clear verifiable checkpoints, and positive/negative behavior or relevant error handling. If the source Software Requirement has score 100, every derived E2E TestCase for that SR must be improved until it satisfies these 100-point criteria, then receive score 100 and no remaining quality issues.",
               languageRules: preserveSourceLanguageInstruction(uiLanguage),
+              formattingRules: readableArtifactFormattingInstruction(),
               idRules:
                 "Use this pattern: source SR SR_BAROLO_1.1.1 becomes E2E_BAROLO_1.1.1.1, E2E_BAROLO_1.1.1.2, and so on. Source SR SR-001.1 becomes E2E-001.1.1, E2E-001.1.2, and so on.",
               scoring:
@@ -2274,6 +2283,7 @@ async function handleE2eImprovement(sourceRequirement, testCase, improvementInst
               task:
                 "Improve the provided E2E TestCase while preserving its ID, source SR reference, source PR reference, and traceability. Apply the improvement instruction fully. The returned TestCase must be production-ready: precise preconditions, atomic executable actions, observable expected results, clear verifiable checkpoints, realistic test data, and direct coverage of the relevant acceptance criteria. If the instruction asks for additional coverage, split or enrich steps only within this TestCase when it remains coherent; otherwise improve clarity and completeness. Never return an issue asking for more precise preconditions, test steps, expected results, or checkpoints; fix the TestCase instead. Score 86-100, prefer 95-100. Assign score 100 only when the returned JSON objectively contains a specific description, group, source SR, source PR, covered acceptance criteria, concrete preconditions, concrete test data, at least two executable steps with precise actions and expected results, clear verifiable checkpoints, and positive/negative behavior or relevant error handling. If the source SR has score 100, improve the E2E TestCase until it satisfies these 100-point criteria, then return score 100 and no remaining quality issues.",
               languageRules: preserveSourceLanguageInstruction(uiLanguage),
+              formattingRules: readableArtifactFormattingInstruction(),
               attachmentRules: attachmentInstruction(improvementAttachments),
               improvementInstruction,
               improvementAttachments,

@@ -45,6 +45,9 @@ const state = {
   softwareScoreFilterActive: false,
   e2eScoreFilterActive: false,
   sourceFileName: "",
+  sourceFilePath: "",
+  sourceWorkbookData: "",
+  sourceWorkbookEncoding: "",
   projectName: "",
   projectDescription: "",
   projectId: "",
@@ -80,6 +83,7 @@ const state = {
   productApprovalStatusFilter: "all",
   productApprovalActiveTab: "comments",
   productApprovalDecisionMode: "",
+  appDialogResolve: null,
   changeRequestDialogResolve: null,
   productReviewActiveTab: "final",
   productReviewTechTypeSearch: "",
@@ -91,6 +95,8 @@ const PROJECT_FILE_TYPE = "miele-devpilot-project";
 const PROJECT_FILE_VERSION = 1;
 const ANALYSIS_BATCH_SIZE = 5;
 const PRODUCT_STEP_MIN_SCORE = 85;
+const PRODUCT_WINDCHILL_EXPORT_SHEET = "Product Requirements App";
+const PRODUCT_WINDCHILL_EXPORT_NUMBER_HEADER = "Requirement Number";
 const LOCAL_SERVER_APP_URL = "http://localhost:3000/Miele.DevPilot/";
 const LEGACY_PR_ANALYSIS_TIMING_STORAGE_KEY = "mieleDevPilot.prAnalysisTiming";
 const PROGRESS_TIMING_STORAGE_KEY = "mieleDevPilot.progressTiming";
@@ -200,6 +206,11 @@ const UI_TRANSLATIONS = {
     "Hilfe": "Help",
     "OpenAI Nutzung": "OpenAI usage",
     "OpenAI-Kosten schließen": "Close OpenAI costs",
+    "Hinweis": "Info",
+    "Fehler": "Error",
+    "Frage": "Question",
+    "Schließen": "Close",
+    "Bestätigen": "Confirm",
     "Kosten": "Costs",
     "Token-Nutzung": "Token usage",
     "Die Werte beziehen sich auf den aktuellen Projektstand und werden beim Speichern des Projekts mitgesichert.": "The values refer to the current project state and are saved with the project.",
@@ -232,6 +243,14 @@ const UI_TRANSLATIONS = {
     "Kritische Hinweise": "Critical issues",
     "Simulation: PR würde nach Windchill übertragen. Noch keine echte Windchill-Verbindung.": "Simulation: PR would be transferred to Windchill. No real Windchill connection yet.",
     "PR-Transfer simulieren": "Simulate PR transfer",
+    "Exportdatei wird erzeugt...": "Creating export file...",
+    "PR-Exportdatei wurde erzeugt.": "PR export file has been created.",
+    "Die ursprüngliche Excel-Datei ist in dieser Session nicht verfügbar. Bitte importiere die PR-Datei erneut, bevor du die Windchill-Simulation startest.": "The original Excel file is not available in this session. Please import the PR file again before starting the Windchill simulation.",
+    "Die XLSX-Bibliothek ist nicht verfügbar. Die Exportdatei konnte nicht erzeugt werden.": "The XLSX library is not available. The export file could not be created.",
+    "Das Arbeitsblatt \"Product Requirements App\" wurde in der importierten Datei nicht gefunden.": "The worksheet \"Product Requirements App\" was not found in the imported file.",
+    "Die Spalte \"Desc\" wurde im Arbeitsblatt \"Product Requirements App\" nicht gefunden.": "The column \"Desc\" was not found in worksheet \"Product Requirements App\".",
+    "Die PR-Exportdatei konnte nicht erzeugt werden.": "The PR export file could not be created.",
+    "Requirement kann erst mit Score >= 85 fertiggestellt werden.": "Requirement can only be completed with a score >= 85.",
     "PR freigeben": "Approve PR",
     "PR freigegeben": "PR approved",
     "PR-Approval konfigurieren": "Configure PR approval",
@@ -524,6 +543,7 @@ const UI_TRANSLATIONS = {
     "Löschen": "Delete",
     "Zeitpunkt": "Timestamp",
     "Benutzer": "User",
+    "Benutzer löschen": "Delete user",
     "Wiederherstellen": "Restore",
     "Projekt verfügbar": "project available",
     "Projekte verfügbar": "projects available",
@@ -583,6 +603,10 @@ const UI_TRANSLATIONS = {
     "Nur Product Requirement Owner oder Admins können die Transfer-Simulation starten.": "Only Product Requirement Owners or admins can start the transfer simulation.",
     "Nur Software Requirement Owner oder Admins können die Transfer-Simulation starten": "Only Software Requirement Owners or admins can start the transfer simulation",
     "Nur Software Requirement Owner oder Admins können die Transfer-Simulation starten.": "Only Software Requirement Owners or admins can start the transfer simulation.",
+    "Nur Product Requirement Owner oder Admins können Product Requirements analysieren.": "Only Product Requirement Owners or admins can analyze Product Requirements.",
+    "Nur die konfigurierten PR Approver können abgeschlossene Product Requirements freigeben.": "Only the configured PR approvers can approve completed Product Requirements.",
+    "Nur Software Requirement Approver oder Admins können abgeschlossene Software Requirements freigeben.": "Only Software Requirement approvers or admins can approve completed Software Requirements.",
+    "Nur E2E Test Approver oder Admins können abgeschlossene E2E TestCases freigeben.": "Only E2E Test approvers or admins can approve completed E2E TestCases.",
     "Bitte gib zuerst alle abgeschlossenen Software Requirements frei.": "Please approve all completed Software Requirements first.",
     "PR würde nach Windchill übertragen": "PR would be transferred to Windchill",
     "SR würde übertragen werden": "SR would be transferred",
@@ -594,7 +618,9 @@ const UI_TRANSLATIONS = {
     "Nur Product Requirement Owner oder Admins können Product Requirements erstellen": "Only Product Requirement Owners or admins can create Product Requirements",
     "Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten": "Only Product Requirement Owners or admins can edit Product Requirements",
     "Nur Software Requirement Owner oder Admins können Software Requirements bearbeiten": "Only Software Requirement Owners or admins can edit Software Requirements",
+    "Nur Software Requirement Owner oder Admins können Software Requirements bearbeiten.": "Only Software Requirement Owners or admins can edit Software Requirements.",
     "Nur E2E Test Owner oder Admins können E2E TestCases bearbeiten": "Only E2E Test Owners or admins can edit E2E TestCases",
+    "Nur E2E Test Owner oder Admins können E2E TestCases bearbeiten.": "Only E2E Test Owners or admins can edit E2E TestCases.",
     "Software Requirements können erst im SR-Schritt nach abgeschlossener PR-Finalisierung und Transfer-Simulation abgeleitet werden": "Software Requirements can only be derived in the SR step after PR finalization and transfer simulation are complete",
     "E2E TestCases können erst im E2E-Schritt nach abgeschlossener SR-Übernahme und Transfer-Simulation abgeleitet werden": "E2E TestCases can only be derived in the E2E step after SR acceptance and transfer simulation are complete",
     "PRs wurden bereits analysiert. Nutze die AI-Verbesserung in den einzelnen Requirements.": "PRs have already been analyzed. Use AI improvement in the individual requirements.",
@@ -607,6 +633,10 @@ const UI_TRANSLATIONS = {
     "Ohne Kategorie": "No category",
     "Ohne Subkategorie": "No subcategory",
     "Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen.": "No AI suggestion available yet. Please run the analysis first.",
+    "Finales Product Requirement darf nicht leer sein.": "Final Product Requirement must not be empty.",
+    "Bitte lege zuerst ein finales Product Requirement fest.": "Please define a final Product Requirement first.",
+    "Der Requirement-Text darf nicht leer sein.": "The requirement text must not be empty.",
+    "Ausgeschlossene Requirements benötigen einen Ausschlussgrund.": "Excluded requirements require an exclusion reason.",
     "Keine TechTypes erkannt": "No TechTypes detected",
     "Keine TechTypes verfügbar. Prüfe im Datei-Import die TechType-Spalten für Gruppierung und Appliance Designation.": "No TechTypes available. Check the TechType columns for grouping and appliance designation in the file import.",
     "Gruppe ein- oder ausklappen": "Expand or collapse group",
@@ -675,6 +705,7 @@ const UI_TRANSLATIONS = {
     "Bitte starte den lokalen Server und öffne die App über http://localhost:3000.": "Please start the local server and open the app at http://localhost:3000.",
     "Bitte beschreibe, was die AI am Product Requirement verbessern soll.": "Please describe what the AI should improve in the Product Requirement.",
     "Bitte wähle mindestens einen TechType aus.": "Please select at least one TechType.",
+    "Bitte starte und schließe zuerst den PR-Approval-Prozess ab. Danach kann die Windchill-Übergabe simuliert werden.": "Please start and complete the PR approval process first. After that, the Windchill handoff can be simulated.",
     "Die Änderung wurde gespeichert. Bitte prüfe den neu berechneten Score und gib das Requirement anschließend erneut frei.": "The change was saved. Please review the recalculated score and approve the requirement again.",
     "Die Passwörter stimmen nicht überein.": "The passwords do not match.",
     "Benutzer werden geladen...": "Loading users...",
@@ -964,6 +995,14 @@ const els = {
   changeRequestDescription: document.querySelector("#changeRequestDescription"),
   changeRequestComment: document.querySelector("#changeRequestComment"),
   changeRequestMessage: document.querySelector("#changeRequestMessage"),
+  appDialogOverlay: document.querySelector("#appDialogOverlay"),
+  appDialogBox: document.querySelector("#appDialogBox"),
+  appDialogCloseButton: document.querySelector("#appDialogCloseButton"),
+  appDialogCancelButton: document.querySelector("#appDialogCancelButton"),
+  appDialogConfirmButton: document.querySelector("#appDialogConfirmButton"),
+  appDialogEyebrow: document.querySelector("#appDialogEyebrow"),
+  appDialogTitle: document.querySelector("#appDialogTitle"),
+  appDialogMessage: document.querySelector("#appDialogMessage"),
   scoreFilterBar: document.querySelector("#scoreFilterBar"),
   clearScoreFilterButton: document.querySelector("#clearScoreFilterButton"),
   emptyWorkspace: document.querySelector("#emptyWorkspace"),
@@ -1011,7 +1050,9 @@ const els = {
 
 const nativeAlert = window.alert.bind(window);
 const nativeConfirm = window.confirm.bind(window);
-window.alert = (message) => nativeAlert(translateUiText(message));
+window.alert = (message) => {
+  void showAlertDialog(message);
+};
 window.confirm = (message) => nativeConfirm(translateUiText(message));
 
 els.workflowSteps.forEach((step) => {
@@ -1303,6 +1344,14 @@ els.changeRequestComment.addEventListener("input", updateChangeRequestDialogStat
 els.changeRequestOverlay.addEventListener("click", (event) => {
   if (event.target === els.changeRequestOverlay) {
     closeChangeRequestDialog(null);
+  }
+});
+els.appDialogCloseButton.addEventListener("click", () => closeAppDialog(false));
+els.appDialogCancelButton.addEventListener("click", () => closeAppDialog(false));
+els.appDialogConfirmButton.addEventListener("click", () => closeAppDialog(true));
+els.appDialogOverlay.addEventListener("click", (event) => {
+  if (event.target === els.appDialogOverlay) {
+    closeAppDialog(false);
   }
 });
 els.softwareTransferButton.addEventListener("click", simulateSoftwareWindchillTransfer);
@@ -1902,7 +1951,11 @@ function editUser(userId) {
 async function deleteUser(userId) {
   const user = state.adminUsers.find((item) => item.id === userId);
   if (!user) return;
-  if (!window.confirm(`Benutzer ${user.email} löschen?`)) return;
+  const confirmed = await showQuestionDialog(deleteUserQuestionText(user.email), {
+    title: "Benutzer löschen",
+    confirmLabel: "Löschen",
+  });
+  if (!confirmed) return;
 
   els.userAdminMessage.textContent = translateUiText("Benutzer wird gelöscht...");
   try {
@@ -1919,6 +1972,10 @@ async function deleteUser(userId) {
   } catch {
     els.userAdminMessage.textContent = translateUiText("Server nicht erreichbar");
   }
+}
+
+function deleteUserQuestionText(email) {
+  return currentLanguage() === "en" ? `Delete user ${email}?` : `Benutzer ${email} löschen?`;
 }
 
 function renderUserTable() {
@@ -2556,7 +2613,10 @@ async function handleFile(event) {
 
   els.fileState.textContent = file.name;
   state.sourceFileName = file.name;
+  state.sourceFilePath = file.webkitRelativePath || file.name;
   const buffer = await file.arrayBuffer();
+  state.sourceWorkbookData = arrayBufferToBase64(buffer);
+  state.sourceWorkbookEncoding = "base64";
   state.workbook = XLSX.read(buffer, { type: "array", cellDates: true });
   fillTechTypeColumnSelects();
   state.techTypes = extractTechTypesFromWorkbook(state.workbook);
@@ -2678,7 +2738,11 @@ async function deleteProjectById(projectId, projectName = "") {
   if (!currentUserHasRole("admin")) return;
 
   const displayName = projectName || "Projekt";
-  if (!confirm(`Projekt "${displayName}" wirklich löschen?`)) {
+  const confirmed = await showQuestionDialog(deleteProjectQuestionText(displayName), {
+    title: "Projekt löschen",
+    confirmLabel: "Löschen",
+  });
+  if (!confirmed) {
     return;
   }
 
@@ -2700,6 +2764,12 @@ async function deleteProjectById(projectId, projectName = "") {
   } catch (error) {
     console.warn("Projekt konnte nicht gelöscht werden.", error);
   }
+}
+
+function deleteProjectQuestionText(projectName) {
+  return currentLanguage() === "en"
+    ? `Really delete project "${projectName}"?`
+    : `Projekt "${projectName}" wirklich löschen?`;
 }
 
 async function fetchProjectList() {
@@ -2879,6 +2949,9 @@ function clearOpenProject() {
   state.projectSaveQueued = false;
   state.projectRevisionAction = "";
   state.sourceFileName = "";
+  state.sourceFilePath = "";
+  state.sourceWorkbookData = "";
+  state.sourceWorkbookEncoding = "";
   state.analysisComplete = false;
   state.activeProcessStep = "product";
   state.activeSelectionRow = null;
@@ -2993,6 +3066,9 @@ function resetProjectState({ projectName, projectDescription }) {
   state.productTransferChangeRows = new Set();
   state.softwareTransferChangeIds = new Set();
   state.sourceFileName = "";
+  state.sourceFilePath = "";
+  state.sourceWorkbookData = "";
+  state.sourceWorkbookEncoding = "";
   state.projectName = projectName;
   state.projectDescription = projectDescription;
   state.projectId = "";
@@ -4288,6 +4364,81 @@ async function requestApprovedProductRequirementChangeComment(rowNumber, changeT
   return normalizedComment;
 }
 
+function showAlertDialog(message) {
+  const type = inferAppDialogType(message);
+  return openAppDialog({
+    type,
+    title: appDialogTitleForType(type),
+    message,
+    confirmLabel: "Schließen",
+  });
+}
+
+function showQuestionDialog(message, options = {}) {
+  return openAppDialog({
+    type: "question",
+    title: "Frage",
+    message,
+    confirmLabel: "Bestätigen",
+    cancelLabel: "Abbrechen",
+    showCancel: true,
+    ...options,
+  });
+}
+
+function openAppDialog({
+  type = "info",
+  title = "Hinweis",
+  message = "",
+  confirmLabel = "Schließen",
+  cancelLabel = "Abbrechen",
+  showCancel = false,
+} = {}) {
+  return new Promise((resolve) => {
+    if (state.appDialogResolve) {
+      state.appDialogResolve(false);
+    }
+
+    const dialogType = ["error", "question"].includes(type) ? type : "info";
+    state.appDialogResolve = resolve;
+    els.appDialogBox.classList.toggle("is-error", dialogType === "error");
+    els.appDialogBox.classList.toggle("is-question", dialogType === "question");
+    els.appDialogEyebrow.textContent = translateUiText(appDialogTitleForType(dialogType));
+    els.appDialogTitle.textContent = translateUiText(title || appDialogTitleForType(dialogType));
+    els.appDialogMessage.textContent = translateUiText(message);
+    els.appDialogCancelButton.hidden = !showCancel;
+    els.appDialogCancelButton.textContent = translateUiText(cancelLabel);
+    els.appDialogConfirmButton.textContent = translateUiText(confirmLabel);
+    els.appDialogOverlay.hidden = false;
+    window.setTimeout(() => {
+      (showCancel ? els.appDialogCancelButton : els.appDialogConfirmButton).focus();
+    }, 0);
+  });
+}
+
+function closeAppDialog(value) {
+  if (els.appDialogOverlay) {
+    els.appDialogOverlay.hidden = true;
+  }
+
+  const resolve = state.appDialogResolve;
+  state.appDialogResolve = null;
+  if (resolve) resolve(value);
+}
+
+function inferAppDialogType(message) {
+  const text = normalizeUiText(message).toLowerCase();
+  return /fehler|error|failed|fehlgeschlagen|konnte nicht|nicht gefunden|nicht verfügbar|not found|invalid|ungültig/.test(text)
+    ? "error"
+    : "info";
+}
+
+function appDialogTitleForType(type) {
+  if (type === "error") return "Fehler";
+  if (type === "question") return "Frage";
+  return "Hinweis";
+}
+
 function openChangeRequestDialog(changeType = "Änderung") {
   return new Promise((resolve) => {
     if (state.changeRequestDialogResolve) {
@@ -5578,6 +5729,36 @@ async function readExcelAttachmentText(file, maxChars) {
     value: value.slice(0, maxChars),
     truncated: value.length > maxChars || workbook.SheetNames.length > 5,
   };
+}
+
+function workbookFromStoredSource(source) {
+  if (!window.XLSX || !source?.workbookData || source.workbookEncoding !== "base64") return null;
+
+  try {
+    return XLSX.read(base64ToArrayBuffer(source.workbookData), { type: "array", cellDates: true });
+  } catch (error) {
+    console.warn("Import-Workbook konnte aus dem Projektstand nicht wiederhergestellt werden.", error);
+    return null;
+  }
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToArrayBuffer(value) {
+  const binary = atob(String(value || ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes.buffer;
 }
 
 function renderImprovementAttachmentList(input, list) {
@@ -8186,6 +8367,18 @@ async function simulateProductWindchillTransfer() {
 
   setMenuButtonAvailability(els.exportButton, false, "Demo Transfer wird angezeigt");
   els.productTransferButton.disabled = true;
+  els.productTransferButton.textContent = translateUiText("Exportdatei wird erzeugt...");
+  let exportFileName = "";
+  try {
+    exportFileName = createProductWindchillExportFile();
+  } catch (error) {
+    alert(error.message || translateUiText("Die PR-Exportdatei konnte nicht erzeugt werden."));
+    renderProductTransferState();
+    updateExportAvailability();
+    updateProjectActions();
+    return;
+  }
+
   els.productTransferButton.textContent = translateUiText("Simulation läuft...");
   await delay(900);
   state.productWindchillTransferComplete = true;
@@ -8194,8 +8387,248 @@ async function simulateProductWindchillTransfer() {
   renderMetrics();
   updateExportAvailability();
   updateWorkflowState();
-  setProjectRevisionAction("PR Transfer-Simulation abgeschlossen");
+  setProjectRevisionAction(exportFileName ? `PR Transfer-Simulation abgeschlossen: ${exportFileName}` : "PR Transfer-Simulation abgeschlossen");
   updateProjectActions();
+}
+
+function createProductWindchillExportFile() {
+  if (!window.XLSX) {
+    throw new Error(translateUiText("Die XLSX-Bibliothek ist nicht verfügbar. Die Exportdatei konnte nicht erzeugt werden."));
+  }
+  if (!state.workbook || !state.sourceFileName) {
+    throw new Error(translateUiText("Die ursprüngliche Excel-Datei ist in dieser Session nicht verfügbar. Bitte importiere die PR-Datei erneut, bevor du die Windchill-Simulation startest."));
+  }
+
+  const workbook = cloneWorkbookForProductExport(state.workbook);
+  const sheetName = productWindchillExportSheetName(workbook);
+  if (!sheetName) {
+    throw new Error(translateUiText("Das Arbeitsblatt \"Product Requirements App\" wurde in der importierten Datei nicht gefunden."));
+  }
+
+  const worksheet = workbook.Sheets[sheetName];
+  const headerRowIndex = Math.max(Number(els.headerRow.value || 1) - 1, 0);
+  const descriptionColumnIndex = productWindchillDescriptionColumnIndex(worksheet, headerRowIndex);
+  if (descriptionColumnIndex < 0) {
+    throw new Error(translateUiText("Die Spalte \"Desc\" wurde im Arbeitsblatt \"Product Requirements App\" nicht gefunden."));
+  }
+
+  insertProductRequirementNumberColumn(worksheet, headerRowIndex);
+  writeFinalProductRequirementsToExportSheet(worksheet, descriptionColumnIndex + 1);
+  formatProductWindchillDescriptionColumn(worksheet, descriptionColumnIndex + 1, headerRowIndex);
+
+  const fileName = productWindchillExportFileName(state.sourceFileName);
+  downloadWorkbook(workbook, fileName);
+  return fileName;
+}
+
+function cloneWorkbookForProductExport(workbook) {
+  const bookType = workbookBookTypeForFile(state.sourceFileName);
+  const buffer = XLSX.write(workbook, { bookType, type: "array", cellDates: true });
+  return XLSX.read(buffer, { type: "array", cellDates: true });
+}
+
+function productWindchillExportSheetName(workbook) {
+  return (
+    workbook.SheetNames.find((name) => name === PRODUCT_WINDCHILL_EXPORT_SHEET) ||
+    workbook.SheetNames.find((name) => normalizeHeaderName(name) === normalizeHeaderName(PRODUCT_WINDCHILL_EXPORT_SHEET)) ||
+    ""
+  );
+}
+
+function productWindchillDescriptionColumnIndex(worksheet, headerRowIndex) {
+  const range = worksheetRange(worksheet);
+  if (!range) return -1;
+
+  for (let columnIndex = range.s.c; columnIndex <= range.e.c; columnIndex += 1) {
+    const value = worksheetCellText(worksheet, headerRowIndex, columnIndex);
+    if (["desc", "des"].includes(normalizeHeaderName(value))) return columnIndex;
+  }
+
+  return -1;
+}
+
+function insertProductRequirementNumberColumn(worksheet, headerRowIndex) {
+  const range = worksheetRange(worksheet) || { s: { r: 0, c: 0 }, e: { r: headerRowIndex, c: 0 } };
+  range.s.c = 0;
+
+  for (let rowIndex = range.s.r; rowIndex <= range.e.r; rowIndex += 1) {
+    for (let columnIndex = range.e.c; columnIndex >= 0; columnIndex -= 1) {
+      const sourceAddress = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
+      const targetAddress = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex + 1 });
+      if (worksheet[sourceAddress]) {
+        worksheet[targetAddress] = worksheet[sourceAddress];
+      } else {
+        delete worksheet[targetAddress];
+      }
+      delete worksheet[sourceAddress];
+    }
+  }
+
+  range.e.c += 1;
+  worksheet["!ref"] = XLSX.utils.encode_range(range);
+  shiftWorksheetMergesForInsertedFirstColumn(worksheet);
+  if (Array.isArray(worksheet["!cols"])) {
+    worksheet["!cols"] = [{ wch: 22 }, ...worksheet["!cols"]];
+  }
+  setWorksheetStringCell(worksheet, headerRowIndex, 0, PRODUCT_WINDCHILL_EXPORT_NUMBER_HEADER);
+}
+
+function shiftWorksheetMergesForInsertedFirstColumn(worksheet) {
+  if (!Array.isArray(worksheet["!merges"])) return;
+
+  worksheet["!merges"] = worksheet["!merges"].map((merge) => ({
+    s: { r: merge.s.r, c: merge.s.c + 1 },
+    e: { r: merge.e.r, c: merge.e.c + 1 },
+  }));
+}
+
+function writeFinalProductRequirementsToExportSheet(worksheet, descriptionColumnIndex) {
+  state.requirements.forEach((requirement) => {
+    const rowIndex = Number(requirement.rowNumber) - 1;
+    const selection = state.finalSelections.get(Number(requirement.rowNumber));
+    if (!Number.isInteger(rowIndex) || rowIndex < 0 || !selection || selection.choice === "excluded") return;
+
+    const requirementNumber = String(requirement.id || `PR-${requirement.rowNumber}`).trim();
+    const finalText = normalizeExcelMultilineText(selection.text);
+    if (!finalText) return;
+
+    setWorksheetStringCell(worksheet, rowIndex, 0, requirementNumber);
+    setWorksheetStringCell(worksheet, rowIndex, descriptionColumnIndex, finalText, {
+      alignment: { wrapText: true, vertical: "top" },
+    });
+  });
+}
+
+function formatProductWindchillDescriptionColumn(worksheet, descriptionColumnIndex, headerRowIndex) {
+  const range = worksheetRange(worksheet);
+  if (!range) return;
+
+  worksheet["!cols"] = Array.isArray(worksheet["!cols"]) ? worksheet["!cols"] : [];
+  worksheet["!cols"][descriptionColumnIndex] = {
+    ...(worksheet["!cols"][descriptionColumnIndex] || {}),
+    wch: Math.max(Number(worksheet["!cols"][descriptionColumnIndex]?.wch) || 0, 72),
+  };
+
+  for (let rowIndex = headerRowIndex + 1; rowIndex <= range.e.r; rowIndex += 1) {
+    const address = XLSX.utils.encode_cell({ r: rowIndex, c: descriptionColumnIndex });
+    if (!worksheet[address]) continue;
+    worksheet[address].s = {
+      ...(worksheet[address].s || {}),
+      alignment: {
+        ...(worksheet[address].s?.alignment || {}),
+        wrapText: true,
+        vertical: "top",
+      },
+    };
+  }
+}
+
+function normalizeExcelMultilineText(value) {
+  return String(value || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/([.!?])\s+(?=[A-ZÄÖÜ0-9])/g, "$1\n")
+    .trim();
+}
+
+function worksheetRange(worksheet) {
+  if (!worksheet?.["!ref"]) return null;
+
+  try {
+    return XLSX.utils.decode_range(worksheet["!ref"]);
+  } catch {
+    return null;
+  }
+}
+
+function worksheetCellText(worksheet, rowIndex, columnIndex) {
+  const cell = worksheet?.[XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })];
+  return String(cell?.w ?? cell?.v ?? "").trim();
+}
+
+function setWorksheetStringCell(worksheet, rowIndex, columnIndex, value, options = {}) {
+  const address = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
+  const existingCell = worksheet[address] || {};
+  worksheet[address] = {
+    ...existingCell,
+    t: "s",
+    v: String(value || ""),
+    w: String(value || ""),
+  };
+  if (options.alignment) {
+    worksheet[address].s = {
+      ...(existingCell.s || {}),
+      alignment: {
+        ...(existingCell.s?.alignment || {}),
+        ...options.alignment,
+      },
+    };
+  }
+}
+
+function productWindchillExportFileName(sourceFileName) {
+  const { baseName, extension } = splitFileName(sourceFileName);
+  return `${formatExportTimestamp(new Date())}_Export_${safeExportFileNamePart(baseName)}.${extension}`;
+}
+
+function splitFileName(fileName) {
+  const normalized = String(fileName || "ProductRequirements.xlsx").trim();
+  const match = normalized.match(/^(.*?)(?:\.([^.]+))?$/);
+  const extension = supportedWorkbookExtension(match?.[2] || "xlsx");
+  return {
+    baseName: match?.[1] || "ProductRequirements",
+    extension,
+  };
+}
+
+function supportedWorkbookExtension(extension) {
+  const normalized = String(extension || "xlsx").toLowerCase();
+  return ["xlsx", "xls", "xlsm"].includes(normalized) ? normalized : "xlsx";
+}
+
+function safeExportFileNamePart(value) {
+  return String(value || "ProductRequirements")
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/^_+|_+$/g, "") || "ProductRequirements";
+}
+
+function formatExportTimestamp(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+  ].join("-") + "_" + [
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join("-");
+}
+
+function workbookBookTypeForFile(fileName) {
+  const extension = splitFileName(fileName).extension;
+  return extension === "xlsm" ? "xlsm" : extension === "xls" ? "xls" : "xlsx";
+}
+
+function downloadWorkbook(workbook, fileName) {
+  const bookType = workbookBookTypeForFile(fileName);
+  const buffer = XLSX.write(workbook, { bookType, type: "array", cellDates: true });
+  const blob = new Blob([buffer], { type: workbookMimeType(bookType) });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function workbookMimeType(bookType) {
+  if (bookType === "xls") return "application/vnd.ms-excel";
+  if (bookType === "xlsm") return "application/vnd.ms-excel.sheet.macroEnabled.12";
+  return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 }
 
 function renderSoftwareTransferState() {
@@ -8504,6 +8937,9 @@ function createProjectPayload() {
     },
     source: {
       fileName: state.sourceFileName,
+      filePath: state.sourceFilePath || state.sourceFileName,
+      workbookEncoding: state.sourceWorkbookEncoding,
+      workbookData: state.sourceWorkbookData,
       sheetName: state.sheetName,
       rows: state.rows,
       headers: state.headers,
@@ -8562,12 +8998,15 @@ function loadProjectPayload(payload, fileName, projectId = "") {
   }
 
   resetProjectApprovalState();
-  state.workbook = null;
+  state.sourceWorkbookData = typeof source.workbookData === "string" ? source.workbookData : "";
+  state.sourceWorkbookEncoding = source.workbookEncoding || (state.sourceWorkbookData ? "base64" : "");
+  state.workbook = workbookFromStoredSource(source);
   state.rows = source.rows;
   state.headers = source.headers.map((header) => String(header || ""));
   state.techTypes = Array.isArray(source.techTypes) ? source.techTypes : [];
   state.sheetName = source.sheetName || "Projekt";
   state.sourceFileName = source.fileName || fileName;
+  state.sourceFilePath = source.filePath || state.sourceFileName;
   const projectMetadata = projectMetadataFromPayload(payload, fileName, state.sourceFileName);
   state.projectName = projectMetadata.name;
   state.projectDescription = projectMetadata.description;
@@ -8939,7 +9378,13 @@ function translateDefaultUiPattern(text) {
     [/^Remaining approx\. (.+)$/, "Restzeit ca. $1"],
     [/^(.+) remaining$/, "$1 verbleibend"],
     [/^Simulated transfer completed: (.+)$/, "Simulation abgeschlossen: $1"],
+    [/^Requirement can only be completed with a score >= (\d+)\.$/, "Requirement kann erst mit Score >= $1 fertiggestellt werden."],
     [/^Please complete all PRs with score >= (\d+) first\.$/, "Bitte schließe zuerst alle PR mit Score >= $1 ab."],
+    [/^Please finalize all PRs with score >= (\d+) first\.$/, "Bitte finalisiere zuerst alle PR mit Score >= $1."],
+    [
+      /^Please finalize all PRs with score >= (\d+) and selected TechTypes first\.$/,
+      "Bitte finalisiere zuerst alle PR mit Score >= $1 und ausgewählten TechTypes.",
+    ],
     [
       /^Please accept or close all SRs first\. Accepted SRs require score >= (\d+)\.$/,
       "Bitte übernimm oder schließe zuerst alle SR ab. Übernommene SR benötigen Score >= $1.",
@@ -8999,7 +9444,13 @@ function translateUiPattern(text, dictionary) {
     [/^Simulation abgeschlossen: (.+)$/, "Simulated transfer completed: $1"],
     [/^Sprache geaendert: (.+)$/, "Language changed: $1"],
     [/^Sprache geändert: (.+)$/, "Language changed: $1"],
+    [/^Requirement kann erst mit Score >= (\d+) fertiggestellt werden\.$/, "Requirement can only be completed with a score >= $1."],
     [/^Bitte schließe zuerst alle PR mit Score >= (\d+) ab\.$/, "Please complete all PRs with score >= $1 first."],
+    [/^Bitte finalisiere zuerst alle PR mit Score >= (\d+)\.$/, "Please finalize all PRs with score >= $1 first."],
+    [
+      /^Bitte finalisiere zuerst alle PR mit Score >= (\d+) und ausgewählten TechTypes\.$/,
+      "Please finalize all PRs with score >= $1 and selected TechTypes first.",
+    ],
     [
       /^Bitte übernimm oder schließe zuerst alle SR ab\. Übernommene SR benötigen Score >= (\d+)\.$/,
       "Please accept or close all SRs first. Accepted SRs require score >= $1.",
