@@ -90,7 +90,7 @@
               <summary>Hilfe</summary>
               <div class="menu-popover" role="menu">
                 <button id="openAiCostButton" type="button" role="menuitem">OpenAI Kosten</button>
-                <button id="aboutButton" type="button" role="menuitem">About</button>
+                <button id="aboutButton" type="button" role="menuitem">Info</button>
               </div>
             </details>
             <details class="menu-dropdown" id="adminMenu" hidden>
@@ -107,14 +107,14 @@
         <input id="fileInput" class="visually-hidden" type="file" accept=".xlsx,.xls,.csv" />
 
         <section class="empty-workspace" id="emptyWorkspace">
-          <p class="eyebrow">Workspace</p>
+          <p class="eyebrow">Arbeitsbereich</p>
           <h1>Kein Projekt geöffnet</h1>
           <p>Lege ein neues Projekt an oder öffne ein gespeichertes Projekt, um Requirements zu importieren und zu bewerten.</p>
         </section>
 
         <section class="about-page" id="aboutPage" hidden>
           <div class="about-hero">
-            <p class="eyebrow">About</p>
+            <p class="eyebrow">Info</p>
             <h1>Miele.DevPilot</h1>
             <p>Von Product Requirements zu qualitätsgesicherten Software Requirements, UseCases und Testartefakten.</p>
           </div>
@@ -276,9 +276,9 @@
             <article class="product-action-step quality-gate-card" id="productQualityGateCard">
               <div class="product-action-copy">
                 <span class="product-action-kicker">2. Bearbeitung</span>
-                <strong id="productQualityGateTitle">Finalization Gate not complete</strong>
-                <span id="productQualityGateSummary">Final scores are missing for one or more Requirements</span>
-                <small id="productQualityGateDetail">Approval process cannot be started yet.</small>
+                <strong id="productQualityGateTitle">Finalization Gate nicht abgeschlossen</strong>
+                <span id="productQualityGateSummary">Finale Scores fehlen für ein oder mehrere Requirements</span>
+                <small id="productQualityGateDetail">Der Approval-Prozess kann noch nicht gestartet werden.</small>
               </div>
               <div class="product-action-controls">
                 <span id="productQualityGateBadge" class="status-badge pending">NOT CHECKED</span>
@@ -316,7 +316,7 @@
               <div class="approval-list-toolbar">
                 <div class="approval-search-field">
                   <label for="productApprovalSearch">Requirement suchen</label>
-                  <input id="productApprovalSearch" type="search" placeholder="ID oder Title" autocomplete="off" />
+                  <input id="productApprovalSearch" type="search" placeholder="ID oder Titel" autocomplete="off" />
                 </div>
                 <div class="approval-filter-field">
                   <label for="productApprovalStatusFilter">Status</label>
@@ -324,9 +324,10 @@
                     <option value="all">Alle</option>
                     <option value="analysis">Analyse</option>
                     <option value="editing">Bearbeitung</option>
-                    <option value="in-approval">In Approval</option>
-                    <option value="approved">Approved</option>
-                    <option value="transferred">Transfered</option>
+                    <option value="in-approval">In Freigabe</option>
+                    <option value="changed">Geändert</option>
+                    <option value="approved">Freigegeben</option>
+                    <option value="transferred">Transferiert</option>
                   </select>
                 </div>
                 <span id="productApprovalListCount" class="approval-list-count">0 Requirements</span>
@@ -336,12 +337,12 @@
                   <tr>
                     <th>#</th>
                     <th>ID</th>
-                    <th>Title</th>
+                    <th>Titel</th>
                     <th>Score</th>
-                    <th>Source</th>
+                    <th>Quelle</th>
                     <th>Status</th>
                     <th>TechTypes</th>
-                    <th>Findings</th>
+                    <th>Hinweise</th>
                   </tr>
                 </thead>
                 <tbody id="resultsBody">
@@ -373,16 +374,16 @@
                 </section>
                 <section class="approval-panel-section product-review-simple">
                   <div id="productReviewTabs" role="tablist" aria-label="Requirement Finalization" hidden>
-                    <button type="button" data-review-tab="final" class="is-active">Final Requirement</button>
+                    <button type="button" data-review-tab="final" class="is-active">Finales Requirement</button>
                     <button type="button" data-review-tab="techtypes">TechTypes</button>
-                    <button type="button" data-review-tab="analysis">Analysis</button>
-                    <button type="button" data-review-tab="history">History</button>
+                    <button type="button" data-review-tab="analysis">Analyse</button>
+                    <button type="button" data-review-tab="history">Historie</button>
                   </div>
 
                   <div class="review-tab-content" id="productReviewFinalTab">
                     <div id="productReviewFinalChoiceHost"></div>
                     <section class="final-text-section" hidden>
-                      <h3>Final Product Requirement</h3>
+                      <h3>Finales Product Requirement</h3>
                       <textarea id="productReviewFinalText" rows="8" placeholder="Finales Product Requirement"></textarea>
                       <div class="final-score-row">
                         <span id="productReviewFinalScore" class="approval-progress-pill">Score -</span>
@@ -426,7 +427,7 @@
               <div id="productApprovalDetailContent" hidden>
                 <div class="approval-detail-header">
                   <div>
-                    <span class="status-badge" id="productApprovalDetailStatus">Ready for Approval</span>
+                    <span class="status-badge" id="productApprovalDetailStatus">Bereit für Freigabe</span>
                     <h2 id="productApprovalDetailTitle">-</h2>
                     <p id="productApprovalDetailSubtitle">-</p>
                   </div>
@@ -434,7 +435,7 @@
                 </div>
 
                 <section class="approval-panel-section">
-                  <h3>Metadata</h3>
+                  <h3>Metadaten</h3>
                   <dl class="approval-metadata-grid">
                     <div>
                       <dt>ID</dt>
@@ -457,7 +458,7 @@
                       <dd id="productApprovalDetailMetaStatus">-</dd>
                     </div>
                     <div>
-                      <dt>Open comments</dt>
+                      <dt>Offene Kommentare</dt>
                       <dd id="productApprovalDetailOpenComments">0</dd>
                     </div>
                   </dl>
@@ -465,21 +466,21 @@
 
                 <section class="approval-panel-section approval-candidate-section">
                   <div>
-                    <h3>Approval Candidate</h3>
-                    <p>This Product Requirement candidate is prepared for approval and later shown in the simulated target-system preview.</p>
+                    <h3>Freigabekandidat</h3>
+                    <p>Dieser Product-Requirement-Kandidat ist für die Freigabe vorbereitet und wird später in der simulierten Zielsystem-Vorschau angezeigt.</p>
                   </div>
                   <textarea id="productApprovalFinalText" rows="8"></textarea>
                   <details class="original-requirement">
-                    <summary>Original Requirement</summary>
+                    <summary>Original-Requirement</summary>
                     <p id="productApprovalOriginalText">-</p>
                   </details>
                 </section>
 
                 <section class="approval-panel-section owner-actions" id="productApprovalOwnerActions">
-                  <h3>Owner Actions</h3>
+                  <h3>Owner-Aktionen</h3>
                   <div class="approval-action-row">
-                    <button id="productApprovalSaveTextButton" type="button">Save changes</button>
-                    <button id="productApprovalSubmitButton" type="button">Submit for approval</button>
+                    <button id="productApprovalSaveTextButton" type="button">Änderungen speichern</button>
+                    <button id="productApprovalSubmitButton" type="button">Zur Freigabe bereitstellen</button>
                   </div>
                 </section>
 
@@ -497,23 +498,23 @@
                 </section>
 
                 <section class="approval-panel-section approver-decision" id="productApprovalDecision">
-                  <h3>Approval Decision</h3>
+                  <h3>Freigabeentscheidung</h3>
                   <div class="approval-action-row">
-                    <button id="productApprovalApproveButton" class="primary" type="button">Approve</button>
-                    <button id="productApprovalShowDisapproveButton" type="button">Disapprove</button>
+                    <button id="productApprovalApproveButton" class="primary" type="button">Freigeben</button>
+                    <button id="productApprovalShowDisapproveButton" type="button">Ablehnen</button>
                   </div>
                   <div class="disapproval-box" id="productApprovalDisapproveBox" hidden>
-                    <label for="productApprovalDisapproveComment">Disapprove Comment *</label>
+                    <label for="productApprovalDisapproveComment">Ablehnungskommentar *</label>
                     <textarea id="productApprovalDisapproveComment" rows="3" placeholder="Bitte begründe, warum dieses Requirement nicht freigegeben werden kann."></textarea>
-                    <button id="productApprovalDisapproveButton" type="button">Submit Disapproval</button>
+                    <button id="productApprovalDisapproveButton" type="button">Ablehnung senden</button>
                   </div>
                 </section>
 
                 <section class="approval-panel-section approval-tabs-section">
-                  <div class="approval-tabs" id="productApprovalTabs" role="tablist" aria-label="Approval Details">
-                    <button type="button" data-approval-tab="comments" class="is-active">Comments</button>
-                    <button type="button" data-approval-tab="approvals">Approvals</button>
-                    <button type="button" data-approval-tab="versions">Versions</button>
+                  <div class="approval-tabs" id="productApprovalTabs" role="tablist" aria-label="Approval-Details">
+                    <button type="button" data-approval-tab="comments" class="is-active">Kommentare</button>
+                    <button type="button" data-approval-tab="approvals">Freigaben</button>
+                    <button type="button" data-approval-tab="versions">Versionen</button>
                   </div>
                   <div class="approval-tab-content" id="productApprovalTabContent"></div>
                 </section>
@@ -916,6 +917,28 @@
       </div>
     </div>
 
+    <div class="selection-overlay" id="changeRequestOverlay" hidden>
+      <div class="selection-dialog change-request-dialog" role="dialog" aria-modal="true" aria-labelledby="changeRequestTitle" aria-describedby="changeRequestDescription">
+        <div class="selection-header">
+          <div>
+            <p class="eyebrow" id="changeRequestEyebrow">Change Request</p>
+            <h2 id="changeRequestTitle">Änderung am freigegebenen Requirement</h2>
+          </div>
+          <button class="icon-button" id="changeRequestCloseButton" type="button" aria-label="Dialog schließen">×</button>
+        </div>
+
+        <p class="dialog-copy" id="changeRequestDescription">Bitte dokumentiere, warum das bereits freigegebene Requirement geändert wird.</p>
+        <label for="changeRequestComment">Kommentar zur Änderung *</label>
+        <textarea id="changeRequestComment" rows="5" placeholder="z. B. Change Request 12345"></textarea>
+        <div id="changeRequestMessage" class="form-message" role="status"></div>
+
+        <div class="selection-actions">
+          <button id="changeRequestCancelButton" type="button">Abbrechen</button>
+          <button id="changeRequestConfirmButton" class="primary" type="button">Kommentar speichern</button>
+        </div>
+      </div>
+    </div>
+
     <div class="selection-overlay" id="selectionOverlay" hidden>
       <div class="selection-dialog" role="dialog" aria-modal="true" aria-labelledby="selectionTitle">
         <div class="selection-header">
@@ -1133,14 +1156,37 @@
 
     <div class="login-overlay" id="loginOverlay" hidden>
       <div class="login-dialog" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
-        <p class="eyebrow">Anmeldung</p>
-        <h2 id="loginTitle">Miele.DevPilot</h2>
-        <p>Melde dich mit deinem Benutzernamen oder deiner E-Mail-Adresse und Passwort an.</p>
+        <div class="login-header">
+          <div class="login-header-main">
+            <img class="login-app-icon" src="assets/favicon.svg" alt="" aria-hidden="true" />
+            <div class="login-title-block">
+              <p class="eyebrow">Anmeldung</p>
+              <h2 id="loginTitle">Miele.DevPilot</h2>
+            </div>
+          </div>
+          <p class="login-description">
+            Melde dich mit deinem Benutzernamen oder deiner E-Mail-Adresse und Passwort an.
+          </p>
+        </div>
         <form id="loginForm" class="auth-form">
           <label for="loginIdentifier">Name oder E-Mail-Adresse</label>
           <input id="loginIdentifier" type="text" autocomplete="username" required />
           <label for="loginPassword">Passwort</label>
-          <input id="loginPassword" type="password" autocomplete="current-password" required />
+          <div class="password-input-wrap">
+            <input id="loginPassword" type="password" autocomplete="current-password" required />
+            <button class="password-visibility-button" id="loginPasswordToggle" type="button" aria-label="Passwort anzeigen">
+              <svg class="password-eye-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              <svg class="password-eye-off-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 3l18 18" />
+                <path d="M10.6 6.2A9.9 9.9 0 0 1 12 6c6 0 9.5 6 9.5 6a17 17 0 0 1-2.1 2.7" />
+                <path d="M6.4 6.7A17 17 0 0 0 2.5 12s3.5 6 9.5 6a9.5 9.5 0 0 0 4-0.9" />
+                <path d="M9.9 9.9A3 3 0 0 0 14.1 14.1" />
+              </svg>
+            </button>
+          </div>
           <button class="primary" type="submit">Anmelden</button>
           <p class="form-message" id="loginMessage" role="status"></p>
         </form>

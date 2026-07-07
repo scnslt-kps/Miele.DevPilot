@@ -2665,6 +2665,22 @@ tbody tr.group-row:hover td {
   width: min(100%, 960px);
 }
 
+.change-request-dialog {
+  width: min(100%, 560px);
+}
+
+.change-request-dialog label {
+  display: block;
+  margin: 18px 0 8px;
+  font-weight: 700;
+}
+
+.change-request-dialog textarea {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+}
+
 .settings-dialog {
   width: min(100%, 760px);
   max-height: min(88vh, 820px);
@@ -2812,9 +2828,38 @@ tbody tr.group-row:hover td {
   width: min(100%, 440px);
   border: 0.5px solid var(--hairline);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.96);
+  background:
+    linear-gradient(180deg, rgba(24, 31, 42, 0.96), rgba(14, 19, 27, 0.96)),
+    var(--panel);
   box-shadow: var(--shadow);
-  padding: 28px;
+  padding: 30px;
+}
+
+.login-header {
+  width: 100%;
+  display: grid;
+  gap: 16px;
+  margin: 0 0 24px;
+}
+
+.login-header-main {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.login-app-icon {
+  display: block;
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  opacity: 0.94;
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.34));
+}
+
+.login-title-block {
+  min-width: 0;
 }
 
 .login-dialog h2 {
@@ -2824,6 +2869,11 @@ tbody tr.group-row:hover td {
 
 .login-dialog p {
   color: var(--muted);
+}
+
+.login-description {
+  margin: 0;
+  line-height: 1.5;
 }
 
 .dialog-copy {
@@ -2867,6 +2917,61 @@ tbody tr.group-row:hover td {
   background: var(--control);
   color: var(--text);
   padding: 9px 12px;
+}
+
+.password-input-wrap {
+  position: relative;
+}
+
+.password-input-wrap input {
+  padding-right: 48px;
+}
+
+.password-visibility-button {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  min-height: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(174, 184, 196, 0.86);
+  padding: 0;
+  transform: translateY(-50%);
+}
+
+.password-visibility-button:hover {
+  background: rgba(174, 184, 196, 0.1);
+  color: var(--text);
+}
+
+.password-visibility-button:focus-visible {
+  outline: 2px solid rgba(232, 82, 27, 0.32);
+  outline-offset: 2px;
+}
+
+.password-visibility-button svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.password-visibility-button .password-eye-off-icon,
+.password-visibility-button.is-visible .password-eye-icon {
+  display: none;
+}
+
+.password-visibility-button.is-visible .password-eye-off-icon {
+  display: block;
 }
 
 .user-form {
@@ -3750,6 +3855,12 @@ tbody tr.group-row:hover td {
   color: var(--text);
 }
 
+.login-dialog {
+  background:
+    linear-gradient(180deg, rgba(24, 31, 42, 0.96), rgba(14, 19, 27, 0.96)),
+    var(--panel);
+}
+
 #selectionOverlay .selection-meta div,
 #productReviewFinalChoiceHost .selection-meta div,
 .software-selection-dialog .selection-meta div {
@@ -4135,6 +4246,11 @@ tr:hover td,
   color: var(--text);
 }
 
+.approval-list-row.process-changed td {
+  background: rgba(120, 53, 15, 0.34);
+  color: var(--text);
+}
+
 .is-active-row td,
 .approval-list-row.is-active-row td {
   background: rgba(232, 82, 27, 0.16);
@@ -4142,7 +4258,8 @@ tr:hover td,
 }
 
 .approval-list-row.process-approved .approval-list-title,
-.approval-list-row.process-transferred .approval-list-title {
+.approval-list-row.process-transferred .approval-list-title,
+.approval-list-row.process-changed .approval-list-title {
   color: #f2f5f7;
 }
 
@@ -4555,6 +4672,19 @@ tbody tr.group-row:hover td {
   .selection-dialog,
   .login-dialog {
     padding: 18px;
+  }
+
+  .login-header {
+    gap: 14px;
+  }
+
+  .login-header-main {
+    gap: 16px;
+  }
+
+  .login-app-icon {
+    width: 50px;
+    height: 50px;
   }
 
   .selection-header {

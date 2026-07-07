@@ -16,6 +16,33 @@ Miele.DevPilot is a small Node.js/browser POC for checking requirements from Exc
 
 Use modern ES modules and plain browser JavaScript. Follow the existing style: two-space indentation, double quotes for strings, `camelCase` for variables/functions, `PascalCase` only for constructor-like values, and uppercase `SCREAMING_SNAKE_CASE` for constants. Keep browser UI logic in `app.js`, server-only concerns in `server.mjs`, and avoid adding build tooling unless it is necessary. Maintain German and English UI copy consistently when touching localized text.
 
+## Internationalisierung / Übersetzungen
+
+Bei jeder Änderung am UI oder an fachlichen Texten müssen Übersetzungen vollständig geprüft und gepflegt werden.
+
+Pflichtregeln:
+
+- Keine neuen sichtbaren UI-Texte hardcodieren, wenn das Projekt ein Übersetzungssystem nutzt.
+- Neue Labels, Buttons, Tabellenüberschriften, Dialogtexte, Fehlermeldungen, Toasts, Tooltips, Statuswerte und Hilfetexte müssen über Translation Keys eingebunden werden.
+- Für jeden neuen Translation Key müssen alle unterstützten Sprachen gepflegt werden.
+- Bestehende Translation Keys dürfen nicht entfernt oder umbenannt werden, ohne alle Verwendungen und alle Sprachdateien anzupassen.
+- Bei jeder UI-Änderung muss geprüft werden, ob deutsche und englische Übersetzungen vollständig vorhanden sind.
+- Es dürfen keine Platzhalter wie `TODO`, `missing translation`, rohe Keys oder Fallback-Texte im UI sichtbar werden.
+- Falls ein Text fachlich geändert wird, müssen alle Sprachvarianten sinngemäß mitgeändert werden.
+- Technische Schlüssel sollen stabil, sprechend und konsistent benannt werden.
+- Keine Vermischung von Sprachen innerhalb einer UI-Ansicht.
+- Nach Änderungen muss gezielt geprüft werden, ob die Anwendung in allen unterstützten Sprachen ohne fehlende Übersetzungen funktioniert.
+
+Akzeptanzkriterien für jede zukünftige Änderung:
+
+- Alle neuen oder geänderten UI-Texte sind internationalisiert.
+- Alle unterstützten Sprachdateien oder Translation Maps wurden aktualisiert.
+- Keine fehlenden Translation Keys.
+- Keine hardcodierten sichtbaren Texte, sofern vermeidbar.
+- Keine sichtbaren technischen Keys im UI.
+- Deutsch und Englisch sind fachlich konsistent.
+- Lint-/Typecheck-/Build-Prüfungen laufen weiterhin erfolgreich.
+
 ## Architecture Principles
 
 - Prefer modular architecture over monolithic components.

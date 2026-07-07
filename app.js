@@ -80,9 +80,11 @@ const state = {
   productApprovalStatusFilter: "all",
   productApprovalActiveTab: "comments",
   productApprovalDecisionMode: "",
+  changeRequestDialogResolve: null,
   productReviewActiveTab: "final",
   productReviewTechTypeSearch: "",
   productReviewTechTypeFilter: "all",
+  loginPasswordVisible: false,
 };
 
 const PROJECT_FILE_TYPE = "miele-devpilot-project";
@@ -154,6 +156,7 @@ const WORKFLOW_STEP_TITLES = {
     "app-test": ["App TestCase"],
   },
 };
+// Keep user-facing UI copy in this map when adding screens or dialogs so German and English stay in sync.
 const UI_TRANSLATIONS = {
   en: {
     "Sprache": "Language",
@@ -162,6 +165,8 @@ const UI_TRANSLATIONS = {
     "Von Produktanforderungen zu umsetzbaren Entwicklungs- und Testartefakten.": "From product requirements to actionable development and test artifacts.",
     "Projekt": "Project",
     "Kein Projekt geöffnet": "No project open",
+    "Ungespeicherte Änderungen": "Unsaved changes",
+    "Projektstatus": "Project status",
     "OpenAI Kosten": "OpenAI costs",
     "0 Tokens": "0 tokens",
     "0 Tokens geschätzt (Preise nicht konfiguriert)": "0 tokens estimated (prices not configured)",
@@ -172,12 +177,15 @@ const UI_TRANSLATIONS = {
     "Hauptmenü": "Main menu",
     "Neues Projekt": "New project",
     "Projekt laden": "Open project",
+    "Projekt-Historie": "Project history",
     "Projekt löschen": "Delete project",
     "Import": "Import",
     "Datei": "File",
     "Demo: Import aus Windchill": "Demo: Import from Windchill",
     "Windchill Import simulieren": "Simulate Windchill import",
     "Die Windchill-Schnittstelle ist in diesem MVP noch nicht verbunden. Der Import wird simuliert.": "The Windchill interface is not connected in this MVP yet. The import is simulated.",
+    "Die Windchill-Schnittstelle ist in diesem MVP noch nicht verbunden. Der Import wird simuliert. Bitte nutze für echte Daten den Dateiimport.": "The Windchill interface is not connected in this MVP yet. The import is simulated. Please use file import for real data.",
+    "Die echte Schnittstelle wird später angebunden. Aktuell wird nur ein Demo-Transfer angezeigt.": "The real interface will be connected later. Currently only a demo transfer is shown.",
     "Analyse": "Analysis",
     "Einstellungen": "Settings",
     "PR Analysieren": "Analyze PR",
@@ -196,8 +204,10 @@ const UI_TRANSLATIONS = {
     "Token-Nutzung": "Token usage",
     "Die Werte beziehen sich auf den aktuellen Projektstand und werden beim Speichern des Projekts mitgesichert.": "The values refer to the current project state and are saved with the project.",
     "Workspace": "Workspace",
+    "Arbeitsbereich": "Workspace",
     "Lege ein neues Projekt an oder öffne ein gespeichertes Projekt, um Requirements zu importieren und zu bewerten.": "Create a new project or open a saved project to import and assess requirements.",
     "About": "About",
+    "Info": "About",
     "Von Product Requirements zu qualitätsgesicherten Software Requirements, UseCases und Testartefakten.": "From Product Requirements to quality-assured Software Requirements, UseCases, and test artifacts.",
     "Zweck": "Purpose",
     "Miele.DevPilot unterstützt Requirements Engineering durch strukturierte Analyse, Bewertung, Ableitung und Übernahme von Requirements im Projektkontext.": "Miele.DevPilot supports requirements engineering through structured analysis, assessment, derivation, and acceptance of requirements in the project context.",
@@ -228,11 +238,19 @@ const UI_TRANSLATIONS = {
     "PR-Approval wartet": "PR approval waiting",
     "PR-Approval läuft": "PR approval in progress",
     "PR-Approval abgeschlossen": "PR approval complete",
+    "PR-Approval erneut erforderlich": "PR approval required again",
     "Wähle die PR Approver aus und starte den Approval-Prozess, sobald die Product Requirements bereit sind.": "Select the PR approvers and start the approval process once the Product Requirements are ready.",
     "Starte den Approval-Prozess, sobald die Product Requirements bereit sind. Die Approver wählst du im nächsten Schritt aus.": "Start the approval process once the Product Requirements are ready. You select the approvers in the next step.",
     "Approval starten": "Start approval",
+    "Approval-Prozess starten": "Start approval process",
     "Approval öffnen": "Open approval",
+    "Approval abgeschlossen": "Approval complete",
     "Freigeben": "Approve",
+    "Ablehnen": "Disapprove",
+    "Ablehnung": "Disapproval",
+    "Change Request": "Change request",
+    "Ablehnungskommentar *": "Disapproval comment *",
+    "Ablehnung senden": "Submit disapproval",
     "Noch nicht gestartet": "Not started yet",
     "Keine PR Approver verfügbar": "No PR approvers available",
     "Keine PR Approver ausgewählt": "No PR approvers selected",
@@ -241,17 +259,135 @@ const UI_TRANSLATIONS = {
     "Erneut laden": "Reload",
     "Ausgewählt": "Selected",
     "Wähle mindestens einen PR Approver aus.": "Select at least one PR approver.",
+    "Bitte wähle mindestens einen PR Approver aus.": "Please select at least one PR approver.",
     "Keine Requirements im Approval.": "No requirements in approval.",
     "Product Requirements sind während des laufenden Approval-Prozesses gesperrt.": "Product Requirements are locked while the approval process is running.",
+    "Product Requirements sind während des Approval-Prozesses gesperrt": "Product Requirements are locked during the approval process",
+    "Alle Product Requirements sind freigegeben. Ein neues Approval ist erst nach einer PR-Änderung möglich.": "All Product Requirements are approved. A new approval can only be started after a PR change.",
+    "Alle Product Requirements sind bereits freigegeben. Ein neues Approval ist erst nach einer PR-Änderung möglich.": "All Product Requirements are already approved. A new approval can only be started after a PR change.",
+    "Ein neues Approval ist erst nach einer Änderung an einem Product Requirement möglich.": "A new approval can only be started after a Product Requirement has changed.",
+    "1 geänderte PR muss erneut freigegeben werden.": "1 changed PR must be approved again.",
+    "geänderte PR müssen erneut freigegeben werden.": "changed PRs must be approved again.",
+    "Alle Product Requirements erfüllen das Gate. Der Approval-Prozess kann gestartet werden.": "All Product Requirements pass the gate. The approval process can be started.",
+    "Approval-Prozess kann erst gestartet werden, wenn alle nicht ausgeschlossenen Requirements Score >= 85 haben.": "Approval process cannot be started until all non-excluded Requirements have score >= 85.",
+    "Finale Scores fehlen oder sind für ein oder mehrere Requirements veraltet.": "Final scores are missing or stale for one or more Requirements.",
+    "Nur Product Requirement Owner können den Approval-Prozess starten.": "Only Product Requirement Owners can start the approval process.",
+    "Nur Product Requirement Owner können den PR-Approval-Prozess starten.": "Only Product Requirement Owners can start the PR approval process.",
+    "Finalization Gate blocked: mindestens ein Requirement benötigt Nacharbeit oder TechTypes.": "Finalization gate blocked: at least one requirement needs rework or TechTypes.",
+    "Finalization Gate not complete: Scores fehlen oder sind veraltet.": "Finalization gate not complete: scores are missing or stale.",
+    "Finale Score-Bewertung läuft oder fehlt.": "Final score assessment is running or missing.",
     "Filter aktiv: Requirements mit Score < 85": "Filter active: Requirements with score < 85",
     "Filter beenden": "Clear filter",
     "Status": "Status",
     "Zeile": "Row",
     "Name": "Name",
+    "Titel": "Title",
+    "ID oder Titel": "ID or title",
     "Requirement": "Requirement",
     "Score": "Score",
+    "Quelle": "Source",
     "Hinweise": "Issues",
     "AI-Vorschlag": "AI suggestion",
+    "In Freigabe": "In approval",
+    "Freigegeben": "Approved",
+    "Transferiert": "Transferred",
+    "Geändert": "Changed",
+    "Kritisch": "Critical",
+    "Ausstehend": "Pending",
+    "Bereit für Freigabe": "Ready for approval",
+    "Bereit für Approval": "Ready for approval",
+    "Final freigegeben": "Final approved",
+    "Ausgeschlossen": "Excluded",
+    "Finalization Gate nicht abgeschlossen": "Finalization gate not complete",
+    "Finale Scores fehlen für ein oder mehrere Requirements": "Final scores are missing for one or more Requirements",
+    "Der Approval-Prozess kann noch nicht gestartet werden.": "Approval process cannot be started yet.",
+    "Offene Kommentare": "Open comments",
+    "Benutzermenü": "User menu",
+    "Abmelden": "Sign out",
+    "Benutzerverwaltung": "User administration",
+    "Neuer Benutzer": "New user",
+    "Projektauswahl schließen": "Close project selection",
+    "Projekt-Historie schließen": "Close project history",
+    "Rollen auswählen": "Select roles",
+    "Rolle": "Role",
+    "Berechtigung": "Permission",
+    "Auswahl": "Selection",
+    "Name und E-Mail-Adresse für die Anmeldung.": "Name and email address for login.",
+    "Product Requirements erstellen und bearbeiten.": "Create and edit Product Requirements.",
+    "Software Requirements erstellen und bearbeiten.": "Create and edit Software Requirements.",
+    "E2E TestCases erstellen und bearbeiten.": "Create and edit E2E TestCases.",
+    "Passwort": "Password",
+    "Initiales Passwort": "Initial password",
+    "Alle Berechtigungen und Benutzerverwaltung.": "All permissions and user administration.",
+    "Passwort anzeigen": "Show password",
+    "Passwort verbergen": "Hide password",
+    "Metadaten": "Metadata",
+    "Requirement Detail": "Requirement detail",
+    "Requirement Finalization": "Requirement finalization",
+    "Finales Requirement": "Final requirement",
+    "Historie": "History",
+    "Finales Product Requirement": "Final Product Requirement",
+    "Freigabekandidat": "Approval candidate",
+    "Dieser Product-Requirement-Kandidat ist für die Freigabe vorbereitet und wird später in der simulierten Zielsystem-Vorschau angezeigt.": "This Product Requirement candidate is prepared for approval and later shown in the simulated target-system preview.",
+    "Original-Requirement": "Original requirement",
+    "Owner-Aktionen": "Owner actions",
+    "Änderungen speichern": "Save changes",
+    "Zur Freigabe bereitstellen": "Submit for approval",
+    "Freigabeentscheidung": "Approval decision",
+    "Approval-Details": "Approval details",
+    "Kommentar": "Comment",
+    "Kommentare": "Comments",
+    "Freigaben": "Approvals",
+    "Versionen": "Versions",
+    "Entscheidung ausstehend": "Awaiting decision",
+    "Keine wesentlichen Hinweise": "No major findings",
+    "offener Kommentar": "open comment",
+    "offene Kommentare": "open comments",
+    "Meine Freigabe erfasst": "My approval recorded",
+    "offen": "open",
+    "Deine Freigabe wurde fuer dieses Requirement erfasst.": "Your approval has been recorded for this requirement.",
+    "Noch keine Freigabe von deinem Approver-Benutzer erfasst.": "No approval from your approver user has been recorded yet.",
+    "Freigaben erfasst": "approvals recorded",
+    "von": "of",
+    "Gestartet": "Started",
+    "Laufzeit": "Runtime",
+    "verbleibend": "remaining",
+    "Alle PR-Freigaben sind abgeschlossen.": "All PR approvals are complete.",
+    "Disapprove benötigt einen Pflichtkommentar.": "Disapproval requires a mandatory comment.",
+    "Bitte gib einen Kommentar zur Änderung am freigegebenen Requirement ein.": "Please enter a comment for the change to the approved requirement.",
+    "Kommentar zur Änderung": "Change comment",
+    "Kommentar zur Änderung *": "Change comment *",
+    "Bitte dokumentiere, warum das bereits freigegebene Requirement geändert wird.": "Please document why the already approved requirement is being changed.",
+    "z. B. Change Request 12345": "e.g. Change Request 12345",
+    "Kommentar speichern": "Save comment",
+    "Änderungen an freigegebenen Requirements benötigen einen Kommentar.": "Changes to approved requirements require a comment.",
+    "Änderung am freigegebenen Requirement": "Change to approved requirement",
+    "Manuelle Änderung": "Manual change",
+    "Approval-Änderung": "Approval change",
+    "TechType-Änderung": "TechType change",
+    "AI-unterstützte Änderung": "AI-assisted change",
+    "AI-Vorschlag verwendet": "AI suggestion used",
+    "Original verwendet": "Original used",
+    "Keine Kommentare vorhanden.": "No comments available.",
+    "Antwort des Owners": "Owner reply",
+    "Antworten": "Reply",
+    "Kommentar lösen": "Resolve comment",
+    "Gelöst": "Resolved",
+    "PR Bearbeitung abgeschlossen": "PR editing complete",
+    "PR Bearbeitung offen": "PR editing open",
+    "PR Bearbeitung erforderlich": "PR editing required",
+    "PR Bearbeitung wartet": "PR editing waiting",
+    "PR öffnen": "Open PR",
+    "PR bearbeiten": "Edit PR",
+    "Approval-Prozess kann gestartet werden.": "Approval process can be started.",
+    "Analyse zuerst ausführen.": "Run analysis first.",
+    "Nach der Analyse können finale Requirements, Scores und TechTypes bearbeitet werden.": "After analysis, final requirements, scores, and TechTypes can be edited.",
+    "Requirements bereit mit Score >=": "Requirements ready with score >=",
+    "Requirements bereit für Freigabe": "Requirements ready for approval",
+    "mit Nacharbeit": "with rework",
+    "ohne TechTypes": "without TechTypes",
+    "fehlende Scores": "missing scores",
+    "veraltet oder in Berechnung": "stale or calculating",
     "Lade eine Excel-Datei, um Requirements zu prüfen.": "Load an Excel file to review requirements.",
     "Aus Product Requirements ableiten": "Derive from Product Requirements",
     "SR abgeleitet": "SR derived",
@@ -312,6 +448,21 @@ const UI_TRANSLATIONS = {
     "Abbrechen": "Cancel",
     "Projekt anlegen": "Create project",
     "Analyse läuft": "Analysis running",
+    "Später entscheiden": "Decide later",
+    "Score neu berechnen": "Recalculate score",
+    "Score bestanden": "Score passed",
+    "Nacharbeit erforderlich": "Rework required",
+    "Score erfüllt die Voraussetzung für den späteren Approval-Prozess.": "Score meets the prerequisite for the later approval process.",
+    "Nacharbeit erforderlich.": "Rework required.",
+    "Score neu berechnen erforderlich.": "Score recalculation required.",
+    "Score wird berechnet.": "Score is being calculated.",
+    "Ausgeschlossene Requirements benötigen keinen Score.": "Excluded requirements do not need a score.",
+    "Score wird berechnet...": "Calculating score...",
+    "Finales PR gespeichert": "Final PR saved",
+    "Requirements werden analysiert": "Requirements are being analyzed",
+    "Requirements verarbeitet": "requirements processed",
+    "Berechne voraussichtliche Bearbeitungszeit...": "Calculating estimated processing time...",
+    "Die Analyse wird vorbereitet.": "Preparing analysis.",
     "Requirements werden analysiert": "Requirements are being analyzed",
     "Die Analyse wird vorbereitet.": "Preparing analysis.",
     "Zeitfortschritt": "Time progress",
@@ -365,6 +516,36 @@ const UI_TRANSLATIONS = {
     "Abgeschlossen": "Completed",
     "Verfügbar": "Available",
     "Projekt erforderlich": "Project required",
+    "Projekt auswählen": "Select project",
+    "Beschreibung": "Description",
+    "Geändert": "Changed",
+    "Aktion": "Action",
+    "Öffnen": "Open",
+    "Löschen": "Delete",
+    "Zeitpunkt": "Timestamp",
+    "Benutzer": "User",
+    "Wiederherstellen": "Restore",
+    "Projekt verfügbar": "project available",
+    "Projekte verfügbar": "projects available",
+    "Stand verfügbar": "revision available",
+    "Stände verfügbar": "revisions available",
+    "Es sind noch keine Projekte in der Datenbank gespeichert.": "No projects have been saved in the database yet.",
+    "Für dieses Projekt ist noch keine Historie vorhanden.": "No history exists for this project yet.",
+    "Keine Projekte geladen.": "No projects loaded.",
+    "Keine Projekte vorhanden.": "No projects available.",
+    "Keine Historie geladen.": "No history loaded.",
+    "Keine Historie vorhanden.": "No history available.",
+    "Projekt konnte nicht geladen werden.": "Project could not be loaded.",
+    "Projekt konnte nicht gelöscht werden.": "Project could not be deleted.",
+    "Projektliste konnte nicht geladen werden.": "Project list could not be loaded.",
+    "Projekt-Historie konnte nicht geladen werden.": "Project history could not be loaded.",
+    "Automatisch gespeichert": "Saved automatically",
+    "Angelegt": "Created",
+    "Wiederhergestellt": "Restored",
+    "Projektstand konnte nicht wiederhergestellt werden.": "Project revision could not be restored.",
+    "Projekt automatisch gespeichert": "Project saved automatically",
+    "aktuell": "current",
+    "geöffnet": "open",
     "Git-Version nicht verfügbar": "Git version not available",
     "Nicht verfügbar": "Not available",
     "lokale Änderungen": "local changes",
@@ -376,7 +557,50 @@ const UI_TRANSLATIONS = {
     "Projekt geladen": "Project loaded",
     "Fehler": "Error",
     "Projekt angelegt": "Project created",
+    "Projekt konnte nicht angelegt werden.": "Project could not be created.",
     "Server erforderlich": "Server required",
+    "Server nicht erreichbar": "Server unavailable",
+    "Aktueller Schritt": "Current step",
+    "Keine Berechtigung": "No permission",
+    "Keine Berechtigung zum Laden von Projekten": "No permission to load projects",
+    "Nur Admins und Owner-Rollen können Projekte erstellen": "Only admins and owner roles can create projects",
+    "Freigabe erforderlich": "Approval required",
+    "Transfer-Simulation erforderlich": "Transfer simulation required",
+    "abschließen": "complete",
+    "muss zuerst abgeschlossen werden": "must be completed first",
+    "Product Requirement erst vollständig zuordnen und Quality Gate mit Score >": "Fully assign Product Requirements first and pass the quality gate with score >",
+    "Software Requirements zuerst freigeben": "Approve Software Requirements first",
+    "SR-Transfer-Simulation zuerst starten": "Start SR transfer simulation first",
+    "PR bereit zur Übergabe": "PR ready for handoff",
+    "PR-Transfer wartet": "PR transfer waiting",
+    "Demo Transfer angezeigt": "Demo transfer shown",
+    "Demo Transfer wird angezeigt": "Demo transfer is shown",
+    "Analyse, Bearbeitung und Approval müssen vorher abgeschlossen sein.": "Analysis, editing, and approval must be completed first.",
+    "Alle nicht ausgeschlossenen Requirements benötigen Score >= 85 und TechTypes.": "All non-excluded Requirements need score >= 85 and TechTypes.",
+    "Die Übergabe ist erst nach vollständiger PR-Freigabe möglich.": "Handoff is only possible after full PR approval.",
+    "Starte und schließe zuerst den PR-Approval-Prozess ab.": "Start and complete the PR approval process first.",
+    "Nur Product Requirement Owner oder Admins können die Transfer-Simulation starten": "Only Product Requirement Owners or admins can start the transfer simulation",
+    "Nur Product Requirement Owner oder Admins können die Transfer-Simulation starten.": "Only Product Requirement Owners or admins can start the transfer simulation.",
+    "Nur Software Requirement Owner oder Admins können die Transfer-Simulation starten": "Only Software Requirement Owners or admins can start the transfer simulation",
+    "Nur Software Requirement Owner oder Admins können die Transfer-Simulation starten.": "Only Software Requirement Owners or admins can start the transfer simulation.",
+    "Bitte gib zuerst alle abgeschlossenen Software Requirements frei.": "Please approve all completed Software Requirements first.",
+    "PR würde nach Windchill übertragen": "PR would be transferred to Windchill",
+    "SR würde übertragen werden": "SR would be transferred",
+    "PR-Freigabe ist vor der Transfer-Simulation erforderlich": "PR approval is required before transfer simulation",
+    "SR-Freigabe ist vor der Transfer-Simulation erforderlich": "SR approval is required before transfer simulation",
+    "Transfer-Simulation ist nach abgeschlossener PR-Finalisierung verfügbar": "Transfer simulation is available after PR finalization is complete",
+    "SR-Transfer-Simulation ist nach abgeschlossener SR-Übernahme verfügbar": "SR transfer simulation is available after SR acceptance is complete",
+    "Demo-Import aus Windchill ist nur im PR-Schritt verfügbar": "Demo import from Windchill is only available in the PR step",
+    "Nur Product Requirement Owner oder Admins können Product Requirements erstellen": "Only Product Requirement Owners or admins can create Product Requirements",
+    "Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten": "Only Product Requirement Owners or admins can edit Product Requirements",
+    "Nur Software Requirement Owner oder Admins können Software Requirements bearbeiten": "Only Software Requirement Owners or admins can edit Software Requirements",
+    "Nur E2E Test Owner oder Admins können E2E TestCases bearbeiten": "Only E2E Test Owners or admins can edit E2E TestCases",
+    "Software Requirements können erst im SR-Schritt nach abgeschlossener PR-Finalisierung und Transfer-Simulation abgeleitet werden": "Software Requirements can only be derived in the SR step after PR finalization and transfer simulation are complete",
+    "E2E TestCases können erst im E2E-Schritt nach abgeschlossener SR-Übernahme und Transfer-Simulation abgeleitet werden": "E2E TestCases can only be derived in the E2E step after SR acceptance and transfer simulation are complete",
+    "PRs wurden bereits analysiert. Nutze die AI-Verbesserung in den einzelnen Requirements.": "PRs have already been analyzed. Use AI improvement in the individual requirements.",
+    "Öffne zuerst ein Projekt": "Open a project first",
+    "Importiere zuerst eine PR-Datei": "Import a PR file first",
+    "Analyse läuft": "Analysis running",
     "Analysiere...": "Analyzing...",
     "Analyse fertig": "Analysis complete",
     "Keine Requirements in der gewaehlten Spalte gefunden.": "No requirements found in the selected column.",
@@ -451,6 +675,34 @@ const UI_TRANSLATIONS = {
     "Bitte starte den lokalen Server und öffne die App über http://localhost:3000.": "Please start the local server and open the app at http://localhost:3000.",
     "Bitte beschreibe, was die AI am Product Requirement verbessern soll.": "Please describe what the AI should improve in the Product Requirement.",
     "Bitte wähle mindestens einen TechType aus.": "Please select at least one TechType.",
+    "Die Änderung wurde gespeichert. Bitte prüfe den neu berechneten Score und gib das Requirement anschließend erneut frei.": "The change was saved. Please review the recalculated score and approve the requirement again.",
+    "Die Passwörter stimmen nicht überein.": "The passwords do not match.",
+    "Benutzer werden geladen...": "Loading users...",
+    "Benutzer konnten nicht geladen werden": "Users could not be loaded",
+    "Benutzer anlegen": "Create user",
+    "Benutzer bearbeiten": "Edit user",
+    "Benutzer speichern": "Save user",
+    "Benutzer wird gespeichert...": "Saving user...",
+    "Benutzer konnte nicht gespeichert werden": "User could not be saved",
+    "Benutzer gespeichert": "User saved",
+    "Benutzer angelegt": "User created",
+    "Benutzer wird gelöscht...": "Deleting user...",
+    "Benutzer konnte nicht gelöscht werden": "User could not be deleted",
+    "Benutzer gelöscht": "User deleted",
+    "Keine Benutzer geladen.": "No users loaded.",
+    "Keine Benutzer vorhanden.": "No users available.",
+    "Bearbeiten": "Edit",
+    "Aktionen für": "Actions for",
+    "du": "you",
+    "Inaktiv": "Inactive",
+    "Passwortwechsel offen": "Password change pending",
+    "Aktiv": "Active",
+    "Rolle und Kontostatus des Benutzers.": "Role and account status of the user.",
+    "Neue Benutzer müssen das Passwort nach der ersten Anmeldung ändern.": "New users must change their password after the first login.",
+    "Approver für dieses Projekt auswählen": "Select approvers for this project",
+    "Melde dich mit deinem Benutzernamen oder deiner E-Mail-Adresse und Passwort an.": "Sign in with your username or email address and password.",
+    "Anmeldung fehlgeschlagen": "Login failed",
+    "Passwort konnte nicht geändert werden": "Password could not be changed",
     "Bitte beschreibe, was die AI am Software Requirement verbessern soll.": "Please describe what the AI should improve in the Software Requirement.",
     "Das zugehörige Product Requirement wurde nicht gefunden.": "The associated Product Requirement was not found.",
     "Bitte beschreibe, was die AI am E2E TestCase verbessern soll.": "Please describe what the AI should improve in the E2E TestCase.",
@@ -704,6 +956,14 @@ const els = {
   productApprovalDialogMessage: document.querySelector("#productApprovalDialogMessage"),
   productApprovalSelectedApprovers: document.querySelector("#productApprovalSelectedApprovers"),
   productApprovalApproverList: document.querySelector("#productApprovalApproverList"),
+  changeRequestOverlay: document.querySelector("#changeRequestOverlay"),
+  changeRequestCloseButton: document.querySelector("#changeRequestCloseButton"),
+  changeRequestCancelButton: document.querySelector("#changeRequestCancelButton"),
+  changeRequestConfirmButton: document.querySelector("#changeRequestConfirmButton"),
+  changeRequestTitle: document.querySelector("#changeRequestTitle"),
+  changeRequestDescription: document.querySelector("#changeRequestDescription"),
+  changeRequestComment: document.querySelector("#changeRequestComment"),
+  changeRequestMessage: document.querySelector("#changeRequestMessage"),
   scoreFilterBar: document.querySelector("#scoreFilterBar"),
   clearScoreFilterButton: document.querySelector("#clearScoreFilterButton"),
   emptyWorkspace: document.querySelector("#emptyWorkspace"),
@@ -722,6 +982,7 @@ const els = {
   loginForm: document.querySelector("#loginForm"),
   loginIdentifier: document.querySelector("#loginIdentifier"),
   loginPassword: document.querySelector("#loginPassword"),
+  loginPasswordToggle: document.querySelector("#loginPasswordToggle"),
   loginMessage: document.querySelector("#loginMessage"),
   passwordChangeOverlay: document.querySelector("#passwordChangeOverlay"),
   passwordChangeForm: document.querySelector("#passwordChangeForm"),
@@ -786,6 +1047,10 @@ els.languageSelect.addEventListener("change", () => {
 els.loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await loginWithEmail();
+});
+els.loginPasswordToggle.addEventListener("click", () => {
+  state.loginPasswordVisible = !state.loginPasswordVisible;
+  renderLoginPasswordVisibility();
 });
 els.passwordChangeForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -865,7 +1130,7 @@ els.openFileButton.addEventListener("click", () => {
 });
 els.openWindchillButton.addEventListener("click", () => {
   closeMenus();
-  alert("Die Windchill-Schnittstelle ist in diesem MVP noch nicht verbunden. Der Import wird simuliert. Bitte nutze für echte Daten den Dateiimport.");
+  alert(translateUiText("Die Windchill-Schnittstelle ist in diesem MVP noch nicht verbunden. Der Import wird simuliert. Bitte nutze für echte Daten den Dateiimport."));
 });
 els.openProjectButton.addEventListener("click", () => {
   closeMenus();
@@ -1031,6 +1296,15 @@ els.productApprovalOverlay.addEventListener("click", (event) => {
     closeProductApprovalDialog();
   }
 });
+els.changeRequestCloseButton.addEventListener("click", () => closeChangeRequestDialog(null));
+els.changeRequestCancelButton.addEventListener("click", () => closeChangeRequestDialog(null));
+els.changeRequestConfirmButton.addEventListener("click", confirmChangeRequestDialog);
+els.changeRequestComment.addEventListener("input", updateChangeRequestDialogState);
+els.changeRequestOverlay.addEventListener("click", (event) => {
+  if (event.target === els.changeRequestOverlay) {
+    closeChangeRequestDialog(null);
+  }
+});
 els.softwareTransferButton.addEventListener("click", simulateSoftwareWindchillTransfer);
 els.criticalIssuesButton.addEventListener("click", activateScoreFilter);
 els.clearScoreFilterButton.addEventListener("click", clearScoreFilter);
@@ -1058,7 +1332,7 @@ els.productApprovalApproveButton.addEventListener("click", async () => {
   const pendingSave = await savePendingProductApprovalTextChange();
   if (!pendingSave.ok) return;
   if (pendingSave.changed) {
-    alert("Die Änderung wurde gespeichert. Bitte prüfe den neu berechneten Score und gib das Requirement anschließend erneut frei.");
+    alert(translateUiText("Die Änderung wurde gespeichert. Bitte prüfe den neu berechneten Score und gib das Requirement anschließend erneut frei."));
     return;
   }
   if (approveProductRequirement(state.activeSelectionRow)) {
@@ -1247,6 +1521,15 @@ async function loadSession() {
   }
 }
 
+function renderLoginPasswordVisibility() {
+  els.loginPassword.type = state.loginPasswordVisible ? "text" : "password";
+  els.loginPasswordToggle.setAttribute(
+    "aria-label",
+    translateUiText(state.loginPasswordVisible ? "Passwort verbergen" : "Passwort anzeigen"),
+  );
+  els.loginPasswordToggle.classList.toggle("is-visible", state.loginPasswordVisible);
+}
+
 async function loginWithEmail() {
   const identifier = els.loginIdentifier.value.trim();
   const password = els.loginPassword.value;
@@ -1260,7 +1543,7 @@ async function loginWithEmail() {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      els.loginMessage.textContent = data.error || "Anmeldung fehlgeschlagen";
+      els.loginMessage.textContent = data.error || translateUiText("Anmeldung fehlgeschlagen");
       return;
     }
 
@@ -1271,7 +1554,7 @@ async function loginWithEmail() {
     renderAuthState();
     void ensureProductApproversLoaded();
   } catch {
-    els.loginMessage.textContent = "Server nicht erreichbar";
+    els.loginMessage.textContent = translateUiText("Server nicht erreichbar");
   }
 }
 
@@ -1288,7 +1571,7 @@ async function changeOwnPassword() {
   els.passwordChangeMessage.textContent = "";
 
   if (password !== confirmPassword) {
-    els.passwordChangeMessage.textContent = "Die Passwörter stimmen nicht überein.";
+    els.passwordChangeMessage.textContent = translateUiText("Die Passwörter stimmen nicht überein.");
     return;
   }
 
@@ -1300,7 +1583,7 @@ async function changeOwnPassword() {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      els.passwordChangeMessage.textContent = data.error || "Passwort konnte nicht geändert werden";
+      els.passwordChangeMessage.textContent = data.error || translateUiText("Passwort konnte nicht geändert werden");
       return;
     }
 
@@ -1309,7 +1592,7 @@ async function changeOwnPassword() {
     els.confirmNewPassword.value = "";
     renderAuthState();
   } catch {
-    els.passwordChangeMessage.textContent = "Server nicht erreichbar";
+    els.passwordChangeMessage.textContent = translateUiText("Server nicht erreichbar");
   }
 }
 
@@ -1332,6 +1615,10 @@ function renderAuthState() {
   const isAdmin = currentUserHasRole("admin");
   const mustChangePassword = state.currentUser?.mustChangePassword === true;
   els.loginOverlay.hidden = isSignedIn;
+  if (!isSignedIn) {
+    state.loginPasswordVisible = false;
+    renderLoginPasswordVisibility();
+  }
   els.passwordChangeOverlay.hidden = !mustChangePassword;
   els.adminMenu.hidden = !isAdmin;
   if (!isAdmin) {
@@ -1372,12 +1659,12 @@ function closeUserAdminPage() {
 }
 
 async function loadAdminUsers() {
-  els.userAdminMessage.textContent = "Benutzer werden geladen...";
+  els.userAdminMessage.textContent = translateUiText("Benutzer werden geladen...");
   try {
     const response = await fetch(getAdminUsersEndpoint());
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      els.userAdminMessage.textContent = data.error || "Benutzer konnten nicht geladen werden";
+      els.userAdminMessage.textContent = data.error || translateUiText("Benutzer konnten nicht geladen werden");
       return;
     }
 
@@ -1385,14 +1672,14 @@ async function loadAdminUsers() {
     renderUserTable();
     els.userAdminMessage.textContent = "";
   } catch {
-    els.userAdminMessage.textContent = "Server nicht erreichbar";
+    els.userAdminMessage.textContent = translateUiText("Server nicht erreichbar");
   }
 }
 
 function openCreateUserDialog() {
   resetUserForm();
-  els.userDialogTitle.textContent = "Benutzer anlegen";
-  els.saveUserButton.textContent = "Benutzer speichern";
+  els.userDialogTitle.textContent = translateUiText("Benutzer anlegen");
+  els.saveUserButton.textContent = translateUiText("Benutzer speichern");
   els.userPassword.required = true;
   els.userPassword.placeholder = "Mindestens 8 Zeichen";
   els.userDialogOverlay.hidden = false;
@@ -1416,7 +1703,7 @@ async function saveUserFromForm() {
   }
   const endpoint = userId ? getAdminUserEndpoint(userId) : getAdminUsersEndpoint();
 
-  els.userAdminMessage.textContent = "Benutzer wird gespeichert...";
+  els.userAdminMessage.textContent = translateUiText("Benutzer wird gespeichert...");
   try {
     const response = await fetch(endpoint, {
       method: userId ? "PUT" : "POST",
@@ -1425,16 +1712,16 @@ async function saveUserFromForm() {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      els.userAdminMessage.textContent = data.error || "Benutzer konnte nicht gespeichert werden";
+      els.userAdminMessage.textContent = data.error || translateUiText("Benutzer konnte nicht gespeichert werden");
       return;
     }
 
     resetUserForm();
     closeUserDialog();
     await loadAdminUsers();
-    els.userAdminMessage.textContent = userId ? "Benutzer gespeichert" : "Benutzer angelegt";
+    els.userAdminMessage.textContent = translateUiText(userId ? "Benutzer gespeichert" : "Benutzer angelegt");
   } catch {
-    els.userAdminMessage.textContent = "Server nicht erreichbar";
+    els.userAdminMessage.textContent = translateUiText("Server nicht erreichbar");
   }
 }
 
@@ -1447,7 +1734,7 @@ function resetUserForm() {
   els.userPassword.value = "";
   els.userPassword.required = true;
   els.userPassword.placeholder = "Mindestens 8 Zeichen";
-  els.saveUserButton.textContent = "Benutzer speichern";
+  els.saveUserButton.textContent = translateUiText("Benutzer speichern");
 }
 
 function selectedUserRoles() {
@@ -1516,7 +1803,7 @@ function canModifyProductRequirements() {
 }
 
 function isProductApprovalLocked() {
-  return isProductApprovalStarted() && !isProductQualityReady();
+  return isProductApprovalStarted() && !isProductQualityReady() && !hasChangedProductRequirements();
 }
 
 function productApprovalLockedMessage() {
@@ -1598,7 +1885,7 @@ function editUser(userId) {
   const user = state.adminUsers.find((item) => item.id === userId);
   if (!user) return;
 
-  els.userDialogTitle.textContent = "Benutzer bearbeiten";
+  els.userDialogTitle.textContent = translateUiText("Benutzer bearbeiten");
   els.userId.value = user.id;
   els.userName.value = user.name || "";
   els.userEmail.value = user.email;
@@ -1607,7 +1894,7 @@ function editUser(userId) {
   els.userPassword.value = "";
   els.userPassword.required = false;
   els.userPassword.placeholder = "Leer lassen, um Passwort beizubehalten";
-  els.saveUserButton.textContent = "Änderungen speichern";
+  els.saveUserButton.textContent = translateUiText("Änderungen speichern");
   els.userDialogOverlay.hidden = false;
   els.userName.focus();
 }
@@ -1617,20 +1904,20 @@ async function deleteUser(userId) {
   if (!user) return;
   if (!window.confirm(`Benutzer ${user.email} löschen?`)) return;
 
-  els.userAdminMessage.textContent = "Benutzer wird gelöscht...";
+  els.userAdminMessage.textContent = translateUiText("Benutzer wird gelöscht...");
   try {
     const response = await fetch(getAdminUserEndpoint(userId), { method: "DELETE" });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      els.userAdminMessage.textContent = data.error || "Benutzer konnte nicht gelöscht werden";
+      els.userAdminMessage.textContent = data.error || translateUiText("Benutzer konnte nicht gelöscht werden");
       return;
     }
 
     resetUserForm();
     await loadAdminUsers();
-    els.userAdminMessage.textContent = "Benutzer gelöscht";
+    els.userAdminMessage.textContent = translateUiText("Benutzer gelöscht");
   } catch {
-    els.userAdminMessage.textContent = "Server nicht erreichbar";
+    els.userAdminMessage.textContent = translateUiText("Server nicht erreichbar");
   }
 }
 
@@ -1651,13 +1938,13 @@ function renderUserTable() {
           <td>${escapeHtml(user.name || "-")}${isCurrentUser ? ` <span class="muted-cell">(${escapeHtml(translateUiText("du"))})</span>` : ""}</td>
           <td>${escapeHtml(user.email)}</td>
           <td><span class="role-pill">${escapeHtml(roleText)}</span></td>
-          <td><span class="${statusClass}">${escapeHtml(statusText)}</span></td>
+          <td><span class="${statusClass}">${escapeHtml(translateUiText(statusText))}</span></td>
           <td>
             <div class="user-actions">
-              <button class="user-action-trigger" type="button" data-user-menu data-user-id="${escapeHtml(user.id)}" aria-expanded="false" aria-label="Aktionen für ${escapeHtml(user.name || user.email)}">•••</button>
+              <button class="user-action-trigger" type="button" data-user-menu data-user-id="${escapeHtml(user.id)}" aria-expanded="false" aria-label="${escapeHtml(translateUiText("Aktionen für"))} ${escapeHtml(user.name || user.email)}">•••</button>
               <div class="user-action-menu" hidden>
-                <button type="button" data-user-action="edit" data-user-id="${escapeHtml(user.id)}">Bearbeiten</button>
-                <button type="button" data-user-action="delete" data-user-id="${escapeHtml(user.id)}" ${isCurrentUser ? "disabled" : ""}>Löschen</button>
+                <button type="button" data-user-action="edit" data-user-id="${escapeHtml(user.id)}">${escapeHtml(translateUiText("Bearbeiten"))}</button>
+                <button type="button" data-user-action="delete" data-user-id="${escapeHtml(user.id)}" ${isCurrentUser ? "disabled" : ""}>${escapeHtml(translateUiText("Löschen"))}</button>
               </div>
             </div>
           </td>
@@ -1746,13 +2033,13 @@ function updateWorkflowState() {
     if (!status) return;
 
     if (isComplete) {
-      status.textContent = "Abgeschlossen";
+      status.textContent = translateUiText("Abgeschlossen");
     } else if (isActive) {
-      status.textContent = "Aktueller Schritt";
+      status.textContent = translateUiText("Aktueller Schritt");
     } else if (isLocked) {
-      status.textContent = getLockedStepShortText(processStep);
+      status.textContent = translateUiText(getLockedStepShortText(processStep));
     } else {
-      status.textContent = "Verfügbar";
+      status.textContent = translateUiText("Verfügbar");
     }
   });
   renderWorkflowTranslations();
@@ -1810,10 +2097,28 @@ function renderProjectHeader() {
   updateProjectDirtyState();
   const dirtyMarker = state.projectDirty ? " *" : "";
   const displayName = projectDisplayName();
-  els.projectHeaderName.textContent = displayName ? `${displayName}${dirtyMarker}` : "Kein Projekt geöffnet";
-  els.projectHeaderName.title = state.projectDirty ? "Ungespeicherte Änderungen" : "";
+  els.projectHeaderName.textContent = displayName ? `${displayName}${dirtyMarker}` : translateUiText("Kein Projekt geöffnet");
+  els.projectHeaderName.title = state.projectDirty ? translateUiText("Ungespeicherte Änderungen") : "";
   els.projectHeaderDescription.textContent = state.projectDescription || "";
   els.projectHeaderDescription.hidden = !state.projectDescription;
+  renderProjectStatusLine();
+}
+
+function projectStatusText(name = projectDisplayName()) {
+  const displayName = String(name || "").trim();
+  return displayName ? `${displayName} (${translateUiText("Projekt")})` : translateUiText("Kein Projekt geöffnet");
+}
+
+function renderProjectStatusLine() {
+  if (!els.fileState) return;
+  if (!hasProject()) {
+    els.fileState.textContent = translateUiText("Kein Projekt geöffnet");
+    return;
+  }
+
+  const currentText = String(els.fileState.textContent || "");
+  if (state.sourceFileName && currentText === state.sourceFileName) return;
+  els.fileState.textContent = projectStatusText();
 }
 
 function updateProjectDirtyState() {
@@ -1984,7 +2289,7 @@ function isProductStepComplete() {
 }
 
 function isProductQualityReady() {
-  return isProductApprovalStarted() && isProductReadyForApproval() && hasApprovedFinalProductSelections();
+  return isProductReadyForApproval() && hasApprovedFinalProductSelections();
 }
 
 function isProductReadyForTransferSimulation() {
@@ -2094,20 +2399,20 @@ function isProductQualityGateBlockingScore(score) {
 }
 
 function isProductApprovalPending() {
-  return isProductReadyForApproval() && (!isProductApprovalStarted() || !hasApprovedFinalProductSelections());
+  return isProductReadyForApproval() && !hasApprovedFinalProductSelections();
 }
 
 function hasApprovedFinalProductSelections() {
-  const requiredApproverIds = getRequiredProductApproverIds();
-  if (!requiredApproverIds.length) return false;
+  if (hasChangedProductRequirements()) return false;
 
   return state.requirements.length > 0 && state.requirements.every((requirement) => {
     const selection = state.finalSelections.get(Number(requirement.rowNumber));
-    return (
-      countOpenDisapprovalComments(selection) === 0 &&
-      requiredApproverIds.every((approverId) => hasProductApprovalFrom(selection, approverId))
-    );
+    return isProductSelectionApproved(selection);
   });
+}
+
+function hasChangedProductRequirements() {
+  return state.changedProductRequirementRows.size > 0;
 }
 
 function isProductApprovalStarted() {
@@ -2160,6 +2465,42 @@ function countProductApprovals(selection) {
       .filter((approverId) => requiredApproverIds.includes(approverId)),
   );
   return approvedApproverIds.size;
+}
+
+function latestProductSelectionChangeTime(selection) {
+  return productApprovalVersions(selection).reduce((latest, version) => {
+    const timestamp = Date.parse(version?.changedAt || "");
+    return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest;
+  }, 0);
+}
+
+function productSelectionApprovalTime(selection) {
+  const timestamps = productApprovalRecords(selection)
+    .map((approval) => Date.parse(approval?.approvedAt || ""))
+    .filter(Number.isFinite);
+  const finalApprovedAt = Date.parse(selection?.approvedAt || "");
+  if (Number.isFinite(finalApprovedAt)) timestamps.push(finalApprovedAt);
+  return timestamps.length ? Math.min(...timestamps) : 0;
+}
+
+function reconcileProductChangeStateFromHistory() {
+  if (!isProductApprovalStarted() && !state.productWindchillTransferComplete) return;
+
+  const transferTime = Date.parse(state.productWindchillTransferredAt || "");
+  state.finalSelections.forEach((selection, rowNumber) => {
+    if (!selection || selection.choice === "excluded") return;
+
+    const changedAt = latestProductSelectionChangeTime(selection);
+    if (!changedAt) return;
+
+    const approvalTime = productSelectionApprovalTime(selection);
+    const changedAfterApproval = isProductApprovalStarted() && approvalTime > 0 && changedAt > approvalTime;
+    const changedAfterTransfer = Number.isFinite(transferTime) && changedAt > transferTime;
+    if (!changedAfterApproval && !changedAfterTransfer) return;
+
+    clearApproval(selection);
+    markProductRequirementChanged(rowNumber);
+  });
 }
 
 function hasPendingFinalProductAssessments() {
@@ -2264,8 +2605,8 @@ function closeProjectSelectionDialog() {
 function renderProjectSelection(projects) {
   const canDeleteProjects = currentUserHasRole("admin");
   els.projectSelectionMessage.textContent = projects.length
-    ? `${projects.length} ${projects.length === 1 ? "Projekt" : "Projekte"} verfügbar`
-    : "Es sind noch keine Projekte in der Datenbank gespeichert.";
+    ? projectAvailabilityText(projects.length)
+    : translateUiText("Es sind noch keine Projekte in der Datenbank gespeichert.");
 
   if (!projects.length) {
     els.projectSelectionBody.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(translateUiText("Keine Projekte vorhanden."))}</td></tr>`;
@@ -2286,10 +2627,10 @@ function renderProjectSelection(projects) {
           <td>${escapeHtml(formatProjectDate(project.updatedAt || project.createdAt))}</td>
           <td>
             <div class="project-row-actions">
-              <button type="button" data-project-action="open" data-project-id="${escapeHtml(project.id)}">Öffnen</button>
+              <button type="button" data-project-action="open" data-project-id="${escapeHtml(project.id)}">${escapeHtml(translateUiText("Öffnen"))}</button>
               ${
                 canDeleteProjects
-                  ? `<button type="button" class="danger-text-button" data-project-action="delete" data-project-id="${escapeHtml(project.id)}" data-project-name="${escapeHtml(projectName)}">Löschen</button>`
+                  ? `<button type="button" class="danger-text-button" data-project-action="delete" data-project-id="${escapeHtml(project.id)}" data-project-name="${escapeHtml(projectName)}">${escapeHtml(translateUiText("Löschen"))}</button>`
                   : ""
               }
             </div>
@@ -2298,6 +2639,10 @@ function renderProjectSelection(projects) {
       `;
     })
     .join("");
+}
+
+function projectAvailabilityText(count) {
+  return `${count} ${translateUiText(count === 1 ? "Projekt verfügbar" : "Projekte verfügbar")}`;
 }
 
 async function loadProjectFromServer(projectId) {
@@ -2309,13 +2654,13 @@ async function loadProjectFromServer(projectId) {
     const response = await fetch(endpoint);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      alert(data.error || "Projekt konnte nicht geladen werden.");
+      alert(data.error || translateUiText("Projekt konnte nicht geladen werden."));
       return;
     }
 
     loadProjectPayload(data.payload, `${data.project?.name || "Miele.DevPilot"}.mdp`, data.project?.id);
   } catch (error) {
-    alert(`Projekt konnte nicht geladen werden: ${error.message}`);
+    alert(`${translateUiText("Projekt konnte nicht geladen werden.")}: ${error.message}`);
   } finally {
     state.projectSavePaused = false;
   }
@@ -2341,7 +2686,7 @@ async function deleteProjectById(projectId, projectName = "") {
     const response = await fetch(getProjectEndpoint(projectId), { method: "DELETE" });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      alert(data.error || "Projekt konnte nicht gelöscht werden.");
+      alert(data.error || translateUiText("Projekt konnte nicht gelöscht werden."));
       return;
     }
 
@@ -2365,7 +2710,7 @@ async function fetchProjectList() {
     const response = await fetch(endpoint);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      alert(data.error || "Projektliste konnte nicht geladen werden.");
+      alert(data.error || translateUiText("Projektliste konnte nicht geladen werden."));
       return null;
     }
 
@@ -2398,7 +2743,7 @@ async function fetchProjectRevisions() {
     const response = await fetch(endpoint);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      alert(data.error || "Projekt-Historie konnte nicht geladen werden.");
+      alert(data.error || translateUiText("Projekt-Historie konnte nicht geladen werden."));
       return null;
     }
 
@@ -2411,8 +2756,8 @@ async function fetchProjectRevisions() {
 
 function renderProjectHistory(revisions) {
   els.projectHistoryMessage.textContent = revisions.length
-    ? `${revisions.length} ${revisions.length === 1 ? "Stand" : "Stände"} verfügbar`
-    : "Für dieses Projekt ist noch keine Historie vorhanden.";
+    ? revisionAvailabilityText(revisions.length)
+    : translateUiText("Für dieses Projekt ist noch keine Historie vorhanden.");
 
   if (!revisions.length) {
     els.projectHistoryBody.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(translateUiText("Keine Historie vorhanden."))}</td></tr>`;
@@ -2432,13 +2777,17 @@ function renderProjectHistory(revisions) {
           <td>${escapeHtml(revision.userName || "-")}</td>
           <td>
             <div class="project-row-actions">
-              <button type="button" data-revision-action="restore" data-revision-id="${escapeHtml(revision.id)}" ${isLatest ? "disabled" : ""}>Wiederherstellen</button>
+              <button type="button" data-revision-action="restore" data-revision-id="${escapeHtml(revision.id)}" ${isLatest ? "disabled" : ""}>${escapeHtml(translateUiText("Wiederherstellen"))}</button>
             </div>
           </td>
         </tr>
       `;
     })
     .join("");
+}
+
+function revisionAvailabilityText(count) {
+  return `${count} ${translateUiText(count === 1 ? "Stand verfügbar" : "Stände verfügbar")}`;
 }
 
 async function restoreProjectRevision(revisionId) {
@@ -2452,7 +2801,7 @@ async function restoreProjectRevision(revisionId) {
     const response = await fetch(endpoint, { method: "POST" });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      alert(data.error || "Projektstand konnte nicht wiederhergestellt werden.");
+      alert(data.error || translateUiText("Projektstand konnte nicht wiederhergestellt werden."));
       return;
     }
 
@@ -2470,12 +2819,12 @@ async function restoreProjectRevision(revisionId) {
 
 function formatRevisionAction(action) {
   const labels = {
-    created: "Angelegt",
-    autosave: "Automatisch gespeichert",
-    restored: "Wiederhergestellt",
+    created: translateUiText("Angelegt"),
+    autosave: translateUiText("Automatisch gespeichert"),
+    restored: translateUiText("Wiederhergestellt"),
   };
 
-  return labels[action] || action || "Automatisch gespeichert";
+  return translateUiText(labels[action] || action || "Automatisch gespeichert");
 }
 
 function setProjectRevisionAction(action) {
@@ -2534,7 +2883,7 @@ function clearOpenProject() {
   state.activeProcessStep = "product";
   state.activeSelectionRow = null;
   resetProjectApprovalState();
-  els.fileState.textContent = "Kein Projekt geöffnet";
+  els.fileState.textContent = projectStatusText("");
   renderWorkspaceState();
   renderProductApprovalPanel();
   renderProductApprovalState();
@@ -2655,7 +3004,7 @@ function resetProjectState({ projectName, projectDescription }) {
   state.projectRevisionAction = "";
   resetProjectApprovalState();
 
-  els.fileState.textContent = `${projectName} (Projekt)`;
+  els.fileState.textContent = projectStatusText(projectName);
   els.sheetSelect.innerHTML = "";
   els.sheetSelect.append(new Option(state.sheetName, state.sheetName));
   els.sheetSelect.value = state.sheetName;
@@ -3084,8 +3433,8 @@ function filteredProductApprovalRows(rows, resultByRow) {
     );
     if (statusFilter === "approved") return processState === "approved";
     if (statusFilter === "transferred") return processState === "transferred";
+    if (statusFilter === "changed") return processState === "changed";
     return processState === statusFilter;
-    return true;
   });
 }
 
@@ -3098,16 +3447,16 @@ function renderProductApprovalListCount(visibleCount, totalCount) {
 }
 
 function renderProductStatusBadge(status) {
-  return `<span class="status-badge ${escapeHtml(status.className)}" title="${escapeHtml(status.label)}">${escapeHtml(productStatusShortLabel(status))}</span>`;
+  return `<span class="status-badge ${escapeHtml(status.className)}" title="${escapeHtml(translateUiText(status.label))}">${escapeHtml(translateUiText(productStatusShortLabel(status)))}</span>`;
 }
 
 function productStatusShortLabel(status) {
-  if (status.className === "approved") return "Approved";
-  if (status.className === "critical") return "Critical";
-  if (status.className === "excluded") return "Excluded";
-  if (status.className === "updating") return "Updating";
-  if (status.className === "selected") return "Ready";
-  return "Pending";
+  if (status.className === "approved") return "Freigegeben";
+  if (status.className === "critical") return "Kritisch";
+  if (status.className === "excluded") return "Ausgeschlossen";
+  if (status.className === "updating") return "Aktualisiert...";
+  if (status.className === "selected") return "Bereit";
+  return "Ausstehend";
 }
 
 function productInitialScore(result) {
@@ -3188,8 +3537,9 @@ function productTechTypeSummary(requirement, selection) {
 
 function productRequirementProcessState(requirement, result, selection, isUpdatingFinalScore = false) {
   if (selection?.choice === "excluded") return "excluded";
-  if (state.productWindchillTransferComplete && isProductSelectionFullyApproved(selection)) return "transferred";
-  if (isProductSelectionFullyApproved(selection)) return "approved";
+  if (state.changedProductRequirementRows.has(Number(requirement?.rowNumber))) return "changed";
+  if (state.productWindchillTransferComplete && isProductSelectionApproved(selection)) return "transferred";
+  if (isProductSelectionApproved(selection)) return "approved";
   if (isProductApprovalStarted()) return "in-approval";
   if (!state.analysisComplete || !result) return "analysis";
 
@@ -3202,10 +3552,11 @@ function renderProductProcessBadge(status) {
   const labels = {
     analysis: "Analyse",
     editing: "Bearbeitung",
-    ready: "Bereit für Approval",
-    "in-approval": "In Approval",
-    approved: "Approved",
-    transferred: "Transfered",
+    ready: "Bereit für Freigabe",
+    "in-approval": "In Freigabe",
+    approved: "Freigegeben",
+    transferred: "Transferiert",
+    changed: "Geändert",
     excluded: "Ausgeschlossen",
   };
   const className =
@@ -3213,12 +3564,14 @@ function renderProductProcessBadge(status) {
       ? "approved"
       : status === "excluded"
         ? "excluded"
+        : status === "changed"
+          ? "critical"
         : status === "editing"
           ? "selected"
           : status === "in-approval"
             ? "pending"
             : "updating";
-  return `<span class="status-badge ${className}">${escapeHtml(labels[status] || labels.analysis)}</span>`;
+  return `<span class="status-badge ${className}">${escapeHtml(translateUiText(labels[status] || labels.analysis))}</span>`;
 }
 
 function renderProductProcessCell(status, selection) {
@@ -3231,9 +3584,9 @@ function renderProductProcessCell(status, selection) {
 }
 
 function renderProductFindingSummary(issues, openComments) {
-  const issueText = issues.length ? displayIssueField(issues[0], "explanation") : "No major findings";
+  const issueText = issues.length ? displayIssueField(issues[0], "explanation") : translateUiText("Keine wesentlichen Hinweise");
   const commentBadge = openComments
-    ? `<span class="open-comments-badge">${openComments} open comment${openComments === 1 ? "" : "s"}</span>`
+    ? `<span class="open-comments-badge">${openComments} ${escapeHtml(translateUiText(openComments === 1 ? "offener Kommentar" : "offene Kommentare"))}</span>`
     : "";
   return `
     <span class="finding-summary" title="${escapeHtml(issueText)}">${escapeHtml(issueText)}</span>
@@ -3371,11 +3724,11 @@ function renderProductApprovalProgress(selection) {
   const currentApproverApproved = currentApproverId && hasProductApprovalFrom(selection, currentApproverId);
   const fullyApproved = approvedCount >= requiredCount && openComments === 0;
   const label = openComments
-    ? `${approvedCount}/${requiredCount} Freigaben · ${openComments} offen`
-    : `${approvedCount}/${requiredCount} Freigaben`;
+    ? `${approvedCount}/${requiredCount} ${translateUiText("Freigaben")} · ${openComments} ${translateUiText("offen")}`
+    : `${approvedCount}/${requiredCount} ${translateUiText("Freigaben")}`;
   const title = currentApproverApproved
-    ? "Deine Freigabe wurde fuer dieses Requirement erfasst."
-    : "Noch keine Freigabe von deinem Approver-Benutzer erfasst.";
+    ? translateUiText("Deine Freigabe wurde fuer dieses Requirement erfasst.")
+    : translateUiText("Noch keine Freigabe von deinem Approver-Benutzer erfasst.");
   const className = fullyApproved ? "is-complete" : currentApproverApproved ? "is-own-approved" : "is-pending";
   const ownApproval = currentApproverApproved
     ? `<span class="approval-own-marker">${escapeHtml(translateUiText("Meine Freigabe erfasst"))}</span>`
@@ -3512,7 +3865,7 @@ function renderProductApprovalPanel() {
   const requiredApproverIds = getRequiredProductApproverIds();
   const approvedCount = countProductApprovals(selection);
   const versions = productApprovalVersions(selection);
-  const statusLabel = fullyApproved ? "Final approved" : "Ready for Approval";
+  const statusLabel = fullyApproved ? translateUiText("Final freigegeben") : translateUiText("Bereit für Freigabe");
   const canEdit = canReviseProductApprovalRequirement(rowNumber);
   const canApprove = canApproveProductRequirement(rowNumber);
   const canDisapprove = canDisapproveProductRequirement(rowNumber);
@@ -3600,14 +3953,14 @@ function renderProductReviewPanel() {
   els.excludeRequirementButton.disabled = !canEditProduct;
   els.prImproveButton.disabled = !canEditProduct;
   els.approveRequirementButton.hidden = false;
-  els.approveRequirementButton.textContent = "PR freigeben";
+  els.approveRequirementButton.textContent = translateUiText("PR freigeben");
   els.approveRequirementButton.disabled =
     !canEditProduct ||
     isUpdatingFinalScore ||
     !selection?.text?.trim() ||
     !selectedTechTypesForRequirement(item, selection).length;
   els.selectionDeferButton.hidden = false;
-  els.selectionDeferButton.textContent = "Später entscheiden";
+  els.selectionDeferButton.textContent = translateUiText("Später entscheiden");
   const initialScore = productInitialScore(result);
   els.selectionIssues.innerHTML = result
     ? `
@@ -3666,7 +4019,7 @@ function productFinalizationStatusLabel(status) {
     EXCLUDED: "Ausgeschlossen",
     READY_FOR_APPROVAL: "Für Approval vorbereitet",
   };
-  return labels[status] || status;
+  return translateUiText(labels[status] || status);
 }
 
 function productFinalizationStatusClass(status) {
@@ -3683,12 +4036,12 @@ function productFinalScoreStatusClass(status) {
 }
 
 function productFinalScoreHint(status) {
-  if (status === "PASSED") return "Score erfüllt die Voraussetzung für den späteren Approval-Prozess.";
-  if (status === "FAILED") return "Nacharbeit erforderlich.";
-  if (status === "STALE") return "Score neu berechnen erforderlich.";
-  if (status === "CALCULATING") return "Score wird berechnet.";
-  if (status === "EXCLUDED") return "Ausgeschlossene Requirements benötigen keinen Score.";
-  return "Score neu berechnen erforderlich.";
+  if (status === "PASSED") return translateUiText("Score erfüllt die Voraussetzung für den späteren Approval-Prozess.");
+  if (status === "FAILED") return translateUiText("Nacharbeit erforderlich.");
+  if (status === "STALE") return translateUiText("Score neu berechnen erforderlich.");
+  if (status === "CALCULATING") return translateUiText("Score wird berechnet.");
+  if (status === "EXCLUDED") return translateUiText("Ausgeschlossene Requirements benötigen keinen Score.");
+  return translateUiText("Score neu berechnen erforderlich.");
 }
 
 function renderProductReviewHistory(selection) {
@@ -3794,7 +4147,7 @@ function markProductReviewFinalTextStale() {
   updateProjectActions();
 }
 
-function saveProductReviewFinalText() {
+async function saveProductReviewFinalText() {
   const selection = ensureActiveProductSelection("manual");
   if (!selection || !canModifyProductRequirements()) return;
 
@@ -3803,13 +4156,21 @@ function saveProductReviewFinalText() {
     alert("Finales Product Requirement darf nicht leer sein.");
     return;
   }
+  if (text === selection.text) return;
+
+  const changeComment = await requestApprovedProductRequirementChangeComment(
+    state.activeSelectionRow,
+    "Manuelle Änderung",
+  );
+  if (changeComment === null) return;
 
   selection.text = text;
   selection.choice = selection.choice || "manual";
   selection.selectedSource = selection.selectedSource || "MANUAL_EDIT";
   selection.needsFinalAssessment = true;
   selection.finalizedAt = "";
-  addProductReviewHistory(selection, "Manuelle Änderung", text);
+  addProductReviewHistory(selection, productChangeHistoryReason("Manuelle Änderung", changeComment), text);
+  invalidateProductRequirementAfterChange(state.activeSelectionRow);
   setProjectRevisionAction("Finales PR gespeichert");
   renderTable();
   renderProductReviewPanel();
@@ -3909,6 +4270,96 @@ function addProductReviewHistory(selection, reason, text = selection?.text || ""
   });
 }
 
+function productSelectionHasApproval(selection) {
+  return Boolean(selection?.approvedAt) || productApprovalRecords(selection).some((approval) => approval?.approvedAt);
+}
+
+async function requestApprovedProductRequirementChangeComment(rowNumber, changeType = "Änderung") {
+  const selection = state.finalSelections.get(Number(rowNumber));
+  if (!productSelectionHasApproval(selection)) return "";
+
+  const commentText = await openChangeRequestDialog(changeType);
+  const normalizedComment = String(commentText || "").trim();
+  if (!normalizedComment) {
+    return null;
+  }
+
+  addProductChangeRequestComment(selection, normalizedComment, changeType);
+  return normalizedComment;
+}
+
+function openChangeRequestDialog(changeType = "Änderung") {
+  return new Promise((resolve) => {
+    if (state.changeRequestDialogResolve) {
+      state.changeRequestDialogResolve(null);
+    }
+
+    state.changeRequestDialogResolve = resolve;
+    els.changeRequestTitle.textContent = translateUiText("Änderung am freigegebenen Requirement");
+    els.changeRequestDescription.textContent = translateUiText("Bitte dokumentiere, warum das bereits freigegebene Requirement geändert wird.");
+    els.changeRequestComment.value = changeType ? `Change Request - ${translateUiText(changeType)}` : "Change Request";
+    els.changeRequestMessage.textContent = "";
+    els.changeRequestOverlay.hidden = false;
+    updateChangeRequestDialogState();
+    window.setTimeout(() => {
+      els.changeRequestComment.focus();
+      els.changeRequestComment.select();
+    }, 0);
+  });
+}
+
+function closeChangeRequestDialog(value) {
+  if (els.changeRequestOverlay) {
+    els.changeRequestOverlay.hidden = true;
+  }
+  const resolve = state.changeRequestDialogResolve;
+  state.changeRequestDialogResolve = null;
+  if (resolve) resolve(value);
+}
+
+function updateChangeRequestDialogState() {
+  if (!els.changeRequestConfirmButton) return;
+
+  const hasComment = Boolean(els.changeRequestComment.value.trim());
+  els.changeRequestConfirmButton.disabled = !hasComment;
+  if (hasComment) {
+    els.changeRequestMessage.textContent = "";
+  }
+}
+
+function confirmChangeRequestDialog() {
+  const comment = els.changeRequestComment.value.trim();
+  if (!comment) {
+    els.changeRequestMessage.textContent = translateUiText("Änderungen an freigegebenen Requirements benötigen einen Kommentar.");
+    updateChangeRequestDialogState();
+    return;
+  }
+
+  closeChangeRequestDialog(comment);
+}
+
+function addProductChangeRequestComment(selection, text, changeType = "Änderung") {
+  if (!selection || !text) return;
+
+  selection.comments = productApprovalComments(selection);
+  selection.comments.push({
+    id: crypto.randomUUID(),
+    type: "change-request",
+    changeType,
+    text,
+    authorId: state.currentUser?.id || "",
+    authorName: currentApprovalUserName(),
+    createdAt: new Date().toISOString(),
+    resolved: false,
+    replies: [],
+  });
+}
+
+function productChangeHistoryReason(reason, changeComment) {
+  const normalizedComment = String(changeComment || "").trim();
+  return normalizedComment ? `${reason}: ${normalizedComment}` : reason;
+}
+
 function handleProductReviewTechTypeFilterChange(event) {
   if (event.target === els.productReviewTechTypeSearch) {
     state.productReviewTechTypeSearch = event.target.value || "";
@@ -3942,7 +4393,7 @@ function clearTechTypesForActiveRequirement() {
   });
   syncTechTypeGroupCheckboxes();
   renderTechTypeSummary(0);
-  persistActiveRequirementTechTypes();
+  void persistActiveRequirementTechTypes();
 }
 
 function resetTechTypesForActiveRequirement() {
@@ -3954,12 +4405,13 @@ function resetTechTypesForActiveRequirement() {
   });
   syncTechTypeGroupCheckboxes();
   renderTechTypeSummary(selected.size);
-  persistActiveRequirementTechTypes();
+  void persistActiveRequirementTechTypes();
 }
 
 function canReviseProductApprovalRequirement(rowNumber = state.activeSelectionRow) {
-  if (!isProductApprovalStarted() || state.productWindchillTransferComplete) return false;
+  if (!isProductApprovalStarted()) return false;
   if (!state.finalSelections.has(Number(rowNumber))) return false;
+  if (state.productWindchillTransferComplete) return canEditProductRequirements();
   return canEditProductRequirements() || Boolean(currentProductApproverSlotId());
 }
 
@@ -3979,12 +4431,13 @@ async function savePendingProductApprovalTextChange() {
   }
   if (nextText === selection.text) return { ok: true, changed: false };
 
-  await applyProductApprovalTextChange(rowNumber, nextText, {
+  const updatedSelection = await applyProductApprovalTextChange(rowNumber, nextText, {
     choice: "manual",
     selectedSource: "MANUAL_EDIT",
     historyReason: "Approval-Änderung",
     revisionAction: "PR-Text im Approval geaendert",
   });
+  if (!updatedSelection) return { ok: false, changed: false };
   return { ok: true, changed: true };
 }
 
@@ -3993,13 +4446,23 @@ async function applyProductApprovalTextChange(rowNumber, nextText, options = {})
   const selection = state.finalSelections.get(Number(rowNumber));
   if (!item || !selection) return null;
 
+  const changeComment = await requestApprovedProductRequirementChangeComment(
+    rowNumber,
+    options.historyReason || "Approval-Änderung",
+  );
+  if (changeComment === null) return null;
+
   selection.text = nextText;
   selection.choice = options.choice || selection.choice || "manual";
   selection.selectedSource = options.selectedSource || selection.selectedSource || "MANUAL_EDIT";
   selection.needsFinalAssessment = true;
   selection.finalizedAt = "";
-  clearApproval(selection);
-  addProductReviewHistory(selection, options.historyReason || "Approval-Änderung", nextText);
+  addProductReviewHistory(
+    selection,
+    productChangeHistoryReason(options.historyReason || "Approval-Änderung", changeComment),
+    nextText,
+  );
+  invalidateProductRequirementAfterChange(rowNumber);
   setProjectRevisionAction(projectRevisionActionFor(options.revisionAction || "PR im Approval geaendert", item, "PR"));
   renderTable();
   renderProductApprovalPanel();
@@ -4200,6 +4663,7 @@ function renderProductApprovalComments(selection) {
           <strong>${escapeHtml(comment.authorName || "Approver")}</strong>
           <small>${escapeHtml(new Date(comment.createdAt || Date.now()).toLocaleString())}</small>
         </div>
+        <span class="approver-chip">${escapeHtml(translateUiText(productApprovalCommentTypeLabel(comment)))}</span>
         <p>${escapeHtml(comment.text || "")}</p>
         ${(Array.isArray(comment.replies) ? comment.replies : [])
           .map((reply) => `
@@ -4210,17 +4674,27 @@ function renderProductApprovalComments(selection) {
             </div>
           `)
           .join("")}
-        ${comment.resolved ? `<span class="approver-chip">${escapeHtml(translateUiText("Gelöst"))}</span>` : ""}
-        ${canEditProductRequirements() && !comment.resolved ? `
-          <textarea data-comment-reply-text="${escapeHtml(comment.id)}" rows="2" placeholder="Antwort des Owners"></textarea>
+        ${isActionableProductApprovalComment(comment) && comment.resolved ? `<span class="approver-chip">${escapeHtml(translateUiText("Gelöst"))}</span>` : ""}
+        ${isActionableProductApprovalComment(comment) && canEditProductRequirements() && !comment.resolved ? `
+          <textarea data-comment-reply-text="${escapeHtml(comment.id)}" rows="2" placeholder="${escapeHtml(translateUiText("Antwort des Owners"))}"></textarea>
           <button type="button" data-comment-reply="${escapeHtml(comment.id)}">${escapeHtml(translateUiText("Antworten"))}</button>
         ` : ""}
-        ${canResolveProductApprovalComment(comment) && !comment.resolved ? `
+        ${isActionableProductApprovalComment(comment) && canResolveProductApprovalComment(comment) && !comment.resolved ? `
           <button type="button" data-comment-resolve="${escapeHtml(comment.id)}">${escapeHtml(translateUiText("Kommentar lösen"))}</button>
         ` : ""}
       </article>
     `)
     .join("");
+}
+
+function productApprovalCommentTypeLabel(comment) {
+  if (comment?.type === "change-request") return "Change Request";
+  if (comment?.type === "disapproval") return "Ablehnung";
+  return "Kommentar";
+}
+
+function isActionableProductApprovalComment(comment) {
+  return comment?.type === "disapproval";
 }
 
 function canResolveProductApprovalComment(comment) {
@@ -4240,14 +4714,14 @@ function renderProductApprovalApprovals(selection) {
           const approver = productApprovalApproverById(approverId);
           const approval = approvals.find((item) => String(item.userId || "") === String(approverId));
           const hasApproved = Boolean(approval?.approvedAt);
-          const label = hasApproved ? "Approved" : "Pending";
+          const label = translateUiText(hasApproved ? "Freigegeben" : "Ausstehend");
           return `
             <article class="approval-status-item">
               <div>
                 <strong>${escapeHtml(approver?.name || approver?.email || approverId)}</strong>
-                <small>${hasApproved ? escapeHtml(new Date(approval.approvedAt).toLocaleString()) : "Awaiting decision"}</small>
+                <small>${hasApproved ? escapeHtml(new Date(approval.approvedAt).toLocaleString()) : escapeHtml(translateUiText("Entscheidung ausstehend"))}</small>
               </div>
-              <span class="status-badge ${hasApproved ? "approved" : "pending"}">${label}</span>
+              <span class="status-badge ${hasApproved ? "approved" : "pending"}">${escapeHtml(label)}</span>
             </article>
           `;
         })
@@ -4351,6 +4825,14 @@ function selectedTechTypesForRequirement(requirement, selection) {
   return selected.filter((item) => available.has(item));
 }
 
+function arraysHaveSameValues(first = [], second = []) {
+  if (first.length !== second.length) return false;
+
+  const normalizedFirst = [...first].map(String).sort();
+  const normalizedSecond = [...second].map(String).sort();
+  return normalizedFirst.every((value, index) => value === normalizedSecond[index]);
+}
+
 function currentTechTypeSelection() {
   if (!state.techTypes.length) return [];
 
@@ -4383,7 +4865,7 @@ function handleTechTypeSelectionChange(event) {
 
   syncTechTypeGroupCheckboxes();
   renderTechTypeSummary();
-  persistActiveRequirementTechTypes();
+  void persistActiveRequirementTechTypes();
 }
 
 function handleTechTypeSelectionClick(event) {
@@ -4427,10 +4909,10 @@ function selectAllTechTypesForActiveRequirement() {
   });
   syncTechTypeGroupCheckboxes();
   renderTechTypeSummary(state.techTypes.length);
-  persistActiveRequirementTechTypes();
+  void persistActiveRequirementTechTypes();
 }
 
-function persistActiveRequirementTechTypes() {
+async function persistActiveRequirementTechTypes() {
   if (!canModifyProductRequirements()) return;
 
   const rowNumber = state.activeSelectionRow;
@@ -4440,31 +4922,33 @@ function persistActiveRequirementTechTypes() {
   if (!item) return;
 
   const techTypes = currentTechTypeSelection();
-  item.techTypes = techTypes;
   const selection = state.finalSelections.get(Number(rowNumber));
   if (!selection) return;
+  const previousTechTypes = selectedTechTypesForRequirement(item, selection);
+  if (arraysHaveSameValues(previousTechTypes, techTypes)) return;
 
+  const changeComment = await requestApprovedProductRequirementChangeComment(rowNumber, "TechType-Änderung");
+  if (changeComment === null) {
+    renderProductApprovalPanel();
+    return;
+  }
+
+  item.techTypes = techTypes;
   selection.techTypes = techTypes;
   selection.finalizedAt = "";
-  addProductReviewHistory(selection, "TechType-Änderung", `${techTypes.length} TechTypes ausgewählt`);
-  clearApproval(selection);
-  if (state.productWindchillTransferComplete) {
-    markProductRequirementChanged(rowNumber);
-  } else {
-    state.softwareRequirements = [];
-    state.softwareSelections = new Map();
-    state.e2eTests = [];
-    state.e2eSelections = new Map();
-    resetProductWindchillTransfer();
-    resetSoftwareWindchillTransfer();
-  }
+  addProductReviewHistory(
+    selection,
+    productChangeHistoryReason("TechType-Änderung", changeComment),
+    `${techTypes.length} TechTypes ausgewählt`,
+  );
+  invalidateProductRequirementAfterChange(rowNumber);
   updateExportAvailability();
   setProjectRevisionAction(projectRevisionActionFor("TechTypes fuer PR geaendert", item, "PR"));
   renderProductApprovalPanel();
   updateProjectActions();
 }
 
-function excludeRequirement() {
+async function excludeRequirement() {
   if (!canModifyProductRequirements()) {
     alert(productApprovalLockedMessage());
     return;
@@ -4479,6 +4963,8 @@ function excludeRequirement() {
     alert("Ausgeschlossene Requirements benötigen einen Ausschlussgrund.");
     return;
   }
+  const changeComment = await requestApprovedProductRequirementChangeComment(rowNumber, "Requirement ausgeschlossen");
+  if (changeComment === null) return;
   state.finalSelections.set(Number(rowNumber), {
     choice: "excluded",
     selectedSource: "EXCLUDED",
@@ -4495,20 +4981,12 @@ function excludeRequirement() {
         text: exclusionReason.trim(),
         changedAt: new Date().toISOString(),
         changedBy: currentApprovalUserName(),
-        reason: "Requirement ausgeschlossen",
+        reason: productChangeHistoryReason("Requirement ausgeschlossen", changeComment),
       },
     ],
+    comments: state.finalSelections.get(Number(rowNumber))?.comments || [],
   });
-  if (state.productWindchillTransferComplete) {
-    markProductRequirementChanged(rowNumber);
-  } else {
-    state.softwareRequirements = [];
-    state.softwareSelections = new Map();
-    state.e2eTests = [];
-    state.e2eSelections = new Map();
-    resetProductWindchillTransfer();
-    resetSoftwareWindchillTransfer();
-  }
+  invalidateProductRequirementAfterChange(rowNumber);
   closeSelectionDialog();
   renderTable();
   renderProductApprovalPanel();
@@ -4579,6 +5057,11 @@ async function improveProductRequirementWithAi() {
     const improved = data.result || data.results?.[0];
     if (!improved) return;
 
+    const improvedText = improved.rewrittenRequirement || currentText;
+    const selection = ensureActiveProductSelection("ai");
+    const changeComment = await requestApprovedProductRequirementChangeComment(rowNumber, "AI-unterstützte Änderung");
+    if (changeComment === null) return;
+
     upsertResult({
       ...improved,
       rowNumber: Number(rowNumber),
@@ -4591,15 +5074,19 @@ async function improveProductRequirementWithAi() {
       ? String(previousVisibleScore)
       : String(displayProductScore(improved, state.finalSelections.get(Number(rowNumber))) ?? "-");
     els.selectionIssues.innerHTML = renderIssues(displayProductIssues(improved, state.finalSelections.get(Number(rowNumber))));
-    const selection = ensureActiveProductSelection("ai");
     if (selection) {
       selection.choice = "ai";
       selection.selectedSource = "AI_ASSISTED_EDIT";
-      selection.text = improved.rewrittenRequirement || currentText;
+      selection.text = improvedText;
       selection.previousScore = previousVisibleScore;
       selection.needsFinalAssessment = true;
       selection.finalizedAt = "";
-      addProductReviewHistory(selection, "AI-unterstützte Änderung", selection.text);
+      addProductReviewHistory(
+        selection,
+        productChangeHistoryReason("AI-unterstützte Änderung", changeComment),
+        selection.text,
+      );
+      invalidateProductRequirementAfterChange(rowNumber);
     }
   els.selectAiButton.disabled = false;
   els.prImprovementInstruction.value = "";
@@ -4641,6 +5128,14 @@ async function selectFinalText(choice) {
     return;
   }
 
+  const previousSelection = state.finalSelections.get(Number(rowNumber));
+  const changeComment = await requestApprovedProductRequirementChangeComment(
+    rowNumber,
+    choice === "ai" ? "AI-Vorschlag verwendet" : "Original verwendet",
+  );
+  if (changeComment === null) return;
+  const existingComments = previousSelection ? productApprovalComments(previousSelection) : [];
+
   state.finalSelections.set(Number(rowNumber), {
     choice,
     selectedSource: choice === "ai" ? "AI_PROPOSAL" : "ORIGINAL",
@@ -4656,26 +5151,21 @@ async function selectFinalText(choice) {
     approvedAt: "",
     approvedBy: "",
     approvals: [],
+    comments: existingComments,
     versions: [
       {
         version: 1,
         text,
         changedAt: new Date().toISOString(),
         changedBy: currentApprovalUserName(),
-        reason: choice === "ai" ? "AI-Vorschlag verwendet" : "Original verwendet",
+        reason: productChangeHistoryReason(
+          choice === "ai" ? "AI-Vorschlag verwendet" : "Original verwendet",
+          changeComment,
+        ),
       },
     ],
   });
-  if (state.productWindchillTransferComplete) {
-    markProductRequirementChanged(rowNumber);
-  } else {
-    state.softwareRequirements = [];
-    state.softwareSelections = new Map();
-    state.e2eTests = [];
-    state.e2eSelections = new Map();
-    resetProductWindchillTransfer();
-    resetSoftwareWindchillTransfer();
-  }
+  invalidateProductRequirementAfterChange(rowNumber, { clearApproval: false });
 
   if (choice === "ai") {
     const previousLabel = els.selectAiButton.textContent;
@@ -4724,8 +5214,14 @@ function productApprovalButtonText(rowNumber) {
   const selection = state.finalSelections.get(Number(rowNumber));
   const approverSlotId = currentProductApproverSlotId();
   if (selection && approverSlotId && hasProductApprovalFrom(selection, approverSlotId)) return "PR-Freigabe erfasst";
-  if (selection && isProductSelectionFullyApproved(selection)) return "PR freigegeben";
+  if (selection && isProductSelectionApproved(selection)) return "PR freigegeben";
   return "PR freigeben";
+}
+
+function isProductSelectionApproved(selection) {
+  if (!selection || countOpenDisapprovalComments(selection) > 0) return false;
+  if (isProductSelectionFullyApproved(selection)) return true;
+  return Boolean(selection.approvedAt);
 }
 
 function isProductSelectionFullyApproved(selection) {
@@ -4752,6 +5248,9 @@ function approveProductRequirement(rowNumber = state.activeSelectionRow) {
     approvedAt: new Date().toISOString(),
   });
   updateFinalProductApproval(selection);
+  if (isProductSelectionApproved(selection)) {
+    state.changedProductRequirementRows.delete(Number(rowNumber));
+  }
   renderTable();
   renderMetrics();
   renderProductApprovalPanel();
@@ -4843,7 +5342,7 @@ function decisionStatus(selection, score, isUpdatingFinalScore = false) {
       return {
         className: "selected",
         icon: "&#10003;",
-        label: "Ready for Approval",
+        label: "Bereit für Freigabe",
       };
     }
 
@@ -5235,32 +5734,32 @@ function renderProductQualityGate() {
       : "PR-Bearbeitung ist nach der Analyse verfügbar.";
 
   if (gate.status === "PASSED") {
-    els.productQualityGateTitle.textContent = "PR Bearbeitung abgeschlossen";
-    els.productQualityGateSummary.textContent = `${gate.readyRequirements}/${gate.totalRequirements - gate.excludedRequirements} Requirements ready with score >= ${PRODUCT_STEP_MIN_SCORE}`;
-    els.productQualityGateDetail.textContent = "Approval-Prozess kann gestartet werden.";
+    els.productQualityGateTitle.textContent = translateUiText("PR Bearbeitung abgeschlossen");
+    els.productQualityGateSummary.textContent = `${gate.readyRequirements}/${gate.totalRequirements - gate.excludedRequirements} ${translateUiText("Requirements bereit mit Score >=")} ${PRODUCT_STEP_MIN_SCORE}`;
+    els.productQualityGateDetail.textContent = translateUiText("Approval-Prozess kann gestartet werden.");
     els.productQualityGateCard.title = `${els.productQualityGateSummary.textContent} ${els.productQualityGateDetail.textContent}`;
-    els.productEditButton.textContent = "PR öffnen";
+    els.productEditButton.textContent = translateUiText("PR öffnen");
     return;
   }
 
   if (gate.status === "BLOCKED") {
-    els.productQualityGateTitle.textContent = "PR Bearbeitung offen";
-    els.productQualityGateSummary.textContent = `${gate.readyRequirements}/${gate.totalRequirements - gate.excludedRequirements} Requirements ready for approval`;
-    els.productQualityGateDetail.textContent = `${gate.failedScoreRequirements} with rework, ${gate.missingTechTypeRequirements} without TechTypes. Approval process cannot be started until all non-excluded Requirements have score >= ${PRODUCT_STEP_MIN_SCORE}.`;
+    els.productQualityGateTitle.textContent = translateUiText("PR Bearbeitung offen");
+    els.productQualityGateSummary.textContent = `${gate.readyRequirements}/${gate.totalRequirements - gate.excludedRequirements} ${translateUiText("Requirements bereit für Freigabe")}`;
+    els.productQualityGateDetail.textContent = `${gate.failedScoreRequirements} ${translateUiText("mit Nacharbeit")}, ${gate.missingTechTypeRequirements} ${translateUiText("ohne TechTypes")}. ${translateUiText("Approval-Prozess kann erst gestartet werden, wenn alle nicht ausgeschlossenen Requirements Score >= 85 haben.")}`;
     els.productQualityGateCard.title = `${els.productQualityGateSummary.textContent} ${els.productQualityGateDetail.textContent}`;
-    els.productEditButton.textContent = "PR bearbeiten";
+    els.productEditButton.textContent = translateUiText("PR bearbeiten");
     return;
   }
 
-  els.productQualityGateTitle.textContent = state.analysisComplete ? "PR Bearbeitung erforderlich" : "PR Bearbeitung wartet";
+  els.productQualityGateTitle.textContent = translateUiText(state.analysisComplete ? "PR Bearbeitung erforderlich" : "PR Bearbeitung wartet");
   els.productQualityGateSummary.textContent = state.analysisComplete
-    ? "Final scores are missing or stale for one or more Requirements"
-    : "Analyse zuerst ausführen.";
+    ? translateUiText("Finale Scores fehlen oder sind für ein oder mehrere Requirements veraltet.")
+    : translateUiText("Analyse zuerst ausführen.");
   els.productQualityGateDetail.textContent = state.analysisComplete
-    ? `${gate.missingScoreRequirements} missing score, ${gate.staleScoreRequirements} stale or calculating.`
-    : "Nach der Analyse können finale Requirements, Scores und TechTypes bearbeitet werden.";
+    ? `${gate.missingScoreRequirements} ${translateUiText("fehlende Scores")}, ${gate.staleScoreRequirements} ${translateUiText("veraltet oder in Berechnung")}.`
+    : translateUiText("Nach der Analyse können finale Requirements, Scores und TechTypes bearbeitet werden.");
   els.productQualityGateCard.title = `${els.productQualityGateSummary.textContent} ${els.productQualityGateDetail.textContent}`;
-  els.productEditButton.textContent = "PR bearbeiten";
+  els.productEditButton.textContent = translateUiText("PR bearbeiten");
 }
 
 function renderSoftwarePage() {
@@ -7134,13 +7633,39 @@ function isCriticalScore(score) {
 
 function markProductRequirementChanged(rowNumber) {
   const normalizedRowNumber = Number(rowNumber);
-  if (!Number.isFinite(normalizedRowNumber) || !state.productWindchillTransferComplete) return;
+  if (!Number.isFinite(normalizedRowNumber)) return;
 
   state.changedProductRequirementRows.add(normalizedRowNumber);
   state.productTransferChangeRows.add(normalizedRowNumber);
   clearReDerivedE2eFlagsForProductRow(normalizedRowNumber);
   state.productWindchillTransferComplete = false;
+  state.productWindchillTransferredAt = "";
   updateWorkflowState();
+}
+
+function invalidateProductRequirementAfterChange(rowNumber, options = {}) {
+  const normalizedRowNumber = Number(rowNumber);
+  if (!Number.isFinite(normalizedRowNumber)) return;
+
+  const selection = state.finalSelections.get(normalizedRowNumber);
+  if (options.clearApproval !== false) {
+    clearApproval(selection);
+  }
+
+  if (isProductApprovalStarted() || state.productWindchillTransferComplete || state.productTransferChangeRows.size) {
+    markProductRequirementChanged(normalizedRowNumber);
+  }
+
+  if (!state.productWindchillTransferComplete && !state.productTransferChangeRows.size) {
+    state.softwareRequirements = [];
+    state.softwareSelections = new Map();
+    state.e2eTests = [];
+    state.e2eSelections = new Map();
+    resetProductWindchillTransfer();
+    resetSoftwareWindchillTransfer();
+  } else {
+    resetSoftwareWindchillTransfer();
+  }
 }
 
 function markSoftwareRequirementChanged(softwareId) {
@@ -7270,25 +7795,49 @@ function renderProductApprovalState() {
   const readyForApproval = isProductReadyForApproval();
   const qualityGate = getProductQualityGate();
   const started = isProductApprovalStarted();
-  const approved = started && hasApprovedFinalProductSelections();
+  const approved = hasApprovedFinalProductSelections();
+  const changedCount = state.changedProductRequirementRows.size;
+  const canStartOrOpenApproval = !approved && readyForApproval;
   els.productApprovalBar.hidden = !hasProject();
   if (els.productApprovalBar.hidden) return;
 
   els.productApprovalBar.classList.toggle("is-started", started && !approved);
   els.productApprovalBar.classList.toggle("is-complete", approved);
-  els.productApprovalBar.classList.toggle("is-blocked", !started && qualityGate.status !== "PASSED");
+  els.productApprovalBar.classList.toggle("is-blocked", !approved && !started && qualityGate.status !== "PASSED");
   els.productApprovalTitle.textContent = translateUiText(
-    approved ? "PR-Approval abgeschlossen" : started ? "PR-Approval läuft" : "PR-Approval wartet",
+    approved
+      ? "PR-Approval abgeschlossen"
+      : changedCount
+        ? "PR-Approval erneut erforderlich"
+        : started
+          ? "PR-Approval läuft"
+          : "PR-Approval wartet",
   );
-  els.productApprovalText.textContent = started ? productApprovalProgressText() : productApprovalStartHint(qualityGate);
+  els.productApprovalText.textContent = approved
+    ? translateUiText("Alle Product Requirements sind freigegeben. Ein neues Approval ist erst nach einer PR-Änderung möglich.")
+    : changedCount
+      ? changedProductApprovalText(changedCount)
+      : started
+        ? productApprovalProgressText()
+        : translateUiText(productApprovalStartHint(qualityGate));
   els.productApprovalBar.title = els.productApprovalText.textContent;
   els.startProductApprovalButton.hidden = false;
-  els.startProductApprovalButton.textContent = translateUiText(started ? "Approval öffnen" : "Approval-Prozess starten");
-  els.startProductApprovalButton.disabled = !state.requirements.length || !canEditProductRequirements() || (!started && !readyForApproval);
-  els.startProductApprovalButton.title = els.startProductApprovalButton.disabled && !started
-    ? productApprovalStartBlockReason(qualityGate)
-    : "";
+  els.startProductApprovalButton.textContent = translateUiText(
+    approved ? "Approval abgeschlossen" : started ? "Approval öffnen" : "Approval-Prozess starten",
+  );
+  els.startProductApprovalButton.disabled =
+    approved || !state.requirements.length || !canEditProductRequirements() || (!started && !canStartOrOpenApproval);
+  els.startProductApprovalButton.title = approved
+    ? translateUiText("Ein neues Approval ist erst nach einer Änderung an einem Product Requirement möglich.")
+    : els.startProductApprovalButton.disabled && !started
+      ? translateUiText(productApprovalStartBlockReason(qualityGate))
+      : "";
   renderProductApproverSummary(started);
+}
+
+function changedProductApprovalText(changedCount) {
+  if (changedCount === 1) return translateUiText("1 geänderte PR muss erneut freigegeben werden.");
+  return `${changedCount} ${translateUiText("geänderte PR müssen erneut freigegeben werden.")}`;
 }
 
 function productApprovalStartHint(qualityGate = getProductQualityGate()) {
@@ -7296,9 +7845,9 @@ function productApprovalStartHint(qualityGate = getProductQualityGate()) {
     return "Alle Product Requirements erfüllen das Gate. Der Approval-Prozess kann gestartet werden.";
   }
   if (qualityGate.status === "BLOCKED") {
-    return "Approval process cannot be started until all non-excluded Requirements have score >= 85.";
+    return "Approval-Prozess kann erst gestartet werden, wenn alle nicht ausgeschlossenen Requirements Score >= 85 haben.";
   }
-  return "Final scores are missing or stale for one or more Requirements.";
+  return "Finale Scores fehlen oder sind für ein oder mehrere Requirements veraltet.";
 }
 
 function productApprovalStartBlockReason(qualityGate = getProductQualityGate()) {
@@ -7526,15 +8075,20 @@ function productApprovalProgressText() {
   }, 0);
   const approvalScope = `${state.requirements.length} Requirements x ${requiredCount} Approver`;
   const startedAt = state.productApprovalStartedAt
-    ? ` Gestartet: ${new Date(state.productApprovalStartedAt).toLocaleString()}.`
+    ? ` ${translateUiText("Gestartet")}: ${new Date(state.productApprovalStartedAt).toLocaleString()}.`
     : "";
   const completeText = totalRequiredApprovals > 0 && completedApprovals >= totalRequiredApprovals
-    ? " Alle PR-Freigaben sind abgeschlossen."
+    ? ` ${translateUiText("Alle PR-Freigaben sind abgeschlossen.")}`
     : "";
-  return `${completedApprovals} von ${totalRequiredApprovals} PR-Freigaben erfasst (${approvalScope}).${completeText}${startedAt}`;
+  return `${completedApprovals} ${translateUiText("von")} ${totalRequiredApprovals} ${translateUiText("Freigaben erfasst")} (${approvalScope}).${completeText}${startedAt}`;
 }
 
 function startProductApprovalProcess() {
+  if (hasApprovedFinalProductSelections()) {
+    alert("Alle Product Requirements sind bereits freigegeben. Ein neues Approval ist erst nach einer PR-Änderung möglich.");
+    return;
+  }
+
   if (isProductApprovalStarted()) {
     closeProductApprovalDialog();
     focusProductApprovalPanel();
@@ -7583,38 +8137,38 @@ function renderProductTransferState(productReady = isProductReadyForTransferSimu
   els.productTransferBar.classList.toggle("is-complete", state.productWindchillTransferComplete);
   els.productTransferBar.classList.toggle("is-blocked", !state.productWindchillTransferComplete && !transferReady);
   els.productTransferTitle.textContent = state.productWindchillTransferComplete
-    ? "Simulation abgeschlossen"
+    ? translateUiText("Simulation abgeschlossen")
     : transferReady
-      ? "PR bereit zur Übergabe"
-      : "PR-Transfer wartet";
+      ? translateUiText("PR bereit zur Übergabe")
+      : translateUiText("PR-Transfer wartet");
   els.productTransferText.textContent = state.productWindchillTransferComplete
-    ? `Demo Transfer angezeigt${state.productWindchillTransferredAt ? `: ${new Date(state.productWindchillTransferredAt).toLocaleString()}` : "."}`
+    ? `${translateUiText("Demo Transfer angezeigt")}${state.productWindchillTransferredAt ? `: ${new Date(state.productWindchillTransferredAt).toLocaleString()}` : "."}`
     : !state.analysisComplete
-      ? "Analyse, Bearbeitung und Approval müssen vorher abgeschlossen sein."
+      ? translateUiText("Analyse, Bearbeitung und Approval müssen vorher abgeschlossen sein.")
       : !productReady
-        ? "Alle nicht ausgeschlossenen Requirements benötigen Score >= 85 und TechTypes."
+        ? translateUiText("Alle nicht ausgeschlossenen Requirements benötigen Score >= 85 und TechTypes.")
         : approvalPending
           ? isProductApprovalStarted()
-            ? `${productApprovalProgressText()} Die Übergabe ist erst nach vollständiger PR-Freigabe möglich.`
-            : "Starte und schließe zuerst den PR-Approval-Prozess ab."
-          : "Simulation: PR würde nach Windchill übertragen. Noch keine echte Windchill-Verbindung.";
+            ? `${productApprovalProgressText()} ${translateUiText("Die Übergabe ist erst nach vollständiger PR-Freigabe möglich.")}`
+            : translateUiText("Starte und schließe zuerst den PR-Approval-Prozess ab.")
+          : translateUiText("Simulation: PR würde nach Windchill übertragen. Noch keine echte Windchill-Verbindung.");
   els.productTransferBar.title = els.productTransferText.textContent;
   els.productTransferButton.disabled = state.productWindchillTransferComplete || !canEditProductRequirements() || !transferReady;
   els.productTransferButton.title = state.productWindchillTransferComplete
-    ? "Simulation abgeschlossen"
+    ? translateUiText("Simulation abgeschlossen")
     : !canEditProductRequirements()
-      ? "Nur Product Requirement Owner oder Admins können die Transfer-Simulation starten"
+      ? translateUiText("Nur Product Requirement Owner oder Admins können die Transfer-Simulation starten")
       : approvalPending
-        ? "PR-Freigabe ist vor der Transfer-Simulation erforderlich"
+        ? translateUiText("PR-Freigabe ist vor der Transfer-Simulation erforderlich")
         : "";
   els.productTransferButton.textContent = state.productWindchillTransferComplete
-    ? "Simulation abgeschlossen"
-    : "PR-Transfer simulieren";
+    ? translateUiText("Simulation abgeschlossen")
+    : translateUiText("PR-Transfer simulieren");
 }
 
 async function simulateProductWindchillTransfer() {
   if (!canEditProductRequirements()) {
-    alert("Nur Product Requirement Owner oder Admins können die Transfer-Simulation starten.");
+    alert(translateUiText("Nur Product Requirement Owner oder Admins können die Transfer-Simulation starten."));
     return;
   }
 
@@ -7632,7 +8186,7 @@ async function simulateProductWindchillTransfer() {
 
   setMenuButtonAvailability(els.exportButton, false, "Demo Transfer wird angezeigt");
   els.productTransferButton.disabled = true;
-  els.productTransferButton.textContent = "Simulation läuft...";
+  els.productTransferButton.textContent = translateUiText("Simulation läuft...");
   await delay(900);
   state.productWindchillTransferComplete = true;
   state.productWindchillTransferredAt = new Date().toISOString();
@@ -7651,26 +8205,26 @@ function renderSoftwareTransferState() {
   els.softwareTransferBar.hidden = !hasProject() || !state.softwareRequirements.length || !softwareReady;
   els.softwareTransferBar.classList.toggle("is-complete", state.softwareWindchillTransferComplete);
   els.softwareTransferTitle.textContent = state.softwareWindchillTransferComplete
-    ? "Simulation abgeschlossen"
-    : "Simulierte Übergabe an Windchill";
+    ? translateUiText("Simulation abgeschlossen")
+    : translateUiText("Simulierte Übergabe an Windchill");
   els.softwareTransferText.textContent = state.softwareWindchillTransferComplete
-    ? `Demo Transfer angezeigt${state.softwareWindchillTransferredAt ? `: ${new Date(state.softwareWindchillTransferredAt).toLocaleString()}` : "."}`
-    : "Simulation: SR würde übertragen werden. Noch keine echte Windchill-Verbindung.";
+    ? `${translateUiText("Demo Transfer angezeigt")}${state.softwareWindchillTransferredAt ? `: ${new Date(state.softwareWindchillTransferredAt).toLocaleString()}` : "."}`
+    : translateUiText("Simulation: SR würde übertragen werden. Noch keine echte Windchill-Verbindung.");
   els.softwareTransferButton.disabled = state.softwareWindchillTransferComplete || !canEditSoftwareRequirements();
   els.softwareTransferButton.textContent = state.softwareWindchillTransferComplete
-    ? "Simulation abgeschlossen"
-    : "SR-Transfer simulieren";
+    ? translateUiText("Simulation abgeschlossen")
+    : translateUiText("SR-Transfer simulieren");
 }
 
 async function simulateSoftwareWindchillTransfer() {
   if (!canEditSoftwareRequirements()) {
-    alert("Nur Software Requirement Owner oder Admins können die Transfer-Simulation starten.");
+    alert(translateUiText("Nur Software Requirement Owner oder Admins können die Transfer-Simulation starten."));
     return;
   }
 
   if (!isSoftwareQualityReady()) {
     alert(isSoftwareApprovalPending()
-      ? "Bitte gib zuerst alle abgeschlossenen Software Requirements frei."
+      ? translateUiText("Bitte gib zuerst alle abgeschlossenen Software Requirements frei.")
       : `Bitte übernimm oder schließe zuerst alle SR ab. Übernommene SR benötigen Score >= ${PRODUCT_STEP_MIN_SCORE}.`);
     return;
   }
@@ -7679,7 +8233,7 @@ async function simulateSoftwareWindchillTransfer() {
 
   setMenuButtonAvailability(els.exportButton, false, "Demo Transfer wird angezeigt");
   els.softwareTransferButton.disabled = true;
-  els.softwareTransferButton.textContent = "Simulation läuft...";
+  els.softwareTransferButton.textContent = translateUiText("Simulation läuft...");
   await delay(900);
   state.softwareWindchillTransferComplete = true;
   state.softwareWindchillTransferredAt = new Date().toISOString();
@@ -7822,7 +8376,7 @@ function setMenuButtonAvailability(button, isAvailable, title = "") {
   button.disabled = false;
   button.removeAttribute("disabled");
   button.setAttribute("aria-disabled", isAvailable ? "false" : "true");
-  button.title = title;
+  button.title = translateUiText(title);
 }
 
 function normalizeMenuButtonStates() {
@@ -8104,12 +8658,13 @@ function loadProjectPayload(payload, fileName, projectId = "") {
       .filter(Boolean),
   );
   state.analysisComplete = Boolean(payload.state?.analysisComplete || state.results.length);
+  reconcileProductChangeStateFromHistory();
   state.activeProcessStep = payload.state?.activeProcessStep || "product";
   state.language = LANGUAGES[payload.state?.language] ? payload.state.language : DEFAULT_LANGUAGE;
   document.documentElement.lang = state.language;
   els.languageSelect.value = state.language;
 
-  els.fileState.textContent = `${projectDisplayName() || fileName || "Miele.DevPilot"} (Projekt)`;
+  els.fileState.textContent = projectStatusText(projectDisplayName() || fileName || "Miele.DevPilot");
   els.sheetSelect.innerHTML = "";
   els.sheetSelect.append(new Option(state.sheetName, state.sheetName));
   els.sheetSelect.value = state.sheetName;
@@ -8442,6 +8997,8 @@ function translateUiPattern(text, dictionary) {
     [/^Restzeit ca\. (.+)$/, "Remaining approx. $1"],
     [/^(.+) verbleibend$/, "$1 remaining"],
     [/^Simulation abgeschlossen: (.+)$/, "Simulated transfer completed: $1"],
+    [/^Sprache geaendert: (.+)$/, "Language changed: $1"],
+    [/^Sprache geändert: (.+)$/, "Language changed: $1"],
     [/^Bitte schließe zuerst alle PR mit Score >= (\d+) ab\.$/, "Please complete all PRs with score >= $1 first."],
     [
       /^Bitte übernimm oder schließe zuerst alle SR ab\. Übernommene SR benötigen Score >= (\d+)\.$/,
@@ -8811,16 +9368,16 @@ async function showProgress(total, options = {}) {
   state.progressMode = options.mode || "";
   state.progressInputCharCount = countProgressInputChars(options.requirements);
   els.progressOverlay.hidden = false;
-  els.progressTitle.textContent = "Requirements werden analysiert";
-  els.progressText.textContent = "Berechne voraussichtliche Bearbeitungszeit...";
+  els.progressTitle.textContent = translateUiText("Requirements werden analysiert");
+  els.progressText.textContent = translateUiText("Berechne voraussichtliche Bearbeitungszeit...");
   els.progressBar.style.width = "0%";
   els.progressTimeBar.style.width = "0%";
-  els.progressTimeText.textContent = "Restzeit wird berechnet";
+  els.progressTimeText.textContent = translateUiText("Restzeit wird berechnet");
   renderProgressDetail();
   state.progressEstimatedRemainingMs = await calculateInitialProgressEstimate(total, options);
   state.progressInitialEstimatedMs = state.progressEstimatedRemainingMs;
   renderProgressDetail();
-  els.progressText.textContent = "Die Analyse wird vorbereitet.";
+  els.progressText.textContent = translateUiText("Die Analyse wird vorbereitet.");
   state.progressTimerId = window.setInterval(tickProgressCountdown, 1000);
 }
 
@@ -8834,7 +9391,7 @@ function updateProgress({ processed, total, batchNumber, totalBatches }) {
     state.progressEstimatedRemainingMs = measuredRemainingMs;
   }
   const percent = progressPercent({ processed, total, batchNumber, totalBatches });
-  els.progressText.textContent = `Batch ${batchNumber} von ${totalBatches} wird verarbeitet.`;
+  els.progressText.textContent = translateUiText(`Batch ${batchNumber} von ${totalBatches} wird verarbeitet.`);
   els.progressBar.style.width = `${percent}%`;
   renderProgressDetail();
 }
@@ -8842,12 +9399,12 @@ function updateProgress({ processed, total, batchNumber, totalBatches }) {
 function completeProgress(processed) {
   clearProgressTimer();
   rememberProgressTiming(Date.now() - state.progressStartedAt);
-  els.progressTitle.textContent = "Analyse abgeschlossen";
-  els.progressText.textContent = "Alle verfügbaren Ergebnisse wurden verarbeitet.";
+  els.progressTitle.textContent = translateUiText("Analyse abgeschlossen");
+  els.progressText.textContent = translateUiText("Alle verfügbaren Ergebnisse wurden verarbeitet.");
   els.progressBar.style.width = "100%";
   els.progressTimeBar.style.width = "100%";
-  els.progressTimeText.textContent = "Abgeschlossen";
-  els.progressDetail.textContent = `${processed} Requirements analysiert · Dauer ${formatDuration(Date.now() - state.progressStartedAt)}`;
+  els.progressTimeText.textContent = translateUiText("Abgeschlossen");
+  els.progressDetail.textContent = translateUiText(`${processed} Requirements analysiert · Dauer ${formatDuration(Date.now() - state.progressStartedAt)}`);
   window.setTimeout(hideProgress, 900);
 }
 
@@ -8871,25 +9428,25 @@ function renderProgressDetail() {
   const totalBatches = Number(state.progressTotalBatches) || 0;
   const elapsed = state.progressStartedAt ? Date.now() - state.progressStartedAt : 0;
   const remaining = state.progressEstimatedRemainingMs;
-  const remainingText = remaining == null ? "Restzeit wird berechnet" : `Restzeit ca. ${formatDuration(remaining)}`;
+  const remainingText = remaining == null ? translateUiText("Restzeit wird berechnet") : translateUiText(`Restzeit ca. ${formatDuration(remaining)}`);
   const batchText = totalBatches > 1
-    ? ` · Batch ${Math.min(batchNumber || 1, totalBatches)} von ${totalBatches}`
+    ? ` · Batch ${Math.min(batchNumber || 1, totalBatches)} ${translateUiText("von")} ${totalBatches}`
     : "";
-  els.progressDetail.textContent = `${processed} von ${total} Requirements verarbeitet${batchText} · Laufzeit ${formatDuration(elapsed)} · ${remainingText}`;
+  els.progressDetail.textContent = `${processed} ${translateUiText("von")} ${total} ${translateUiText("Requirements verarbeitet")}${batchText} · ${translateUiText("Laufzeit")} ${formatDuration(elapsed)} · ${remainingText}`;
   renderProgressTimeBar(elapsed, remaining);
 }
 
 function renderProgressTimeBar(elapsed, remaining) {
   if (remaining == null || !state.progressInitialEstimatedMs) {
     els.progressTimeBar.style.width = "0%";
-    els.progressTimeText.textContent = "Restzeit wird berechnet";
+    els.progressTimeText.textContent = translateUiText("Restzeit wird berechnet");
     return;
   }
 
   const totalTime = Math.max(elapsed + remaining, state.progressInitialEstimatedMs, 1);
   const percent = Math.max(0, Math.min(100, Math.round((elapsed / totalTime) * 100)));
   els.progressTimeBar.style.width = `${percent}%`;
-  els.progressTimeText.textContent = `${percent}% · ${formatDuration(remaining)} verbleibend`;
+  els.progressTimeText.textContent = `${percent}% · ${formatDuration(remaining)} ${translateUiText("verbleibend")}`;
 }
 
 function estimateRemainingMs({ processed, total, totalBatches }) {
