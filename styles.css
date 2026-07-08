@@ -2899,11 +2899,16 @@ tbody tr.group-row:hover td {
 }
 
 .user-dialog {
+  display: flex;
+  flex-direction: column;
   width: min(96vw, 1120px);
+  max-height: min(92vh, 760px);
   padding: 0;
+  overflow: hidden;
 }
 
 .user-dialog .selection-header {
+  flex: 0 0 auto;
   margin: 0;
   border-bottom: 0.5px solid var(--hairline);
   padding: 24px 26px 18px;
@@ -2992,6 +2997,8 @@ tbody tr.group-row:hover td {
 }
 
 .user-form {
+  min-height: 0;
+  overflow: auto;
   gap: 0;
   margin: 0;
 }
@@ -3001,7 +3008,12 @@ tbody tr.group-row:hover td {
   grid-template-columns: minmax(150px, 0.42fr) minmax(0, 1fr);
   gap: 24px;
   border-bottom: 0.5px solid var(--hairline);
+  background: rgba(15, 20, 27, 0.74);
   padding: 22px 26px;
+}
+
+.user-form-section:nth-of-type(even) {
+  background: rgba(18, 25, 34, 0.52);
 }
 
 .user-form-section-header {
@@ -3076,7 +3088,7 @@ tbody tr.group-row:hover td {
   overflow: hidden;
   border: 0.5px solid var(--hairline);
   border-radius: var(--radius);
-  background: #fff;
+  background: rgba(18, 25, 34, 0.92);
 }
 
 .role-table-head,
@@ -3090,7 +3102,7 @@ tbody tr.group-row:hover td {
 .role-table-head {
   min-height: 34px;
   border-bottom: 0.5px solid var(--hairline);
-  background: #f5f5f7;
+  background: rgba(174, 184, 196, 0.1);
   color: var(--muted);
   padding: 8px 12px;
   font-size: 0.72rem;
@@ -3102,10 +3114,13 @@ tbody tr.group-row:hover td {
   min-width: 0;
   min-height: 48px;
   border-bottom: 0.5px solid var(--hairline);
-  background: #fff;
-  color: var(--black);
+  background: rgba(18, 25, 34, 0.48);
+  color: var(--text);
   padding: 9px 12px;
   text-transform: none;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
 }
 
 .role-row:last-child {
@@ -3113,11 +3128,11 @@ tbody tr.group-row:hover td {
 }
 
 .role-row:hover {
-  background: #f5f5f7;
+  background: rgba(232, 82, 27, 0.1);
 }
 
 .role-name {
-  color: var(--black);
+  color: var(--text);
   font-size: 0.9rem;
   font-weight: 600;
   line-height: 1.25;
@@ -3138,7 +3153,7 @@ tbody tr.group-row:hover td {
 .role-check input {
   width: 18px;
   min-height: 18px;
-  accent-color: var(--black);
+  accent-color: var(--accent);
 }
 
 .checkbox-row {
@@ -3151,14 +3166,14 @@ tbody tr.group-row:hover td {
   width: 100%;
   border: 0.5px solid var(--hairline);
   border-radius: var(--radius);
-  background: #fff;
-  color: var(--black);
+  background: var(--control);
+  color: var(--text);
   padding: 8px 10px 8px 12px;
   text-transform: none;
 }
 
 .checkbox-row span:not(.switch-track) {
-  color: var(--black);
+  color: var(--text);
   font-size: 0.9rem;
   font-weight: 500;
   letter-spacing: 0;
@@ -3180,7 +3195,7 @@ tbody tr.group-row:hover td {
   width: 38px;
   height: 22px;
   border-radius: 999px;
-  background: #d2d2d7;
+  background: rgba(174, 184, 196, 0.28);
   transition:
     background 160ms ease,
     box-shadow 160ms ease;
@@ -3194,13 +3209,13 @@ tbody tr.group-row:hover td {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--text);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
   transition: transform 160ms ease;
 }
 
 .checkbox-row input:checked + span + .switch-track {
-  background: var(--black);
+  background: var(--accent);
 }
 
 .checkbox-row input:checked + span + .switch-track::after {
@@ -3208,15 +3223,18 @@ tbody tr.group-row:hover td {
 }
 
 .checkbox-row:has(input:focus-visible) {
-  border-color: rgba(0, 113, 227, 0.34);
-  outline: 3px solid rgba(0, 113, 227, 0.16);
+  border-color: rgba(232, 82, 27, 0.58);
+  outline: 3px solid rgba(232, 82, 27, 0.18);
 }
 
 .user-dialog-actions {
+  position: sticky;
+  bottom: 0;
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  background: rgba(245, 245, 247, 0.86);
+  border-top: 0.5px solid var(--hairline);
+  background: rgba(10, 12, 16, 0.96);
   padding: 18px 26px;
 }
 
@@ -3310,12 +3328,12 @@ tbody tr.group-row:hover td {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  z-index: 30;
+  z-index: var(--z-menu-popover);
   display: grid;
   min-width: 150px;
   border: 0.5px solid var(--hairline);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--panel-elevated);
   box-shadow: var(--shadow);
   padding: 6px;
 }
@@ -3335,6 +3353,7 @@ tbody tr.group-row:hover td {
   min-height: 34px;
   border-color: transparent;
   background: transparent;
+  color: var(--text);
   padding: 7px 10px;
   text-align: left;
   font-size: 0.9rem;
@@ -3343,9 +3362,14 @@ tbody tr.group-row:hover td {
 .user-action-menu button:hover:not(:disabled),
 .user-action-menu button:focus-visible {
   border-color: transparent;
-  background: #f5f5f7;
-  color: var(--black);
+  background: var(--control-hover);
+  color: var(--text);
   outline: none;
+}
+
+.user-action-menu button:disabled {
+  color: rgba(174, 184, 196, 0.46);
+  cursor: not-allowed;
 }
 
 .role-pill {
@@ -3999,7 +4023,8 @@ button.primary:hover:not(:disabled) {
 }
 
 .menu-popover,
-.account-context-menu {
+.account-context-menu,
+.user-action-menu {
   border-color: var(--hairline);
   background: var(--panel-elevated);
   color: var(--text);

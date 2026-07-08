@@ -83,6 +83,8 @@ const state = {
   productApprovalStatusFilter: "all",
   productApprovalActiveTab: "comments",
   productApprovalDecisionMode: "",
+  productApprovalDisapproveDraftRow: null,
+  productApprovalDisapproveDraftText: "",
   appDialogResolve: null,
   changeRequestDialogResolve: null,
   productReviewActiveTab: "final",
@@ -236,11 +238,24 @@ const UI_TRANSLATIONS = {
     "Prozessschritte": "Process steps",
     "Aktueller Schritt": "Current step",
     "Step 1 abschließen": "Complete step 1",
+    "1. Product": "1. Product",
+    "2. Software": "2. Software",
+    "E2E": "E2E",
+    "TestCases": "TestCases",
     "Product Requirements": "Product Requirements",
     "Product Requirements analysieren": "Analyze Product Requirements",
     "Requirements": "Requirements",
     "Durchschnitt": "Average",
     "Kritische Hinweise": "Critical issues",
+    "1. Analyse": "1. Analysis",
+    "2. Bearbeitung": "2. Editing",
+    "3. Approval": "3. Approval",
+    "4. Transfer": "4. Transfer",
+    "Importierte Requirements prüfen und bewerten.": "Review and assess imported requirements.",
+    "Bereit zur Bewertung der importierten Requirements.": "Ready to assess imported requirements.",
+    "Importiere zuerst Product Requirements.": "Import Product Requirements first.",
+    "Importiere zuerst Product Requirements": "Import Product Requirements first",
+    "Analysiert": "Analyzed",
     "Simulation: PR würde nach Windchill übertragen. Noch keine echte Windchill-Verbindung.": "Simulation: PR would be transferred to Windchill. No real Windchill connection yet.",
     "PR-Transfer simulieren": "Simulate PR transfer",
     "Exportdatei wird erzeugt...": "Creating export file...",
@@ -269,6 +284,7 @@ const UI_TRANSLATIONS = {
     "Ablehnung": "Disapproval",
     "Change Request": "Change request",
     "Ablehnungskommentar *": "Disapproval comment *",
+    "Bitte begründe, warum dieses Requirement nicht freigegeben werden kann.": "Please explain why this requirement cannot be approved.",
     "Ablehnung senden": "Submit disapproval",
     "Noch nicht gestartet": "Not started yet",
     "Keine PR Approver verfügbar": "No PR approvers available",
@@ -277,6 +293,9 @@ const UI_TRANSLATIONS = {
     "PR-Freigabe erfasst": "PR approval recorded",
     "Erneut laden": "Reload",
     "Ausgewählt": "Selected",
+    "Alle": "All",
+    "Bearbeitung": "Editing",
+    "Nicht ausgewählt": "Not selected",
     "Wähle mindestens einen PR Approver aus.": "Select at least one PR approver.",
     "Bitte wähle mindestens einen PR Approver aus.": "Please select at least one PR approver.",
     "Keine Requirements im Approval.": "No requirements in approval.",
@@ -296,12 +315,20 @@ const UI_TRANSLATIONS = {
     "Finalization Gate not complete: Scores fehlen oder sind veraltet.": "Finalization gate not complete: scores are missing or stale.",
     "Finale Score-Bewertung läuft oder fehlt.": "Final score assessment is running or missing.",
     "Filter aktiv: Requirements mit Score < 85": "Filter active: Requirements with score < 85",
+    "Filter aktiv: Requirements mit Score &lt; 85": "Filter active: Requirements with score < 85",
+    "Gefiltert: Software Requirements mit Score < 85": "Filtered: Software Requirements with score < 85",
+    "Gefiltert: Software Requirements mit Score &lt; 85": "Filtered: Software Requirements with score < 85",
+    "Gefiltert: E2E TestCases mit Score < 85": "Filtered: E2E TestCases with score < 85",
+    "Gefiltert: E2E TestCases mit Score &lt; 85": "Filtered: E2E TestCases with score < 85",
     "Filter beenden": "Clear filter",
     "Status": "Status",
     "Zeile": "Row",
     "Name": "Name",
     "Titel": "Title",
     "ID oder Titel": "ID or title",
+    "Requirement suchen": "Search requirement",
+    "0 Requirements": "0 Requirements",
+    "TechType suchen": "Search TechType",
     "Requirement": "Requirement",
     "Score": "Score",
     "Quelle": "Source",
@@ -320,11 +347,31 @@ const UI_TRANSLATIONS = {
     "Finalization Gate nicht abgeschlossen": "Finalization gate not complete",
     "Finale Scores fehlen für ein oder mehrere Requirements": "Final scores are missing for one or more Requirements",
     "Der Approval-Prozess kann noch nicht gestartet werden.": "Approval process cannot be started yet.",
+    "Requirement auswählen": "Select requirement",
+    "Wähle links ein Product Requirement aus, um den finalen Text, TechTypes, Analyse und Historie zu prüfen.": "Select a Product Requirement on the left to review the final text, TechTypes, analysis, and history.",
+    "Finalisierung offen": "Finalization open",
+    "Nacharbeit erforderlich: Dieses Requirement blockiert den Approval-Start, weil der Score unter 85 liegt oder neu berechnet werden muss.": "Rework required: this requirement blocks approval start because the score is below 85 or must be recalculated.",
+    "Score -": "Score -",
+    "MISSING": "MISSING",
+    "STALE": "STALE",
+    "Score neu berechnen erforderlich.": "Score recalculation required.",
+    "Finales Requirement speichern": "Save final requirement",
+    "Alle abwählen": "Clear all",
+    "Auswahl zurücksetzen": "Reset selection",
     "Offene Kommentare": "Open comments",
     "Benutzermenü": "User menu",
     "Abmelden": "Sign out",
     "Benutzerverwaltung": "User administration",
     "Neuer Benutzer": "New user",
+    "Anmeldung": "Login",
+    "Name oder E-Mail-Adresse": "Name or email address",
+    "Anmelden": "Sign in",
+    "Passwort ändern": "Change password",
+    "Neues Passwort festlegen": "Set new password",
+    "Bitte lege ein eigenes Passwort fest, bevor du Miele.DevPilot weiter nutzt.": "Please set your own password before continuing to use Miele.DevPilot.",
+    "Neues Passwort": "New password",
+    "Passwort bestätigen": "Confirm password",
+    "Passwort speichern": "Save password",
     "Projektauswahl schließen": "Close project selection",
     "Projekt-Historie schließen": "Close project history",
     "Rollen auswählen": "Select roles",
@@ -332,11 +379,26 @@ const UI_TRANSLATIONS = {
     "Berechtigung": "Permission",
     "Auswahl": "Selection",
     "Name und E-Mail-Adresse für die Anmeldung.": "Name and email address for login.",
+    "Stammdaten": "Identity",
+    "E-Mail-Adresse": "Email address",
+    "Zugriff": "Access",
+    "Rollen": "Roles",
+    "Product Requirement Owner": "Product Requirement Owner",
+    "Software Requirement Owner": "Software Requirement Owner",
+    "E2E Test Owner": "E2E Test Owner",
+    "Product Requirement Approver": "Product Requirement Approver",
+    "Software Requirement Approver": "Software Requirement Approver",
+    "E2E Test Approver": "E2E Test Approver",
     "Product Requirements erstellen und bearbeiten.": "Create and edit Product Requirements.",
     "Software Requirements erstellen und bearbeiten.": "Create and edit Software Requirements.",
     "E2E TestCases erstellen und bearbeiten.": "Create and edit E2E TestCases.",
+    "Product Requirements freigeben oder kommentieren.": "Approve or comment on Product Requirements.",
+    "Software Requirements freigeben oder kommentieren.": "Approve or comment on Software Requirements.",
+    "E2E TestCases freigeben oder kommentieren.": "Approve or comment on E2E TestCases.",
     "Passwort": "Password",
     "Initiales Passwort": "Initial password",
+    "Mindestens 8 Zeichen": "At least 8 characters",
+    "Leer lassen, um Passwort beizubehalten": "Leave blank to keep password",
     "Alle Berechtigungen und Benutzerverwaltung.": "All permissions and user administration.",
     "Passwort anzeigen": "Show password",
     "Passwort verbergen": "Hide password",
@@ -346,6 +408,25 @@ const UI_TRANSLATIONS = {
     "Finales Requirement": "Final requirement",
     "Historie": "History",
     "Finales Product Requirement": "Final Product Requirement",
+    "Finalen Requirement-Text auswählen": "Select final requirement text",
+    "Text für den finalen Stand festlegen": "Choose text for the final state",
+    "Originaltext": "Original text",
+    "Original verwenden": "Use original",
+    "AI-Vorschlag übernehmen": "Accept AI suggestion",
+    "Verbesserung vorschlagen": "Suggest improvement",
+    "Testbarer machen": "Make more testable",
+    "Mehrdeutigkeiten entfernen": "Remove ambiguities",
+    "Akzeptanzkriterien ergänzen": "Add acceptance criteria",
+    "Kürzer formulieren": "Shorten wording",
+    "Was soll verbessert werden?": "What should be improved?",
+    "Anhänge für die Verbesserung": "Attachments for improvement",
+    "+ Anhang hinzufügen": "+ Add attachment",
+    "z. B. klarer formulieren, messbarer machen, Mehrdeutigkeiten entfernen": "e.g. make clearer, more measurable, remove ambiguities",
+    "z. B. klarer formulieren, messbarer machen, atomarer schneiden": "e.g. make clearer, more measurable, more atomic",
+    "z. B. atomarer formulieren, Akzeptanzkriterien präzisieren, Fehlerfall ergänzen": "e.g. make more atomic, refine acceptance criteria, add error case",
+    "z. B. präzisere Vorbedingungen, konkretere erwartete Ergebnisse, negative Tests ergänzen": "e.g. more precise preconditions, more concrete expected results, add negative tests",
+    "Text-, CSV-, JSON-, XML-, Markdown- und Excel-Dateien werden als zusätzlicher Kontext berücksichtigt.": "Text, CSV, JSON, XML, Markdown, and Excel files are used as additional context.",
+    "Hinweise aus der Analyse": "Issues from analysis",
     "Freigabekandidat": "Approval candidate",
     "Dieser Product-Requirement-Kandidat ist für die Freigabe vorbereitet und wird später in der simulierten Zielsystem-Vorschau angezeigt.": "This Product Requirement candidate is prepared for approval and later shown in the simulated target-system preview.",
     "Original-Requirement": "Original requirement",
@@ -577,6 +658,22 @@ const UI_TRANSLATIONS = {
     "Projekt geladen": "Project loaded",
     "Fehler": "Error",
     "Projekt angelegt": "Project created",
+    "Neues Projekt anlegen": "Create new project",
+    "Projekt-Dialog schließen": "Close project dialog",
+    "Projektname": "Project name",
+    "z.B. Miele.DevPilot Review": "e.g. Miele.DevPilot Review",
+    "Kurzbeschreibung": "Short description",
+    "Kurze Beschreibung des Projektinhalts": "Short description of the project content",
+    "Projekt anlegen": "Create project",
+    "Projekt auswählen": "Select project",
+    "Keine Projekte geladen.": "No projects loaded.",
+    "Keine Projekte vorhanden.": "No projects available.",
+    "Projekt-Historie": "Project history",
+    "Zeitpunkt": "Time",
+    "Benutzer": "User",
+    "Wiederherstellen": "Restore",
+    "Keine Historie geladen.": "No history loaded.",
+    "Keine Historie vorhanden.": "No history available.",
     "Projekt konnte nicht angelegt werden.": "Project could not be created.",
     "Server erforderlich": "Server required",
     "Server nicht erreichbar": "Server unavailable",
@@ -591,8 +688,16 @@ const UI_TRANSLATIONS = {
     "Product Requirement erst vollständig zuordnen und Quality Gate mit Score >": "Fully assign Product Requirements first and pass the quality gate with score >",
     "Software Requirements zuerst freigeben": "Approve Software Requirements first",
     "SR-Transfer-Simulation zuerst starten": "Start SR transfer simulation first",
+    "PR-Approval starten": "Start PR approval",
+    "Approver für dieses Projekt auswählen": "Select approvers for this project",
+    "Wähle die Personen aus, die jedes Product Requirement freigeben müssen. Nach dem Start ist diese Auswahl für den Approval-Lauf verbindlich.": "Select the people who must approve each Product Requirement. After starting, this selection is binding for the approval run.",
+    "Ausgewählte Approver": "Selected approvers",
+    "Approver auswählen": "Select approvers",
+    "Noch keine Approver ausgewählt.": "No approvers selected yet.",
+    "Approver entfernen": "Remove approver",
     "PR bereit zur Übergabe": "PR ready for handoff",
     "PR-Transfer wartet": "PR transfer waiting",
+    "PR-Transfer gesperrt": "PR transfer locked",
     "Demo Transfer angezeigt": "Demo transfer shown",
     "Demo Transfer wird angezeigt": "Demo transfer is shown",
     "Analyse, Bearbeitung und Approval müssen vorher abgeschlossen sein.": "Analysis, editing, and approval must be completed first.",
@@ -633,6 +738,41 @@ const UI_TRANSLATIONS = {
     "Ohne Kategorie": "No category",
     "Ohne Subkategorie": "No subcategory",
     "Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen.": "No AI suggestion available yet. Please run the analysis first.",
+    "Später entscheiden": "Decide later",
+    "Auswahl später treffen": "Decide later",
+    "Requirement ausschließen": "Exclude requirement",
+    "Akzeptanzkriterien": "Acceptance criteria",
+    "Keine Akzeptanzkriterien vorhanden.": "No acceptance criteria available.",
+    "Keine TechTypes zugeordnet.": "No TechTypes assigned.",
+    "Kritische Hinweise": "Critical issues",
+    "Keine Hinweise vorhanden.": "No issues available.",
+    "Software Requirement übernehmen": "Accept Software Requirement",
+    "SR prüfen und final übernehmen": "Review SR and accept final version",
+    "Software Requirement": "Software Requirement",
+    "SR neu ableiten": "Derive SR again",
+    "SR übernehmen": "Accept SR",
+    "SR freigeben": "Approve SR",
+    "SR ausschließen": "Exclude SR",
+    "E2E TestCase übernehmen": "Accept E2E TestCase",
+    "E2E TestCase prüfen und final übernehmen": "Review E2E TestCase and accept final version",
+    "TestCase-Tabelle": "Test case table",
+    "E2E TestCase neu ableiten": "Derive E2E TestCase again",
+    "E2E TestCase freigeben": "Approve E2E TestCase",
+    "E2E TestCase ausschließen": "Exclude E2E TestCase",
+    "Aus Product Requirements ableiten": "Derive from Product Requirements",
+    "Aus Software Requirements ableiten": "Derive from Software Requirements",
+    "SR abgeleitet": "SR derived",
+    "Kritische SR": "Critical SR",
+    "E2E TestCases abgeleitet": "E2E TestCases derived",
+    "Kritische E2E TestCases": "Critical E2E TestCases",
+    "Schließe Product Requirements ab, um Software Requirements abzuleiten.": "Complete Product Requirements to derive Software Requirements.",
+    "Schließe Software Requirements ab, um E2E TestCases abzuleiten.": "Complete Software Requirements to derive E2E TestCases.",
+    "Verwendetes Product Requirement": "Used Product Requirement",
+    "Verwendetes Software Requirement": "Used Software Requirement",
+    "Prozessschritt": "Process step",
+    "UseCase-Erstellung und Review werden als eigener Arbeitsbereich vorbereitet.": "UseCase creation and review are prepared as a dedicated workspace.",
+    "UserStory-Erstellung und Qualitätsprüfung werden als eigener Arbeitsbereich vorbereitet.": "UserStory creation and quality review are prepared as a dedicated workspace.",
+    "App-TestCase-Erstellung und Prüfung werden als eigener Arbeitsbereich vorbereitet.": "App TestCase creation and review are prepared as a dedicated workspace.",
     "Finales Product Requirement darf nicht leer sein.": "Final Product Requirement must not be empty.",
     "Bitte lege zuerst ein finales Product Requirement fest.": "Please define a final Product Requirement first.",
     "Der Requirement-Text darf nicht leer sein.": "The requirement text must not be empty.",
@@ -663,6 +803,8 @@ const UI_TRANSLATIONS = {
     "AI verbessert Software Requirement...": "AI improving Software Requirement...",
     "Software Requirement verbessert": "Software Requirement improved",
     "Leite Software Requirements ab...": "Deriving Software Requirements...",
+    "Software Requirement konnte nicht neu abgeleitet werden": "Software Requirement could not be derived again",
+    "Software Requirement konnte nicht verbessert werden": "Software Requirement could not be improved",
     "Software Requirements erstellt": "Software Requirements created",
     "Keine übernommenen Software Requirements vorhanden.": "No accepted Software Requirements available.",
     "Gruppierung": "Grouping",
@@ -683,16 +825,51 @@ const UI_TRANSLATIONS = {
     "E2E TestCase wird abgeleitet...": "Deriving E2E TestCase...",
     "E2E TestCase neu abgeleitet": "E2E TestCase derived again",
     "E2E TestCase konnte nicht neu abgeleitet werden": "E2E TestCase could not be derived again",
+    "E2E TestCase konnte nicht verbessert werden": "E2E TestCase could not be improved",
     "Leite E2E TestCases ab...": "Deriving E2E TestCases...",
     "E2E TestCases erstellt": "E2E TestCases created",
     "Gewählte Software Requirements": "Selected Software Requirements",
     "SR-Transfer-Simulation noch erforderlich": "SR transfer simulation still required",
     "Dateiimport ist nur im PR-Schritt verfügbar": "File import is only available in the PR step",
+    "Import und Analyse konfigurieren": "Configure import and analysis",
+    "Einstellungen schließen": "Close settings",
+    "Requirement-Typ": "Requirement type",
+    "Software Requirements - spaeter verfuegbar": "Software Requirements - available later",
+    "Header-Zeile": "Header row",
+    "Kategorie-Spalte": "Category column",
+    "Subkategorie-Spalte": "Subcategory column",
+    "Name-Spalte": "Name column",
+    "Requirement-Spalte": "Requirement column",
+    "ID-Spalte": "ID column",
+    "ID-Kennung": "ID prefix",
+    "z.B. CRM": "e.g. CRM",
+    "TechType Gruppen-Spalte": "TechType group column",
+    "TechType Designation-Spalte": "TechType designation column",
+    "Nach dem Upload koennen Tabellenblatt, Requirement-Spalten und TechType-Spalten frei gewaehlt werden.": "After upload, sheet, requirement columns, and TechType columns can be selected freely.",
+    "Fertig": "Done",
+    "Kein TechType-Sheet gefunden": "No TechType sheet found",
+    "Keine Spalten im TechType-Sheet gefunden": "No columns found in TechType sheet",
+    "Keine Kategorie-Spalte": "No category column",
+    "Keine Subkategorie-Spalte": "No subcategory column",
+    "Keine Name-Spalte": "No name column",
+    "Keine ID-Spalte": "No ID column",
     "Einstellungen sind nur im PR-Schritt verfügbar": "Settings are only available in the PR step",
     "PR-Analyse ist nur im PR-Schritt verfügbar": "PR analysis is only available in the PR step",
     "Projekt gespeichert": "Project saved",
     "Speichern abgebrochen": "Save canceled",
     "Analyse abgeschlossen": "Analysis complete",
+    "Requirements werden analysiert": "Requirements are being analyzed",
+    "Berechne voraussichtliche Bearbeitungszeit...": "Calculating estimated processing time...",
+    "Restzeit wird berechnet": "Calculating remaining time",
+    "Die Analyse wird vorbereitet.": "Preparing analysis.",
+    "Batch ${batchNumber} von ${totalBatches} wird verarbeitet.": "Batch ${batchNumber} of ${totalBatches} is being processed.",
+    "${processed} Requirements analysiert · Dauer ${formatDuration(Date.now() - state.progressStartedAt)}": "${processed} requirements analyzed · Duration ${formatDuration(Date.now() - state.progressStartedAt)}",
+    "Restzeit ca. ${formatDuration(remaining)}": "Remaining approx. ${formatDuration(remaining)}",
+    "Zeitfortschritt": "Time progress",
+    "von": "of",
+    "Requirements verarbeitet": "requirements processed",
+    "Laufzeit": "Runtime",
+    "verbleibend": "remaining",
     "Alle verfügbaren Ergebnisse wurden verarbeitet.": "All available results have been processed.",
     "Simulation läuft...": "Simulation running...",
     "Simulation abgeschlossen": "Simulation complete",
@@ -703,6 +880,25 @@ const UI_TRANSLATIONS = {
     "Software Requirement geändert - TestCase neu ableiten erforderlich": "Software Requirement changed - TestCase derivation required",
     "Bitte starte den lokalen Server und öffne die App über http://localhost:3000. Die Analyse-API ist über file:// nicht verfügbar.": "Please start the local server and open the app at http://localhost:3000. The analysis API is not available via file://.",
     "Bitte starte den lokalen Server und öffne die App über http://localhost:3000.": "Please start the local server and open the app at http://localhost:3000.",
+    "Analyse fehlgeschlagen": "Analysis failed",
+    "Projekt konnte nicht geladen werden.": "Project could not be loaded.",
+    "Projekt konnte nicht gelöscht werden.": "Project could not be deleted.",
+    "Projektliste konnte nicht geladen werden.": "Project list could not be loaded.",
+    "Projekt-Historie konnte nicht geladen werden.": "Project history could not be loaded.",
+    "Projektstand konnte nicht wiederhergestellt werden.": "Project revision could not be restored.",
+    "Unbekanntes Projektformat": "Unknown project format",
+    "Nicht unterstützte Projektversion": "Unsupported project version",
+    "Projekt enthält keine gültigen Quelldaten": "Project contains no valid source data",
+    "Ohne ID": "No ID",
+    "Zeile": "Row",
+    "Score wird berechnet...": "Calculating score...",
+    "Bitte finalisiere zuerst alle PR mit Score >= 85 und ausgewählten TechTypes.": "Please finalize all PRs with score >= 85 and selected TechTypes first.",
+    "Das zugehörige Product Requirement wurde nicht gefunden.": "The related Product Requirement was not found.",
+    "Das zugehörige Software Requirement wurde nicht gefunden.": "The related Software Requirement was not found.",
+    "Bitte beschreibe, was die AI am Software Requirement verbessern soll.": "Please describe what the AI should improve in the Software Requirement.",
+    "Bitte beschreibe, was die AI am E2E TestCase verbessern soll.": "Please describe what the AI should improve in the E2E TestCase.",
+    "Disapprove benötigt einen Pflichtkommentar.": "Disapproval requires a mandatory comment.",
+    "Änderungen an freigegebenen Requirements benötigen einen Kommentar.": "Changes to approved requirements require a comment.",
     "Bitte beschreibe, was die AI am Product Requirement verbessern soll.": "Please describe what the AI should improve in the Product Requirement.",
     "Bitte wähle mindestens einen TechType aus.": "Please select at least one TechType.",
     "Bitte starte und schließe zuerst den PR-Approval-Prozess ab. Danach kann die Windchill-Übergabe simuliert werden.": "Please start and complete the PR approval process first. After that, the Windchill handoff can be simulated.",
@@ -1730,7 +1926,7 @@ function openCreateUserDialog() {
   els.userDialogTitle.textContent = translateUiText("Benutzer anlegen");
   els.saveUserButton.textContent = translateUiText("Benutzer speichern");
   els.userPassword.required = true;
-  els.userPassword.placeholder = "Mindestens 8 Zeichen";
+  els.userPassword.placeholder = translateUiText("Mindestens 8 Zeichen");
   els.userDialogOverlay.hidden = false;
   els.userName.focus();
 }
@@ -1782,7 +1978,7 @@ function resetUserForm() {
   els.userActive.checked = true;
   els.userPassword.value = "";
   els.userPassword.required = true;
-  els.userPassword.placeholder = "Mindestens 8 Zeichen";
+  els.userPassword.placeholder = translateUiText("Mindestens 8 Zeichen");
   els.saveUserButton.textContent = translateUiText("Benutzer speichern");
 }
 
@@ -1942,7 +2138,7 @@ function editUser(userId) {
   els.userActive.checked = user.active !== false;
   els.userPassword.value = "";
   els.userPassword.required = false;
-  els.userPassword.placeholder = "Leer lassen, um Passwort beizubehalten";
+  els.userPassword.placeholder = translateUiText("Leer lassen, um Passwort beizubehalten");
   els.saveUserButton.textContent = translateUiText("Änderungen speichern");
   els.userDialogOverlay.hidden = false;
   els.userName.focus();
@@ -2978,7 +3174,7 @@ function resetProjectApprovalState() {
   state.productReviewTechTypeFilter = "all";
   if (els.productApprovalSearch) els.productApprovalSearch.value = "";
   if (els.productApprovalStatusFilter) els.productApprovalStatusFilter.value = "all";
-  if (els.productApprovalDisapproveComment) els.productApprovalDisapproveComment.value = "";
+  resetProductDisapprovalDraft();
   if (els.productReviewTechTypeSearch) els.productReviewTechTypeSearch.value = "";
   if (els.productReviewTechTypeFilter) els.productReviewTechTypeFilter.value = "all";
 }
@@ -3162,11 +3358,11 @@ function fillTechTypeColumnSelects() {
   const headers = headerIndex >= 0 ? rows[headerIndex] : [];
 
   if (!sheetName) {
-    els.techTypeValueClassColumn.append(new Option("Kein TechType-Sheet gefunden", ""));
-    els.techTypeDesignationColumn.append(new Option("Kein TechType-Sheet gefunden", ""));
+    els.techTypeValueClassColumn.append(new Option(translateUiText("Kein TechType-Sheet gefunden"), ""));
+    els.techTypeDesignationColumn.append(new Option(translateUiText("Kein TechType-Sheet gefunden"), ""));
   } else if (!headers.length) {
-    els.techTypeValueClassColumn.append(new Option("Keine Spalten im TechType-Sheet gefunden", ""));
-    els.techTypeDesignationColumn.append(new Option("Keine Spalten im TechType-Sheet gefunden", ""));
+    els.techTypeValueClassColumn.append(new Option(translateUiText("Keine Spalten im TechType-Sheet gefunden"), ""));
+    els.techTypeDesignationColumn.append(new Option(translateUiText("Keine Spalten im TechType-Sheet gefunden"), ""));
   }
 
   headers.forEach((header, index) => {
@@ -3249,10 +3445,10 @@ function fillColumnSelects() {
   els.nameColumn.innerHTML = "";
   els.requirementColumn.innerHTML = "";
   els.idColumn.innerHTML = "";
-  els.categoryColumn.append(new Option("Keine Kategorie-Spalte", ""));
-  els.subcategoryColumn.append(new Option("Keine Subkategorie-Spalte", ""));
-  els.nameColumn.append(new Option("Keine Name-Spalte", ""));
-  els.idColumn.append(new Option("Keine ID-Spalte", ""));
+  els.categoryColumn.append(new Option(translateUiText("Keine Kategorie-Spalte"), ""));
+  els.subcategoryColumn.append(new Option(translateUiText("Keine Subkategorie-Spalte"), ""));
+  els.nameColumn.append(new Option(translateUiText("Keine Name-Spalte"), ""));
+  els.idColumn.append(new Option(translateUiText("Keine ID-Spalte"), ""));
 
   state.headers.forEach((header, index) => {
     const label = `${columnName(index)} - ${header}`;
@@ -3342,13 +3538,13 @@ function buildRequirementsFromCurrentConfig() {
 
 async function analyzeRequirements() {
   if (!canEditProductRequirements()) {
-    alert("Nur Product Requirement Owner oder Admins können Product Requirements analysieren.");
+    alert(translateUiText("Nur Product Requirement Owner oder Admins können Product Requirements analysieren."));
     return;
   }
 
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000. Die Analyse-API ist über file:// nicht verfügbar.");
+    alert(translateUiText("Bitte starte den lokalen Server und öffne die App über http://localhost:3000. Die Analyse-API ist über file:// nicht verfügbar."));
     return;
   }
 
@@ -3826,6 +4022,9 @@ function handleResultRowClick(event) {
 }
 
 function selectProductRequirement(rowNumber) {
+  if (Number(state.activeSelectionRow) !== Number(rowNumber)) {
+    resetProductDisapprovalDraft();
+  }
   state.activeSelectionRow = Number(rowNumber);
   state.productApprovalDecisionMode = "";
   renderTable();
@@ -3860,10 +4059,11 @@ function openSelectionDialog(rowNumber) {
 
   els.selectionId.textContent = item.id || "-";
   els.selectionName.textContent = item.name || item.id || "-";
-  els.selectionGroup.textContent = `${item.category || "Ohne Kategorie"} / ${item.subcategory || "Ohne Subkategorie"}`;
+  els.selectionGroup.textContent = `${item.category || translateUiText("Ohne Kategorie")} / ${item.subcategory || translateUiText("Ohne Subkategorie")}`;
   els.selectionScore.textContent = Number.isFinite(Number(score)) ? String(score) : "-";
   els.selectionOriginalText.textContent = item.text;
-  els.selectionAiText.textContent = result?.rewrittenRequirement || "Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen.";
+  els.selectionAiText.textContent =
+    result?.rewrittenRequirement || translateUiText("Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen.");
   els.prImprovementInstruction.value = "";
   els.prImprovementAttachments.value = "";
   renderImprovementAttachmentList(els.prImprovementAttachments, els.prImprovementAttachmentList);
@@ -3900,6 +4100,7 @@ function closeProductRequirementDetailDialog() {
   els.productApprovalDetailPanel.hidden = true;
   state.activeSelectionRow = null;
   state.productApprovalDecisionMode = "";
+  resetProductDisapprovalDraft();
   renderTable();
 }
 
@@ -3973,6 +4174,7 @@ function renderProductApprovalPanel() {
   els.productApprovalShowDisapproveButton.disabled = !canDisapprove;
   els.productApprovalDisapproveBox.hidden = state.productApprovalDecisionMode !== "disapprove";
   els.productApprovalDisapproveComment.disabled = !canDisapprove;
+  restoreProductDisapprovalDraft(rowNumber);
   updateProductDisapprovalSubmitState();
   renderProductApprovalTabs(selection);
 }
@@ -3993,8 +4195,8 @@ function renderProductReviewPanel() {
   els.productApprovalDetailEmpty.hidden = true;
   els.productApprovalDetailContent.hidden = true;
   els.productReviewDetailContent.hidden = false;
-  els.productReviewDetailTitle.textContent = item.name || item.id || `Zeile ${rowNumber}`;
-  els.productReviewDetailSubtitle.textContent = `${item.id || "Ohne ID"} · ${item.category || "Ohne Kategorie"} / ${item.subcategory || "Ohne Subkategorie"}`;
+  els.productReviewDetailTitle.textContent = item.name || item.id || `${translateUiText("Zeile")} ${rowNumber}`;
+  els.productReviewDetailSubtitle.textContent = `${item.id || translateUiText("Ohne ID")} · ${item.category || translateUiText("Ohne Kategorie")} / ${item.subcategory || translateUiText("Ohne Subkategorie")}`;
   const isUpdatingFinalScore = state.finalScoreUpdates.has(rowNumber);
   const visibleScore = productVisibleScore(result, selection, isUpdatingFinalScore);
   const finalScore = productFinalScore(result, selection);
@@ -4008,10 +4210,11 @@ function renderProductReviewPanel() {
 
   els.selectionId.textContent = item.id || "-";
   els.selectionName.textContent = item.name || item.id || "-";
-  els.selectionGroup.textContent = `${item.category || "Ohne Kategorie"} / ${item.subcategory || "Ohne Subkategorie"}`;
+  els.selectionGroup.textContent = `${item.category || translateUiText("Ohne Kategorie")} / ${item.subcategory || translateUiText("Ohne Subkategorie")}`;
   els.selectionScore.textContent = Number.isFinite(visibleScore) ? String(visibleScore) : "-";
   els.selectionOriginalText.textContent = item.text;
-  els.selectionAiText.textContent = result?.rewrittenRequirement || "Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen.";
+  els.selectionAiText.textContent =
+    result?.rewrittenRequirement || translateUiText("Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen.");
   els.productReviewFinalText.value = selection?.text || result?.rewrittenRequirement || "";
   els.productReviewFinalText.disabled = true;
   els.productReviewFinalScore.textContent = Number.isFinite(visibleScore) ? `Score ${visibleScore}` : "Score -";
@@ -4159,7 +4362,12 @@ function renderProductApprovalTabs(selection) {
 }
 
 function showProductDisapprovalForm() {
+  const rowNumber = Number(state.activeSelectionRow);
   state.productApprovalDecisionMode = "disapprove";
+  if (state.productApprovalDisapproveDraftRow !== rowNumber) {
+    state.productApprovalDisapproveDraftRow = rowNumber;
+    state.productApprovalDisapproveDraftText = els.productApprovalDisapproveComment.value || "";
+  }
   renderProductApprovalPanel();
   els.productApprovalDisapproveComment.focus();
 }
@@ -4168,8 +4376,29 @@ function updateProductDisapprovalSubmitState() {
   if (!els.productApprovalDisapproveButton) return;
 
   const rowNumber = Number(state.activeSelectionRow);
+  if (state.productApprovalDecisionMode === "disapprove") {
+    state.productApprovalDisapproveDraftRow = rowNumber;
+    state.productApprovalDisapproveDraftText = els.productApprovalDisapproveComment.value;
+  }
   const hasComment = Boolean(els.productApprovalDisapproveComment.value.trim());
   els.productApprovalDisapproveButton.disabled = !canDisapproveProductRequirement(rowNumber) || !hasComment;
+}
+
+function restoreProductDisapprovalDraft(rowNumber = Number(state.activeSelectionRow)) {
+  if (state.productApprovalDecisionMode !== "disapprove") return;
+  if (Number(state.productApprovalDisapproveDraftRow) !== Number(rowNumber)) return;
+  if (document.activeElement === els.productApprovalDisapproveComment) return;
+  if (els.productApprovalDisapproveComment.value === state.productApprovalDisapproveDraftText) return;
+
+  els.productApprovalDisapproveComment.value = state.productApprovalDisapproveDraftText || "";
+}
+
+function resetProductDisapprovalDraft() {
+  state.productApprovalDisapproveDraftRow = null;
+  state.productApprovalDisapproveDraftText = "";
+  if (els.productApprovalDisapproveComment) {
+    els.productApprovalDisapproveComment.value = "";
+  }
 }
 
 function submitProductRequirementForApproval() {
@@ -4217,9 +4446,9 @@ function markProductReviewFinalTextStale() {
   selection.selectedSource = "MANUAL_EDIT";
   selection.needsFinalAssessment = true;
   selection.finalizedAt = "";
-  els.productReviewFinalScoreStatus.textContent = "STALE";
+  els.productReviewFinalScoreStatus.textContent = translateUiText("STALE");
   els.productReviewFinalScoreStatus.className = "quality-badge missing";
-  els.productReviewFinalScoreHint.textContent = "Score neu berechnen erforderlich.";
+  els.productReviewFinalScoreHint.textContent = translateUiText("Score neu berechnen erforderlich.");
   updateProjectActions();
 }
 
@@ -4229,7 +4458,7 @@ async function saveProductReviewFinalText() {
 
   const text = els.productReviewFinalText.value.trim();
   if (!text) {
-    alert("Finales Product Requirement darf nicht leer sein.");
+    alert(translateUiText("Finales Product Requirement darf nicht leer sein."));
     return;
   }
   if (text === selection.text) return;
@@ -4276,16 +4505,16 @@ async function finalizeProductRequirement() {
   if (!item || !selection || !canModifyProductRequirements()) return;
 
   if (!selection.text?.trim()) {
-    alert("Bitte lege zuerst ein finales Product Requirement fest.");
+    alert(translateUiText("Bitte lege zuerst ein finales Product Requirement fest."));
     return;
   }
   if (!selectedTechTypesForRequirement(item, selection).length) {
-    alert("Bitte wähle mindestens einen TechType aus.");
+    alert(translateUiText("Bitte wähle mindestens einen TechType aus."));
     return;
   }
 
   els.approveRequirementButton.disabled = true;
-  els.approveRequirementButton.textContent = "Score wird berechnet...";
+  els.approveRequirementButton.textContent = translateUiText("Score wird berechnet...");
   if (selection.needsFinalAssessment) {
     addProductReviewHistory(selection, "Score-Neuberechnung gestartet", selection.text);
     await recalculateFinalScore(item, selection.text, selection.choice || "manual");
@@ -4295,7 +4524,7 @@ async function finalizeProductRequirement() {
   const updatedSelection = state.finalSelections.get(rowNumber);
   const finalScore = productFinalScore(updatedResult, updatedSelection);
   if (!updatedSelection || !Number.isFinite(finalScore) || finalScore < PRODUCT_STEP_MIN_SCORE) {
-    alert(`Requirement kann erst mit Score >= ${PRODUCT_STEP_MIN_SCORE} fertiggestellt werden.`);
+    alert(translateUiText(`Requirement kann erst mit Score >= ${PRODUCT_STEP_MIN_SCORE} fertiggestellt werden.`));
     renderProductReviewPanel();
     return;
   }
@@ -4577,7 +4806,7 @@ async function savePendingProductApprovalTextChange() {
 
   const nextText = els.productApprovalFinalText.value.trim();
   if (!nextText) {
-    alert("Der Requirement-Text darf nicht leer sein.");
+    alert(translateUiText("Der Requirement-Text darf nicht leer sein."));
     return { ok: false, changed: false };
   }
   if (nextText === selection.text) return { ok: true, changed: false };
@@ -4635,7 +4864,7 @@ async function improveProductApprovalRequirementWithAi() {
 
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    alert(translateUiText("Bitte starte den lokalen Server und öffne die App über http://localhost:3000."));
     return;
   }
 
@@ -4644,14 +4873,14 @@ async function improveProductApprovalRequirementWithAi() {
   const instruction = els.productApprovalImprovementInstruction.value.trim();
   const currentText = els.productApprovalFinalText.value.trim();
   if (!item || !currentText || !instruction) {
-    alert("Bitte beschreibe, was die AI am Product Requirement verbessern soll.");
+    alert(translateUiText("Bitte beschreibe, was die AI am Product Requirement verbessern soll."));
     return;
   }
 
   const previousStatus = els.productApprovalImproveButton.textContent;
   els.productApprovalImproveButton.disabled = true;
   els.productApprovalSaveTextButton.disabled = true;
-  els.productApprovalImproveButton.textContent = "AI verbessert...";
+  els.productApprovalImproveButton.textContent = translateUiText("AI verbessert...");
 
   try {
     const improvementAttachments = await readImprovementAttachments(els.productApprovalImprovementAttachments);
@@ -4724,7 +4953,7 @@ function disapproveProductRequirement() {
 
   const text = els.productApprovalDisapproveComment.value.trim();
   if (!text) {
-    alert("Disapprove benötigt einen Pflichtkommentar.");
+    alert(translateUiText("Disapprove benötigt einen Pflichtkommentar."));
     return;
   }
 
@@ -4744,8 +4973,8 @@ function disapproveProductRequirement() {
     resolved: false,
     replies: [],
   });
-  els.productApprovalDisapproveComment.value = "";
   state.productApprovalDecisionMode = "";
+  resetProductDisapprovalDraft();
   setProjectRevisionAction("PR disapproved");
   renderTable();
   renderProductApprovalPanel();
@@ -4906,7 +5135,7 @@ function renderTechTypeSelection(requirement, selection) {
   if (!state.techTypes.length) {
     els.techTypeSelectionPanel.hidden = false;
     els.selectAllTechTypesButton.disabled = true;
-    els.techTypeSelectionSummary.textContent = "Keine TechTypes erkannt";
+  els.techTypeSelectionSummary.textContent = translateUiText("Keine TechTypes erkannt");
     els.techTypeSelectionList.innerHTML = `
       <p class="techtype-empty">
         Keine TechTypes verfügbar. Prüfe im Datei-Import die TechType-Spalten für Gruppierung und Appliance Designation.
@@ -5111,7 +5340,7 @@ async function excludeRequirement() {
   const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
   const exclusionReason = prompt("Bitte gib einen Ausschlussgrund an.");
   if (!exclusionReason || !exclusionReason.trim()) {
-    alert("Ausgeschlossene Requirements benötigen einen Ausschlussgrund.");
+    alert(translateUiText("Ausgeschlossene Requirements benötigen einen Ausschlussgrund."));
     return;
   }
   const changeComment = await requestApprovedProductRequirementChangeComment(rowNumber, "Requirement ausgeschlossen");
@@ -5156,7 +5385,7 @@ async function improveProductRequirementWithAi() {
 
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    alert(translateUiText("Bitte starte den lokalen Server und öffne die App über http://localhost:3000."));
     return;
   }
 
@@ -5165,7 +5394,7 @@ async function improveProductRequirementWithAi() {
   const result = state.results.find((entry) => Number(entry.rowNumber) === Number(rowNumber));
   const instruction = els.prImprovementInstruction.value.trim();
   if (!item || !instruction) {
-    alert("Bitte beschreibe, was die AI am Product Requirement verbessern soll.");
+    alert(translateUiText("Bitte beschreibe, was die AI am Product Requirement verbessern soll."));
     return;
   }
 
@@ -5178,7 +5407,7 @@ async function improveProductRequirementWithAi() {
   const previousStatus = els.prImproveButton.textContent;
   els.prImproveButton.disabled = true;
   els.selectAiButton.disabled = true;
-  els.prImproveButton.textContent = "AI verbessert...";
+  els.prImproveButton.textContent = translateUiText("AI verbessert...");
 
   try {
     const improvementAttachments = await readImprovementAttachments(els.prImprovementAttachments);
@@ -5275,7 +5504,7 @@ async function selectFinalText(choice) {
 
   if (!item || !text) return;
   if (state.techTypes.length && !currentTechTypeSelection().length) {
-    alert("Bitte wähle mindestens einen TechType aus.");
+    alert(translateUiText("Bitte wähle mindestens einen TechType aus."));
     return;
   }
 
@@ -5321,7 +5550,7 @@ async function selectFinalText(choice) {
   if (choice === "ai") {
     const previousLabel = els.selectAiButton.textContent;
     els.selectAiButton.disabled = true;
-    els.selectAiButton.textContent = "Score wird berechnet...";
+    els.selectAiButton.textContent = translateUiText("Score wird berechnet...");
     addProductReviewHistory(state.finalSelections.get(Number(rowNumber)), "Score-Neuberechnung gestartet", text);
     const recalculatedScore = await recalculateFinalScore(item, text, choice);
     const updatedSelection = state.finalSelections.get(Number(rowNumber));
@@ -5386,7 +5615,7 @@ function isProductSelectionFullyApproved(selection) {
 
 function approveProductRequirement(rowNumber = state.activeSelectionRow) {
   if (!canApproveProductRequirement(rowNumber)) {
-    alert("Nur die konfigurierten PR Approver können abgeschlossene Product Requirements freigeben.");
+    alert(translateUiText("Nur die konfigurierten PR Approver können abgeschlossene Product Requirements freigeben."));
     return false;
   }
 
@@ -5881,14 +6110,15 @@ function renderProductAnalyzeState() {
 
   els.productAnalyzeAction.classList.toggle("is-complete", state.analysisComplete);
   els.productAnalyzeAction.classList.toggle("is-blocked", !state.analysisComplete && !canAnalyzeProduct);
-  els.productAnalyzeStatus.textContent = state.analysisComplete
+  const productAnalyzeStatusText = state.analysisComplete
     ? `${state.results.length}/${state.requirements.length} Requirements analysiert.`
     : state.requirements.length
       ? "Bereit zur Bewertung der importierten Requirements."
       : "Importiere zuerst Product Requirements.";
+  els.productAnalyzeStatus.textContent = translateUiText(productAnalyzeStatusText);
   els.productAnalyzeAction.title = els.productAnalyzeStatus.textContent;
   els.analyzeProductButton.hidden = false;
-  els.analyzeProductButton.textContent = state.analysisComplete ? "Analysiert" : "PR analysieren";
+  els.analyzeProductButton.textContent = translateUiText(state.analysisComplete ? "Analysiert" : "PR analysieren");
   els.analyzeProductButton.disabled = !canAnalyzeProduct;
 }
 
@@ -6250,7 +6480,7 @@ function openSoftwareSelectionDialog(softwareId) {
   els.softwareSelectionAcceptanceCriteriaTitle.textContent = acceptanceCriteriaLabel;
   els.softwareSelectionAcceptanceCriteria.innerHTML = renderAcceptanceCriteriaList(item.acceptanceCriteria, acceptanceCriteriaLabel);
   els.softwareSelectionTechTypes.innerHTML = renderReadOnlyTechTypes(item.techTypes);
-  els.softwareSelectionIssues.innerHTML = item.issues?.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
+  els.softwareSelectionIssues.innerHTML = item.issues?.length ? renderIssues(item.issues) : translateUiText("Keine Hinweise vorhanden.");
   els.softwareSelectionOverlay.hidden = false;
 }
 
@@ -6320,7 +6550,7 @@ function approveSoftwareRequirement() {
   const softwareId = state.activeSoftwareRequirementId;
   const item = state.softwareRequirements.find((entry) => String(entry.id || "") === String(softwareId || ""));
   if (!canApproveSoftwareRequirement(item)) {
-    alert("Nur Software Requirement Approver oder Admins können abgeschlossene Software Requirements freigeben.");
+    alert(translateUiText("Nur Software Requirement Approver oder Admins können abgeschlossene Software Requirements freigeben."));
     return;
   }
 
@@ -6338,7 +6568,7 @@ function approveSoftwareRequirement() {
 async function regenerateSoftwareRequirementFromDialog() {
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    alert(translateUiText("Bitte starte den lokalen Server und öffne die App über http://localhost:3000."));
     return;
   }
 
@@ -6348,7 +6578,7 @@ async function regenerateSoftwareRequirementFromDialog() {
 
   const sourceRequirement = findSourceProductRequirementForSoftware(item);
   if (!sourceRequirement) {
-    alert("Das zugehörige Product Requirement wurde nicht gefunden.");
+    alert(translateUiText("Das zugehörige Product Requirement wurde nicht gefunden."));
     return;
   }
 
@@ -6373,7 +6603,7 @@ async function regenerateSoftwareRequirementFromDialog() {
     const rawSoftwareRequirements = Array.isArray(data.softwareRequirements) ? data.softwareRequirements : [];
     const regeneratedRequirements = normalizeSoftwareRequirements(rawSoftwareRequirements, [sourceRequirement]);
     if (!regeneratedRequirements.length) {
-      throw new Error("Software Requirement konnte nicht neu abgeleitet werden");
+      throw new Error(translateUiText("Software Requirement konnte nicht neu abgeleitet werden"));
     }
 
     const firstAffectedIndex = state.softwareRequirements.findIndex((entry) =>
@@ -6412,7 +6642,7 @@ async function regenerateSoftwareRequirementFromDialog() {
     els.softwareSelectionAcceptanceCriteriaTitle.textContent = acceptanceCriteriaLabel;
     els.softwareSelectionAcceptanceCriteria.innerHTML = renderAcceptanceCriteriaList(activeRequirement.acceptanceCriteria, acceptanceCriteriaLabel);
     els.softwareSelectionTechTypes.innerHTML = renderReadOnlyTechTypes(activeRequirement.techTypes);
-    els.softwareSelectionIssues.innerHTML = activeRequirement.issues?.length ? renderIssues(activeRequirement.issues) : "Keine Hinweise vorhanden.";
+    els.softwareSelectionIssues.innerHTML = activeRequirement.issues?.length ? renderIssues(activeRequirement.issues) : translateUiText("Keine Hinweise vorhanden.");
     els.softwareImprovementInstruction.value = "";
     els.softwareImprovementAttachments.value = "";
     renderImprovementAttachmentList(els.softwareImprovementAttachments, els.softwareImprovementAttachmentList);
@@ -6436,7 +6666,7 @@ async function regenerateSoftwareRequirementFromDialog() {
 async function improveSoftwareRequirementWithAi() {
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    alert(translateUiText("Bitte starte den lokalen Server und öffne die App über http://localhost:3000."));
     return;
   }
 
@@ -6444,7 +6674,7 @@ async function improveSoftwareRequirementWithAi() {
   const item = state.softwareRequirements.find((entry) => String(entry.id || "") === String(softwareId || ""));
   const instruction = els.softwareImprovementInstruction.value.trim();
   if (!item || !instruction) {
-    alert("Bitte beschreibe, was die AI am Software Requirement verbessern soll.");
+    alert(translateUiText("Bitte beschreibe, was die AI am Software Requirement verbessern soll."));
     return;
   }
 
@@ -6454,14 +6684,14 @@ async function improveSoftwareRequirementWithAi() {
       String(requirement.id || "") === String(item.sourceId || ""),
   );
   if (!sourceRequirement) {
-    alert("Das zugehörige Product Requirement wurde nicht gefunden.");
+    alert(translateUiText("Das zugehörige Product Requirement wurde nicht gefunden."));
     return;
   }
 
   const previousStatus = els.softwareImproveButton.textContent;
   els.softwareImproveButton.disabled = true;
   els.softwareSelectionAcceptButton.disabled = true;
-  els.softwareImproveButton.textContent = "AI verbessert...";
+  els.softwareImproveButton.textContent = translateUiText("AI verbessert...");
 
   try {
     const improvementAttachments = await readImprovementAttachments(els.softwareImprovementAttachments);
@@ -6508,7 +6738,7 @@ async function improveSoftwareRequirementWithAi() {
     els.softwareSelectionAcceptanceCriteriaTitle.textContent = acceptanceCriteriaLabel;
     els.softwareSelectionAcceptanceCriteria.innerHTML = renderAcceptanceCriteriaList(item.acceptanceCriteria, acceptanceCriteriaLabel);
     els.softwareSelectionTechTypes.innerHTML = renderReadOnlyTechTypes(item.techTypes);
-    els.softwareSelectionIssues.innerHTML = item.issues.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
+    els.softwareSelectionIssues.innerHTML = item.issues.length ? renderIssues(item.issues) : translateUiText("Keine Hinweise vorhanden.");
     els.softwareSelectionApproveButton.disabled = true;
     els.softwareSelectionApproveButton.textContent = translateUiText("SR freigeben");
     els.softwareImprovementInstruction.value = "";
@@ -6697,13 +6927,13 @@ function getFinalProductRequirements() {
 
 async function generateSoftwareRequirements() {
   if (!canEditSoftwareRequirements()) {
-    alert("Nur Software Requirement Owner oder Admins können Software Requirements bearbeiten.");
+    alert(translateUiText("Nur Software Requirement Owner oder Admins können Software Requirements bearbeiten."));
     return;
   }
 
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    alert(translateUiText("Bitte starte den lokalen Server und öffne die App über http://localhost:3000."));
     return;
   }
 
@@ -7250,7 +7480,7 @@ function openE2eSelectionDialog(e2eId) {
   els.e2eSelectionApproveButton.textContent = translateUiText(selection?.approvedAt ? "E2E TestCase freigegeben" : "E2E TestCase freigeben");
   els.e2eSelectionTable.innerHTML = renderE2eTestCaseTable(item);
   els.e2eSelectionTechTypes.innerHTML = renderReadOnlyTechTypes(item.techTypes);
-  els.e2eSelectionIssues.innerHTML = item.issues?.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
+  els.e2eSelectionIssues.innerHTML = item.issues?.length ? renderIssues(item.issues) : translateUiText("Keine Hinweise vorhanden.");
   els.e2eSelectionOverlay.hidden = false;
 }
 
@@ -7287,7 +7517,7 @@ function approveE2eTest() {
   const e2eId = state.activeE2eTestId;
   const item = state.e2eTests.find((entry) => String(entry.id || "") === String(e2eId || ""));
   if (!canApproveE2eTest(item)) {
-    alert("Nur E2E Test Approver oder Admins können abgeschlossene E2E TestCases freigeben.");
+    alert(translateUiText("Nur E2E Test Approver oder Admins können abgeschlossene E2E TestCases freigeben."));
     return;
   }
 
@@ -7321,7 +7551,7 @@ function areE2eTestsForSourceDecided(item) {
 async function regenerateE2eTestFromDialog() {
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    alert(translateUiText("Bitte starte den lokalen Server und öffne die App über http://localhost:3000."));
     return;
   }
 
@@ -7331,7 +7561,7 @@ async function regenerateE2eTestFromDialog() {
 
   const sourceRequirement = findSourceSoftwareRequirementForE2e(item);
   if (!sourceRequirement) {
-    alert("Das zugehörige Software Requirement wurde nicht gefunden.");
+    alert(translateUiText("Das zugehörige Software Requirement wurde nicht gefunden."));
     return;
   }
 
@@ -7359,7 +7589,7 @@ async function regenerateE2eTestFromDialog() {
       isReDerivedFromChangedSource: true,
     }));
     if (!regeneratedTests.length) {
-      throw new Error("E2E TestCase konnte nicht neu abgeleitet werden");
+      throw new Error(translateUiText("E2E TestCase konnte nicht neu abgeleitet werden"));
     }
 
     const firstAffectedIndex = state.e2eTests.findIndex((entry) => hasSameE2eSource(entry, sourceRequirement));
@@ -7382,7 +7612,7 @@ async function regenerateE2eTestFromDialog() {
     els.e2eSelectionText.value = activeTest.description || activeTest.text || "";
     els.e2eSelectionTable.innerHTML = renderE2eTestCaseTable(activeTest);
     els.e2eSelectionTechTypes.innerHTML = renderReadOnlyTechTypes(activeTest.techTypes);
-    els.e2eSelectionIssues.innerHTML = activeTest.issues?.length ? renderIssues(activeTest.issues) : "Keine Hinweise vorhanden.";
+    els.e2eSelectionIssues.innerHTML = activeTest.issues?.length ? renderIssues(activeTest.issues) : translateUiText("Keine Hinweise vorhanden.");
     els.e2eImprovementInstruction.value = "";
     els.e2eImprovementAttachments.value = "";
     renderImprovementAttachmentList(els.e2eImprovementAttachments, els.e2eImprovementAttachmentList);
@@ -7404,7 +7634,7 @@ async function regenerateE2eTestFromDialog() {
 async function improveE2eTestWithAi() {
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    alert(translateUiText("Bitte starte den lokalen Server und öffne die App über http://localhost:3000."));
     return;
   }
 
@@ -7412,20 +7642,20 @@ async function improveE2eTestWithAi() {
   const item = state.e2eTests.find((entry) => String(entry.id || "") === String(e2eId || ""));
   const instruction = els.e2eImprovementInstruction.value.trim();
   if (!item || !instruction) {
-    alert("Bitte beschreibe, was die AI am E2E TestCase verbessern soll.");
+    alert(translateUiText("Bitte beschreibe, was die AI am E2E TestCase verbessern soll."));
     return;
   }
 
   const sourceRequirement = getFinalSoftwareRequirements().find((requirement) => String(requirement.id || "") === String(item.sourceId || ""));
   if (!sourceRequirement) {
-    alert("Das zugehörige Software Requirement wurde nicht gefunden.");
+    alert(translateUiText("Das zugehörige Software Requirement wurde nicht gefunden."));
     return;
   }
 
   const previousStatus = els.e2eImproveButton.textContent;
   els.e2eImproveButton.disabled = true;
   els.e2eSelectionAcceptButton.disabled = true;
-  els.e2eImproveButton.textContent = "AI verbessert...";
+  els.e2eImproveButton.textContent = translateUiText("AI verbessert...");
 
   try {
     const improvementAttachments = await readImprovementAttachments(els.e2eImprovementAttachments);
@@ -7468,7 +7698,7 @@ async function improveE2eTestWithAi() {
     els.e2eSelectionText.value = item.description || item.text || "";
     els.e2eSelectionTable.innerHTML = renderE2eTestCaseTable(item);
     els.e2eSelectionTechTypes.innerHTML = renderReadOnlyTechTypes(item.techTypes);
-    els.e2eSelectionIssues.innerHTML = item.issues.length ? renderIssues(item.issues) : "Keine Hinweise vorhanden.";
+    els.e2eSelectionIssues.innerHTML = item.issues.length ? renderIssues(item.issues) : translateUiText("Keine Hinweise vorhanden.");
     els.e2eSelectionApproveButton.disabled = true;
     els.e2eSelectionApproveButton.textContent = translateUiText("E2E TestCase freigeben");
     els.e2eImprovementInstruction.value = "";
@@ -7638,13 +7868,13 @@ function buildE2eQualityAssessmentText(item) {
 
 async function generateE2eTests() {
   if (!canEditE2eTests()) {
-    alert("Nur E2E Test Owner oder Admins können E2E TestCases bearbeiten.");
+    alert(translateUiText("Nur E2E Test Owner oder Admins können E2E TestCases bearbeiten."));
     return;
   }
 
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
-    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    alert(translateUiText("Bitte starte den lokalen Server und öffne die App über http://localhost:3000."));
     return;
   }
 
@@ -8079,7 +8309,7 @@ function approverChipLabel(user) {
 
 async function openProductApprovalDialog() {
   if (!canEditProductRequirements()) {
-    alert("Nur Product Requirement Owner können den PR-Approval-Prozess starten.");
+    alert(translateUiText("Nur Product Requirement Owner können den PR-Approval-Prozess starten."));
     return;
   }
 
@@ -8266,7 +8496,7 @@ function productApprovalProgressText() {
 
 function startProductApprovalProcess() {
   if (hasApprovedFinalProductSelections()) {
-    alert("Alle Product Requirements sind bereits freigegeben. Ein neues Approval ist erst nach einer PR-Änderung möglich.");
+    alert(translateUiText("Alle Product Requirements sind bereits freigegeben. Ein neues Approval ist erst nach einer PR-Änderung möglich."));
     return;
   }
 
@@ -8277,7 +8507,7 @@ function startProductApprovalProcess() {
   }
 
   if (!canEditProductRequirements()) {
-    alert("Nur Product Requirement Owner können den PR-Approval-Prozess starten.");
+    alert(translateUiText("Nur Product Requirement Owner können den PR-Approval-Prozess starten."));
     return;
   }
 
@@ -8289,7 +8519,7 @@ function startProductApprovalProcess() {
 
   const selectedApproverIds = normalizeApproverIds(selectedProductApprovalDialogApproverIds());
   if (!selectedApproverIds.length) {
-    alert("Bitte wähle mindestens einen PR Approver aus.");
+    alert(translateUiText("Bitte wähle mindestens einen PR Approver aus."));
     return;
   }
 
@@ -8314,13 +8544,16 @@ function renderProductTransferState(productReady = isProductReadyForTransferSimu
 
   const approvalPending = isProductApprovalPending();
   const transferReady = productReady && !approvalPending;
+  const canStartProductTransfer = canEditProductRequirements();
   els.productTransferBar.hidden = !hasProject();
   els.productTransferBar.classList.toggle("is-complete", state.productWindchillTransferComplete);
-  els.productTransferBar.classList.toggle("is-blocked", !state.productWindchillTransferComplete && !transferReady);
+  els.productTransferBar.classList.toggle("is-blocked", !state.productWindchillTransferComplete && (!transferReady || !canStartProductTransfer));
   els.productTransferTitle.textContent = state.productWindchillTransferComplete
     ? translateUiText("Simulation abgeschlossen")
-    : transferReady
+    : transferReady && canStartProductTransfer
       ? translateUiText("PR bereit zur Übergabe")
+      : transferReady
+        ? translateUiText("PR-Transfer gesperrt")
       : translateUiText("PR-Transfer wartet");
   els.productTransferText.textContent = state.productWindchillTransferComplete
     ? `${translateUiText("Demo Transfer angezeigt")}${state.productWindchillTransferredAt ? `: ${new Date(state.productWindchillTransferredAt).toLocaleString()}` : "."}`
@@ -8332,12 +8565,14 @@ function renderProductTransferState(productReady = isProductReadyForTransferSimu
           ? isProductApprovalStarted()
             ? `${productApprovalProgressText()} ${translateUiText("Die Übergabe ist erst nach vollständiger PR-Freigabe möglich.")}`
             : translateUiText("Starte und schließe zuerst den PR-Approval-Prozess ab.")
+          : !canStartProductTransfer
+            ? translateUiText("Nur Product Requirement Owner oder Admins können die Transfer-Simulation starten.")
           : translateUiText("Simulation: PR würde nach Windchill übertragen. Noch keine echte Windchill-Verbindung.");
   els.productTransferBar.title = els.productTransferText.textContent;
-  els.productTransferButton.disabled = state.productWindchillTransferComplete || !canEditProductRequirements() || !transferReady;
+  els.productTransferButton.disabled = state.productWindchillTransferComplete || !canStartProductTransfer || !transferReady;
   els.productTransferButton.title = state.productWindchillTransferComplete
     ? translateUiText("Simulation abgeschlossen")
-    : !canEditProductRequirements()
+    : !canStartProductTransfer
       ? translateUiText("Nur Product Requirement Owner oder Admins können die Transfer-Simulation starten")
       : approvalPending
         ? translateUiText("PR-Freigabe ist vor der Transfer-Simulation erforderlich")
@@ -8354,12 +8589,12 @@ async function simulateProductWindchillTransfer() {
   }
 
   if (!isProductReadyForTransferSimulation()) {
-    alert(`Bitte finalisiere zuerst alle PR mit Score >= ${PRODUCT_STEP_MIN_SCORE} und ausgewählten TechTypes.`);
+    alert(translateUiText(`Bitte finalisiere zuerst alle PR mit Score >= ${PRODUCT_STEP_MIN_SCORE} und ausgewählten TechTypes.`));
     return;
   }
 
   if (isProductApprovalPending()) {
-    alert("Bitte starte und schließe zuerst den PR-Approval-Prozess ab. Danach kann die Windchill-Übergabe simuliert werden.");
+    alert(translateUiText("Bitte starte und schließe zuerst den PR-Approval-Prozess ab. Danach kann die Windchill-Übergabe simuliert werden."));
     return;
   }
 
@@ -8764,7 +8999,7 @@ function updateContextualMenuActions() {
           : "Einstellungen sind nur im PR-Schritt verfügbar"
         : "Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten",
   );
-  els.analyzeButton.textContent = "PR Analysieren";
+  els.analyzeButton.textContent = translateUiText("PR Analysieren");
   els.analyzeButton.hidden = state.analysisComplete;
   setMenuButtonAvailability(
     els.analyzeButton,
@@ -8831,7 +9066,7 @@ function ensureMenuButtonAvailable(button) {
 async function createProjectInDatabase() {
   const endpoint = getProjectsEndpoint();
   if (!endpoint) {
-    alert("Bitte starte den lokalen Server und öffne die App über http://localhost:3000.");
+    alert(translateUiText("Bitte starte den lokalen Server und öffne die App über http://localhost:3000."));
     return false;
   }
 
@@ -8985,16 +9220,16 @@ function createProjectPayload() {
 
 function loadProjectPayload(payload, fileName, projectId = "") {
   if (!payload || payload.type !== PROJECT_FILE_TYPE) {
-    throw new Error("Unbekanntes Projektformat");
+    throw new Error(translateUiText("Unbekanntes Projektformat"));
   }
 
   if (payload.version !== PROJECT_FILE_VERSION) {
-    throw new Error(`Nicht unterstützte Projektversion: ${payload.version}`);
+    throw new Error(`${translateUiText("Nicht unterstützte Projektversion")}: ${payload.version}`);
   }
 
   const source = payload.source || {};
   if (!Array.isArray(source.rows) || !Array.isArray(source.headers)) {
-    throw new Error("Projekt enthält keine gültigen Quelldaten");
+    throw new Error(translateUiText("Projekt enthält keine gültigen Quelldaten"));
   }
 
   resetProjectApprovalState();
@@ -9374,6 +9609,7 @@ function translateDefaultUiPattern(text) {
     [/^E2E filter: score < (\d+)$/, "E2E-Filter: Score < $1"],
     [/^Batch (\d+) of (\d+) is being processed\.$/, "Batch $1 von $2 wird verarbeitet."],
     [/^(\d+) of (\d+) requirements processed$/, "$1 von $2 Requirements verarbeitet"],
+    [/^(\d+)\/(\d+) requirements analyzed\.$/, "$1/$2 Requirements analysiert."],
     [/^(\d+) requirements analyzed · Duration (.+)$/, "$1 Requirements analysiert · Dauer $2"],
     [/^Remaining approx\. (.+)$/, "Restzeit ca. $1"],
     [/^(.+) remaining$/, "$1 verbleibend"],
@@ -9422,6 +9658,7 @@ function translateUiPattern(text, dictionary) {
     [/^E2E-Filter: Score < (\d+)$/, "E2E filter: score < $1"],
     [/^Batch (\d+) von (\d+) wird verarbeitet\.$/, "Batch $1 of $2 is being processed."],
     [/^(\d+) von (\d+) Requirements verarbeitet$/, "$1 of $2 requirements processed"],
+    [/^(\d+)\/(\d+) Requirements analysiert\.$/, "$1/$2 requirements analyzed."],
     [
       /^(\d+) von (\d+) Requirements verarbeitet · Laufzeit (.+) · Restzeit ca\. (.+)$/,
       "$1 of $2 requirements processed · Runtime $3 · Remaining approx. $4",
