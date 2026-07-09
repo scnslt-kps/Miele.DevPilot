@@ -50,6 +50,8 @@ const state = {
   sourceWorkbookEncoding: "",
   projectName: "",
   projectDescription: "",
+  productRequirementOwnerId: "",
+  productRequirementOwnerName: "",
   projectId: "",
   projectFileName: "",
   projectSavedSnapshot: "",
@@ -72,6 +74,10 @@ const state = {
   projectRevisionAction: "",
   currentUser: null,
   adminUsers: [],
+  productRequirementOwners: [],
+  productRequirementOwnersLoading: false,
+  productRequirementOwnersLoaded: false,
+  productRequirementOwnersError: "",
   productApprovers: [],
   productApproversLoading: false,
   productApproversLoaded: false,
@@ -79,12 +85,14 @@ const state = {
   productApprovalApproverIds: new Set(),
   productApprovalStartedAt: "",
   productApprovalStartedBy: "",
+  productApprovalStartedById: "",
   productApprovalListSearch: "",
   productApprovalStatusFilter: "all",
   productApprovalActiveTab: "comments",
   productApprovalDecisionMode: "",
   productApprovalDisapproveDraftRow: null,
   productApprovalDisapproveDraftText: "",
+  productApprovalReplyDrafts: {},
   appDialogResolve: null,
   changeRequestDialogResolve: null,
   productReviewActiveTab: "final",
@@ -173,6 +181,13 @@ const UI_TRANSLATIONS = {
     "Von Produktanforderungen zu umsetzbaren Entwicklungs- und Testartefakten.": "From product requirements to actionable development and test artifacts.",
     "Projekt": "Project",
     "Kein Projekt geöffnet": "No project open",
+    "Product Requirement Owner": "Product Requirement Owner",
+    "PR Owner": "PR owner",
+    "PR Owner wird geladen": "Loading PR owner",
+    "PR Owner konnten nicht geladen werden": "PR owners could not be loaded",
+    "PR Owner aktualisiert": "PR owner updated",
+    "Keine Product Requirement Owner verfügbar": "No Product Requirement Owners available",
+    "Bitte wähle einen Product Requirement Owner aus.": "Please select a Product Requirement Owner.",
     "Ungespeicherte Änderungen": "Unsaved changes",
     "Projektstatus": "Project status",
     "OpenAI Kosten": "OpenAI costs",
@@ -245,6 +260,7 @@ const UI_TRANSLATIONS = {
     "Product Requirements": "Product Requirements",
     "Product Requirements analysieren": "Analyze Product Requirements",
     "Requirements": "Requirements",
+    "KPI": "KPI",
     "Durchschnitt": "Average",
     "Kritische Hinweise": "Critical issues",
     "1. Analyse": "1. Analysis",
@@ -286,8 +302,11 @@ const UI_TRANSLATIONS = {
     "Ablehnungskommentar *": "Disapproval comment *",
     "Bitte begründe, warum dieses Requirement nicht freigegeben werden kann.": "Please explain why this requirement cannot be approved.",
     "Ablehnung senden": "Submit disapproval",
+    "Wähle die Personen aus, die jedes Product Requirement freigeben müssen. Der Owner muss die eigenen Requirements nicht selbst freigeben.": "Select the people who must approve each Product Requirement. The owner does not need to approve their own requirements.",
     "Noch nicht gestartet": "Not started yet",
     "Keine PR Approver verfügbar": "No PR approvers available",
+    "Keine weiteren PR Approver verfügbar": "No additional PR approvers available",
+    "Keine weiteren PR Approver verfügbar. Der Owner muss nicht selbst freigeben.": "No additional PR approvers available. The owner does not need to approve their own requirements.",
     "Keine PR Approver ausgewählt": "No PR approvers selected",
     "PR Approver werden geladen": "Loading PR approvers",
     "PR-Freigabe erfasst": "PR approval recorded",
@@ -297,7 +316,9 @@ const UI_TRANSLATIONS = {
     "Bearbeitung": "Editing",
     "Nicht ausgewählt": "Not selected",
     "Wähle mindestens einen PR Approver aus.": "Select at least one PR approver.",
+    "Wähle mindestens einen PR Approver aus. Der Owner muss nicht selbst freigeben.": "Select at least one PR approver. The owner does not need to approve their own requirements.",
     "Bitte wähle mindestens einen PR Approver aus.": "Please select at least one PR approver.",
+    "Bitte wähle mindestens einen PR Approver aus. Der Owner muss nicht selbst freigeben.": "Please select at least one PR approver. The owner does not need to approve their own requirements.",
     "Keine Requirements im Approval.": "No requirements in approval.",
     "Product Requirements sind während des laufenden Approval-Prozesses gesperrt.": "Product Requirements are locked while the approval process is running.",
     "Product Requirements sind während des Approval-Prozesses gesperrt": "Product Requirements are locked during the approval process",
@@ -335,6 +356,10 @@ const UI_TRANSLATIONS = {
     "Hinweise": "Issues",
     "AI-Vorschlag": "AI suggestion",
     "In Freigabe": "In approval",
+    "Meine Freigaben": "My approvals",
+    "Meine Nacharbeit": "My rework",
+    "Keine offenen Freigaben fuer deinen Benutzer gefunden.": "No open approvals found for your user.",
+    "Keine offene Nacharbeit fuer deinen Benutzer gefunden.": "No open rework found for your user.",
     "Freigegeben": "Approved",
     "Transferiert": "Transferred",
     "Geändert": "Changed",
@@ -343,6 +368,10 @@ const UI_TRANSLATIONS = {
     "Bereit für Freigabe": "Ready for approval",
     "Bereit für Approval": "Ready for approval",
     "Final freigegeben": "Final approved",
+    "Ablehnungskommentar vorhanden": "Disapproval comment available",
+    "Ablehnungskommentar berücksichtigen": "Consider disapproval comment",
+    "Bitte beantworte zuerst alle offenen Ablehnungskommentare.": "Please answer all open disapproval comments first.",
+    "Bitte speichere das Requirement und berechne den Score neu, bevor du es erneut zur Freigabe bereitstellst.": "Please save the requirement and recalculate the score before resubmitting it for approval.",
     "Ausgeschlossen": "Excluded",
     "Finalization Gate nicht abgeschlossen": "Finalization gate not complete",
     "Finale Scores fehlen für ein oder mehrere Requirements": "Final scores are missing for one or more Requirements",
@@ -471,6 +500,7 @@ const UI_TRANSLATIONS = {
     "Keine Kommentare vorhanden.": "No comments available.",
     "Antwort des Owners": "Owner reply",
     "Antworten": "Reply",
+    "Antworten und erneut freigeben": "Reply and release for approval",
     "Kommentar lösen": "Resolve comment",
     "Gelöst": "Resolved",
     "PR Bearbeitung abgeschlossen": "PR editing complete",
@@ -479,6 +509,38 @@ const UI_TRANSLATIONS = {
     "PR Bearbeitung wartet": "PR editing waiting",
     "PR öffnen": "Open PR",
     "PR bearbeiten": "Edit PR",
+    "Arbeitszentrale": "Work center",
+    "Product Requirement Fortschritt": "Product Requirement progress",
+    "Offene Aufgaben": "Open tasks",
+    "Keine offenen Aufgaben fuer deinen Benutzer.": "No open tasks for your user.",
+    "Meine Nacharbeit öffnen": "Open my rework",
+    "Meine Freigaben öffnen": "Open my approvals",
+    "Approval-Status ansehen": "View approval status",
+    "Es gibt Product Requirements mit offenen Ablehnungskommentaren für dich.": "There are Product Requirements with open disapproval comments for you.",
+    "Es gibt Product Requirements, die auf deine Freigabe warten.": "There are Product Requirements waiting for your approval.",
+    "Der Approval-Prozess läuft. Für dich sind aktuell keine offenen Aufgaben vorhanden.": "Approval is running. There are currently no open tasks for you.",
+    "Offene Nacharbeit": "Open rework",
+    "Offene Freigabe": "Open approval",
+    "Mehr Aufgaben anzeigen": "Show more tasks",
+    "Nächster Schritt": "Next step",
+    "Product Requirements vorbereiten": "Prepare Product Requirements",
+    "Product Requirements abgeschlossen": "Product Requirements complete",
+    "Requirements importieren": "Import requirements",
+    "Aktion öffnen": "Open action",
+    "Analyse starten": "Start analysis",
+    "Bearbeitung fortsetzen": "Continue editing",
+    "PRs ansehen": "View PRs",
+    "Freigabe starten": "Start approval",
+    "Freigabe prüfen": "Review approval",
+    "Transfer-Simulation starten": "Start transfer simulation",
+    "Transfer abgeschlossen": "Transfer complete",
+    "Importiere Product Requirements, um den Workflow zu starten.": "Import Product Requirements to start the workflow.",
+    "Analysiere die importierten Product Requirements, bevor Bearbeitung und Freigabe möglich sind.": "Analyze the imported Product Requirements before editing and approval are available.",
+    "Bearbeite offene Requirements, bis alle Scores und TechTypes vollständig sind.": "Edit open requirements until all scores and TechTypes are complete.",
+    "Alle Product Requirements sind bearbeitet. Starte die Freigabe mit den ausgewählten Approvern.": "All Product Requirements are edited. Start approval with the selected approvers.",
+    "Der Approval-Prozess läuft. Prüfe den Status oder bearbeite offene Nacharbeit.": "Approval is running. Review the status or handle open rework.",
+    "Alle Product Requirements sind freigegeben. Starte jetzt die Transfer-Simulation.": "All Product Requirements are approved. Start the transfer simulation now.",
+    "Product Requirements wurden simuliert übertragen. Du kannst die finalen PRs weiterhin ansehen.": "Product Requirements were simulated as transferred. You can still view the final PRs.",
     "Approval-Prozess kann gestartet werden.": "Approval process can be started.",
     "Analyse zuerst ausführen.": "Run analysis first.",
     "Nach der Analyse können finale Requirements, Scores und TechTypes bearbeitet werden.": "After analysis, final requirements, scores, and TechTypes can be edited.",
@@ -585,8 +647,14 @@ const UI_TRANSLATIONS = {
     "Hinweise aus der Analyse": "Issues from analysis",
     "Noch keine Analysehinweise vorhanden.": "No analysis issues available yet.",
     "TechTypes": "TechTypes",
+    "TechTypes auswählen": "Select TechTypes",
+    "TechTypes bearbeiten": "Edit TechTypes",
+    "TechType suchen ...": "Search TechType ...",
     "Alle TechTypes ausgewählt": "All TechTypes selected",
     "Alle auswählen": "Select all",
+    "Auswahl löschen": "Clear selection",
+    "Nur sichtbare auswählen": "Select visible only",
+    "ausgewählt": "selected",
     "Requirement ausschließen": "Exclude requirement",
     "Auswahl später treffen": "Decide later",
     "Software Requirement übernehmen": "Accept Software Requirement",
@@ -682,6 +750,7 @@ const UI_TRANSLATIONS = {
     "Keine Berechtigung zum Laden von Projekten": "No permission to load projects",
     "Nur Admins und Owner-Rollen können Projekte erstellen": "Only admins and owner roles can create projects",
     "Freigabe erforderlich": "Approval required",
+    "Freigabe ausstehend": "Approval pending",
     "Transfer-Simulation erforderlich": "Transfer simulation required",
     "abschließen": "complete",
     "muss zuerst abgeschlossen werden": "must be completed first",
@@ -734,6 +803,7 @@ const UI_TRANSLATIONS = {
     "Analyse läuft": "Analysis running",
     "Analysiere...": "Analyzing...",
     "Analyse fertig": "Analysis complete",
+    "Keine Requirements fuer den aktuellen Filter gefunden.": "No requirements found for the current filter.",
     "Keine Requirements in der gewaehlten Spalte gefunden.": "No requirements found in the selected column.",
     "Ohne Kategorie": "No category",
     "Ohne Subkategorie": "No subcategory",
@@ -1002,6 +1072,7 @@ const els = {
   projectCreateButton: document.querySelector("#projectCreateButton"),
   projectName: document.querySelector("#projectName"),
   projectDescription: document.querySelector("#projectDescription"),
+  productRequirementOwner: document.querySelector("#productRequirementOwner"),
   projectSelectionOverlay: document.querySelector("#projectSelectionOverlay"),
   projectSelectionCloseButton: document.querySelector("#projectSelectionCloseButton"),
   projectSelectionMessage: document.querySelector("#projectSelectionMessage"),
@@ -1011,6 +1082,12 @@ const els = {
   projectHistoryMessage: document.querySelector("#projectHistoryMessage"),
   projectHistoryBody: document.querySelector("#projectHistoryBody"),
   productActionBar: document.querySelector("#productActionBar"),
+  productNextActionPanel: document.querySelector("#productNextActionPanel"),
+  productNextActionKicker: document.querySelector("#productNextActionKicker"),
+  productNextActionTitle: document.querySelector("#productNextActionTitle"),
+  productNextActionText: document.querySelector("#productNextActionText"),
+  productNextActionButton: document.querySelector("#productNextActionButton"),
+  productTodoList: document.querySelector("#productTodoList"),
   productAnalyzeAction: document.querySelector("#productAnalyzeAction"),
   productAnalyzeStatus: document.querySelector("#productAnalyzeStatus"),
   productQualityGateCard: document.querySelector("#productQualityGateCard"),
@@ -1048,9 +1125,16 @@ const els = {
   productReviewTechTypeSearch: document.querySelector("#productReviewTechTypeSearch"),
   productReviewTechTypeFilter: document.querySelector("#productReviewTechTypeFilter"),
   productReviewSelectAllTechTypesButton: document.querySelector("#productReviewSelectAllTechTypesButton"),
+  productReviewSelectVisibleTechTypesButton: document.querySelector("#productReviewSelectVisibleTechTypesButton"),
   productReviewClearTechTypesButton: document.querySelector("#productReviewClearTechTypesButton"),
   productReviewResetTechTypesButton: document.querySelector("#productReviewResetTechTypesButton"),
   productReviewTechTypesHost: document.querySelector("#productReviewTechTypesHost"),
+  techTypeModalOverlay: document.querySelector("#techTypeModalOverlay"),
+  techTypeModalTitle: document.querySelector("#techTypeModalTitle"),
+  techTypeModalSummary: document.querySelector("#techTypeModalSummary"),
+  techTypeModalCloseButton: document.querySelector("#techTypeModalCloseButton"),
+  techTypeModalSelectionHost: document.querySelector("#techTypeModalSelectionHost"),
+  techTypeModalDoneButton: document.querySelector("#techTypeModalDoneButton"),
   productReviewAnalysisHost: document.querySelector("#productReviewAnalysisHost"),
   productReviewHistory: document.querySelector("#productReviewHistory"),
   productApprovalDetailContent: document.querySelector("#productApprovalDetailContent"),
@@ -1058,22 +1142,21 @@ const els = {
   productApprovalDetailTitle: document.querySelector("#productApprovalDetailTitle"),
   productApprovalDetailSubtitle: document.querySelector("#productApprovalDetailSubtitle"),
   productApprovalDetailProgress: document.querySelector("#productApprovalDetailProgress"),
-  productApprovalDetailId: document.querySelector("#productApprovalDetailId"),
-  productApprovalDetailScore: document.querySelector("#productApprovalDetailScore"),
-  productApprovalDetailOwner: document.querySelector("#productApprovalDetailOwner"),
-  productApprovalDetailVersion: document.querySelector("#productApprovalDetailVersion"),
-  productApprovalDetailMetaStatus: document.querySelector("#productApprovalDetailMetaStatus"),
-  productApprovalDetailOpenComments: document.querySelector("#productApprovalDetailOpenComments"),
   productApprovalFinalText: document.querySelector("#productApprovalFinalText"),
+  productApprovalScoreRow: document.querySelector("#productApprovalScoreRow"),
+  productApprovalScore: document.querySelector("#productApprovalScore"),
+  productApprovalScoreStatus: document.querySelector("#productApprovalScoreStatus"),
+  productApprovalScoreHint: document.querySelector("#productApprovalScoreHint"),
   productApprovalOriginalText: document.querySelector("#productApprovalOriginalText"),
   productApprovalOwnerActions: document.querySelector("#productApprovalOwnerActions"),
   productApprovalSaveTextButton: document.querySelector("#productApprovalSaveTextButton"),
   productApprovalSubmitButton: document.querySelector("#productApprovalSubmitButton"),
-  productApprovalAiImprovement: document.querySelector("#productApprovalAiImprovement"),
-  productApprovalImprovementInstruction: document.querySelector("#productApprovalImprovementInstruction"),
-  productApprovalImprovementAttachments: document.querySelector("#productApprovalImprovementAttachments"),
-  productApprovalImprovementAttachmentList: document.querySelector("#productApprovalImprovementAttachmentList"),
-  productApprovalImproveButton: document.querySelector("#productApprovalImproveButton"),
+  productApprovalAiAssist: document.querySelector("#productApprovalAiAssist"),
+  productApprovalAiInstruction: document.querySelector("#productApprovalAiInstruction"),
+  productApprovalAiAttachments: document.querySelector("#productApprovalAiAttachments"),
+  productApprovalAiAttachmentList: document.querySelector("#productApprovalAiAttachmentList"),
+  productApprovalAiButton: document.querySelector("#productApprovalAiButton"),
+  productApprovalTechTypesTabButton: document.querySelector("#productApprovalTechTypesTabButton"),
   productApprovalDecision: document.querySelector("#productApprovalDecision"),
   productApprovalApproveButton: document.querySelector("#productApprovalApproveButton"),
   productApprovalShowDisapproveButton: document.querySelector("#productApprovalShowDisapproveButton"),
@@ -1165,6 +1248,11 @@ const els = {
   countMetric: document.querySelector("#countMetric"),
   scoreMetric: document.querySelector("#scoreMetric"),
   issueMetric: document.querySelector("#issueMetric"),
+  productWorkflowMetrics: document.querySelector("#productWorkflowMetrics"),
+  workflowCountMetric: document.querySelector("#workflowCountMetric"),
+  workflowCountMetricLabel: document.querySelector("#workflowCountMetricLabel"),
+  workflowScoreMetric: document.querySelector("#workflowScoreMetric"),
+  workflowIssueMetric: document.querySelector("#workflowIssueMetric"),
   criticalIssuesButton: document.querySelector("#criticalIssuesButton"),
   productTransferBar: document.querySelector("#productTransferBar"),
   productTransferTitle: document.querySelector("#productTransferTitle"),
@@ -1206,6 +1294,8 @@ const els = {
   adminPage: document.querySelector("#adminPage"),
   openCreateUserButton: document.querySelector("#openCreateUserButton"),
   workflowSelector: document.querySelector(".workflow-selector"),
+  workflowSteps: document.querySelectorAll(".workflow-step"),
+  productWorkflowOwner: document.querySelector("#productWorkflowOwner"),
   progressOverlay: document.querySelector("#progressOverlay"),
   progressTitle: document.querySelector("#progressTitle"),
   progressText: document.querySelector("#progressText"),
@@ -1256,7 +1346,7 @@ els.workflowSteps.forEach((step) => {
 });
 [
   [els.prImprovementAttachments, els.prImprovementAttachmentList],
-  [els.productApprovalImprovementAttachments, els.productApprovalImprovementAttachmentList],
+  [els.productApprovalAiAttachments, els.productApprovalAiAttachmentList],
   [els.softwareImprovementAttachments, els.softwareImprovementAttachmentList],
   [els.e2eImprovementAttachments, els.e2eImprovementAttachmentList],
 ].forEach(([input, list]) => {
@@ -1521,6 +1611,8 @@ els.exportButton.addEventListener("click", () => {
 });
 els.productEditButton.addEventListener("click", openProductEditDialog);
 els.productTransferButton.addEventListener("click", simulateProductWindchillTransfer);
+els.productNextActionButton.addEventListener("click", handleProductNextAction);
+els.productTodoList.addEventListener("click", handleProductTodoClick);
 els.startProductApprovalButton.addEventListener("click", handleProductApprovalButtonClick);
 els.productApprovalCloseButton.addEventListener("click", closeProductApprovalDialog);
 els.productApprovalCancelButton.addEventListener("click", closeProductApprovalDialog);
@@ -1551,7 +1643,7 @@ els.appDialogOverlay.addEventListener("click", (event) => {
   }
 });
 els.softwareTransferButton.addEventListener("click", simulateSoftwareWindchillTransfer);
-els.criticalIssuesButton.addEventListener("click", activateScoreFilter);
+els.criticalIssuesButton?.addEventListener("click", activateScoreFilter);
 els.clearScoreFilterButton.addEventListener("click", clearScoreFilter);
 els.criticalSoftwareIssuesButton.addEventListener("click", activateSoftwareScoreFilter);
 els.clearSoftwareScoreFilterButton.addEventListener("click", clearSoftwareScoreFilter);
@@ -1564,21 +1656,38 @@ els.productReviewTabs.addEventListener("click", handleProductReviewTabClick);
 els.productReviewSaveFinalTextButton.addEventListener("click", saveProductReviewFinalText);
 els.productReviewRecalculateScoreButton.addEventListener("click", recalculateProductReviewFinalScore);
 els.productReviewFinalText.addEventListener("input", markProductReviewFinalTextStale);
+els.productApprovalFinalText.addEventListener("input", updateProductApprovalDraftScoreState);
 els.productReviewFinalChoiceHost.addEventListener("click", handleProductReviewFinalTabClick);
 els.productReviewTechTypeSearch.addEventListener("input", handleProductReviewTechTypeFilterChange);
 els.productReviewTechTypeFilter.addEventListener("change", handleProductReviewTechTypeFilterChange);
 els.productReviewSelectAllTechTypesButton.addEventListener("click", selectAllTechTypesForActiveRequirement);
+els.productReviewSelectVisibleTechTypesButton.addEventListener("click", selectVisibleTechTypesForActiveRequirement);
 els.productReviewClearTechTypesButton.addEventListener("click", clearTechTypesForActiveRequirement);
 els.productReviewResetTechTypesButton.addEventListener("click", resetTechTypesForActiveRequirement);
+els.productReviewTechTypesHost.addEventListener("click", handleProductReviewTechTypeSummaryClick);
+els.techTypeModalCloseButton.addEventListener("click", closeTechTypeModal);
+els.techTypeModalDoneButton.addEventListener("click", closeTechTypeModal);
+els.techTypeModalOverlay.addEventListener("click", (event) => {
+  if (event.target === els.techTypeModalOverlay) {
+    closeTechTypeModal();
+  }
+});
+els.techTypeModalOverlay.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeTechTypeModal();
+  }
+});
 els.productApprovalSaveTextButton.addEventListener("click", saveProductApprovalText);
-els.productApprovalSubmitButton.addEventListener("click", submitProductRequirementForApproval);
-els.productApprovalImproveButton.addEventListener("click", improveProductApprovalRequirementWithAi);
+els.productApprovalSubmitButton.addEventListener("click", () => void submitProductRequirementForApproval());
+els.productApprovalAiButton.addEventListener("click", improveProductApprovalRequirementWithAi);
 els.productApprovalApproveButton.addEventListener("click", async () => {
-  const pendingSave = await savePendingProductApprovalTextChange();
-  if (!pendingSave.ok) return;
-  if (pendingSave.changed) {
-    alert(translateUiText("Die Änderung wurde gespeichert. Bitte prüfe den neu berechneten Score und gib das Requirement anschließend erneut frei."));
-    return;
+  if (canReviseProductApprovalRequirementInDialog(state.activeSelectionRow)) {
+    const pendingSave = await savePendingProductApprovalTextChange();
+    if (!pendingSave.ok) return;
+    if (pendingSave.changed) {
+      alert(translateUiText("Die Änderung wurde gespeichert. Bitte prüfe den neu berechneten Score und gib das Requirement anschließend erneut frei."));
+      return;
+    }
   }
   if (approveProductRequirement(state.activeSelectionRow)) {
     closeProductRequirementDetailDialog();
@@ -1589,6 +1698,7 @@ els.productApprovalDisapproveComment.addEventListener("input", updateProductDisa
 els.productApprovalDisapproveButton.addEventListener("click", disapproveProductRequirement);
 els.productApprovalTabs.addEventListener("click", handleProductApprovalTabClick);
 els.productApprovalTabContent.addEventListener("click", handleProductApprovalCommentClick);
+els.productApprovalTabContent.addEventListener("input", handleProductApprovalCommentInput);
 els.productApprovalDetailCloseButton.addEventListener("click", closeProductRequirementDetailDialog);
 els.softwareRequirementsBody.addEventListener("click", handleSoftwareRowClick);
 els.softwareRequirementsBody.addEventListener("keydown", (event) => {
@@ -1627,6 +1737,7 @@ els.prImproveButton.addEventListener("click", improveProductRequirementWithAi);
 els.selectAllTechTypesButton.addEventListener("click", selectAllTechTypesForActiveRequirement);
 els.techTypeSelectionList.addEventListener("click", handleTechTypeSelectionClick);
 els.techTypeSelectionList.addEventListener("change", handleTechTypeSelectionChange);
+els.techTypeSelectionList.addEventListener("toggle", handleTechTypeGroupToggle, true);
 els.softwareSelectionCloseButton.addEventListener("click", closeSoftwareSelectionDialog);
 els.softwareSelectionDeferButton.addEventListener("click", deferSoftwareRequirementSelection);
 els.softwareSelectionExcludeButton.addEventListener("click", excludeSoftwareRequirement);
@@ -1914,11 +2025,64 @@ async function loadAdminUsers() {
     }
 
     state.adminUsers = Array.isArray(data.users) ? data.users : [];
+    refreshAppUserReferences(state.adminUsers);
     renderUserTable();
     els.userAdminMessage.textContent = "";
   } catch {
     els.userAdminMessage.textContent = translateUiText("Server nicht erreichbar");
   }
+}
+
+function refreshAppUserReferences(users = []) {
+  const activeUsers = users.filter((user) => user.active !== false);
+  const currentUser = users.find((user) => String(user.id || "") === String(state.currentUser?.id || ""));
+  if (currentUser) {
+    state.currentUser = currentUser;
+  }
+
+  state.productRequirementOwners = activeUsers.filter((user) => clientUserHasRole(user, "productRequirementOwner"));
+  state.productRequirementOwnersLoaded = true;
+  state.productRequirementOwnersError = "";
+  state.productApprovers = activeUsers.filter((user) => clientUserHasRole(user, "productRequirementApprover"));
+  state.productApproversLoaded = true;
+  state.productApproversError = "";
+
+  const projectOwner = users.find((user) => String(user.id || "") === String(state.productRequirementOwnerId || ""));
+  if (projectOwner) {
+    const nextOwnerName = productRequirementOwnerName(projectOwner);
+    if (nextOwnerName && state.productRequirementOwnerName !== nextOwnerName) {
+      state.productRequirementOwnerName = nextOwnerName;
+      setProjectRevisionAction("PR Owner aktualisiert");
+    }
+  }
+  refreshProductApprovalUserNames(users);
+
+  renderAuthState();
+  renderProductRequirementOwnerSelect();
+  renderProductWorkflowOwner();
+  renderProductApprovalState();
+  renderProductApprovalPanel();
+  renderTable();
+  renderMetrics();
+  updateProjectActions();
+}
+
+function refreshProductApprovalUserNames(users = []) {
+  const usersById = new Map(users.map((user) => [String(user.id || ""), user]));
+  state.finalSelections.forEach((selection) => {
+    productApprovalRecords(selection).forEach((approval) => {
+      const user = usersById.get(String(approval.userId || ""));
+      if (user) approval.name = productRequirementOwnerName(user) || approval.name || "";
+    });
+    productApprovalComments(selection).forEach((comment) => {
+      const user = usersById.get(String(comment.authorId || ""));
+      if (user) comment.authorName = productRequirementOwnerName(user) || comment.authorName || "";
+      (Array.isArray(comment.replies) ? comment.replies : []).forEach((reply) => {
+        const replyUser = usersById.get(String(reply.authorId || ""));
+        if (replyUser) reply.authorName = productRequirementOwnerName(replyUser) || reply.authorName || "";
+      });
+    });
+  });
 }
 
 function openCreateUserDialog() {
@@ -1998,6 +2162,11 @@ function normalizeClientRoles(value) {
   return [...new Set(roles.map((role) => String(role || "").trim()).filter((role) => USER_ROLE_LABELS[role]))];
 }
 
+function clientUserHasRole(user, role) {
+  const roles = normalizeClientRoles(user?.roles ?? user?.role);
+  return roles.includes("admin") || roles.includes(role);
+}
+
 function formatRoleList(value) {
   const roles = normalizeClientRoles(value);
   if (!roles.length) return "Keine Rolle";
@@ -2040,6 +2209,9 @@ function canSaveProject() {
 }
 
 function canEditProductRequirements() {
+  if (state.productRequirementOwnerId) {
+    return currentUserHasExplicitRole("admin") || String(state.currentUser?.id || "") === String(state.productRequirementOwnerId);
+  }
   return currentUserHasRole("productRequirementOwner");
 }
 
@@ -2079,6 +2251,19 @@ function canApproveE2eTests() {
 
 function currentApprovalUserName() {
   return state.currentUser?.name || state.currentUser?.email || "Unbekannter Benutzer";
+}
+
+function currentProductRequirementOwnerLabel() {
+  return ownerNameOnly(state.productRequirementOwnerName) || productRequirementOwnerName(selectedProductRequirementOwner(state.productRequirementOwnerId)) || "-";
+}
+
+function renderProductWorkflowOwner() {
+  if (!els.productWorkflowOwner) return;
+
+  const ownerName = currentProductRequirementOwnerLabel();
+  els.productWorkflowOwner.hidden = !state.productRequirementOwnerId && ownerName === "-";
+  els.productWorkflowOwner.textContent = ownerName === "-" ? "" : ownerName;
+  els.productWorkflowOwner.title = ownerName === "-" ? "" : `${translateUiText("PR Owner")}: ${ownerName}`;
 }
 
 function normalizeApproverIds(ids) {
@@ -2123,6 +2308,45 @@ async function ensureProductApproversLoaded(options = {}) {
     renderProductApprovalDialog();
     renderProductApprovalState();
     renderMetrics();
+  }
+}
+
+async function ensureProductRequirementOwnersLoaded(options = {}) {
+  if (options.force) {
+    state.productRequirementOwnersLoaded = false;
+    state.productRequirementOwnersError = "";
+  }
+  if (!state.currentUser || state.productRequirementOwnersLoaded || state.productRequirementOwnersLoading || !canCreateProject()) return;
+
+  const endpoint = getUsersByRoleEndpoint("productRequirementOwner");
+  if (!endpoint) return;
+
+  state.productRequirementOwnersLoading = true;
+  state.productRequirementOwnersError = "";
+  renderProductRequirementOwnerSelect();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const cacheSeparator = endpoint.includes("?") ? "&" : "?";
+    const response = await fetch(`${endpoint}${cacheSeparator}_=${Date.now()}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      state.productRequirementOwnersError = data.error || "PR Owner konnten nicht geladen werden";
+      return;
+    }
+
+    state.productRequirementOwners = Array.isArray(data.users) ? data.users : [];
+  } catch (error) {
+    state.productRequirementOwnersError =
+      error?.name === "AbortError" ? "PR Owner konnten nicht geladen werden" : "Server nicht erreichbar";
+  } finally {
+    clearTimeout(timeoutId);
+    state.productRequirementOwnersLoading = false;
+    state.productRequirementOwnersLoaded = true;
+    renderProductRequirementOwnerSelect();
   }
 }
 
@@ -2260,6 +2484,7 @@ function setActiveProcessStep(processStep) {
 function updateWorkflowState() {
   renderWorkspaceState();
   if (!hasProject()) return;
+  renderProductWorkflowOwner();
 
   if (!isProcessStepAvailable(state.activeProcessStep)) {
     state.activeProcessStep = firstAvailableProcessStep();
@@ -2275,14 +2500,14 @@ function updateWorkflowState() {
     step.classList.toggle("is-active", isActive && !isComplete);
     step.classList.toggle("is-complete", isComplete);
     step.classList.toggle("is-locked", isLocked);
-    const hasChange = hasWorkflowChange(processStep);
-    step.classList.toggle("has-change", hasChange);
-    step.title = hasChange ? translateUiText("Änderung erkannt") : "";
+    const todoText = workflowTodoText(processStep);
+    step.classList.toggle("has-change", Boolean(todoText));
+    step.title = todoText ? translateUiText(todoText) : "";
     step.disabled = isLocked;
     step.setAttribute("aria-current", isActive ? "page" : "false");
     step.setAttribute("aria-disabled", isLocked ? "true" : "false");
 
-    const status = step.querySelector("small");
+    const status = step.querySelector(".workflow-status");
     if (!status) return;
 
     if (isComplete) {
@@ -2669,16 +2894,25 @@ function hasChangedProductRequirements() {
 }
 
 function isProductApprovalStarted() {
-  return getRequiredProductApproverIds().length > 0;
+  return getEffectiveProductApproverIds().length > 0;
 }
 
 function getRequiredProductApproverIds() {
   return normalizeApproverIds(state.productApprovalApproverIds);
 }
 
+function getProductApprovalOwnerId() {
+  return String(state.productRequirementOwnerId || state.productApprovalStartedById || "").trim();
+}
+
+function getEffectiveProductApproverIds() {
+  const ownerId = getProductApprovalOwnerId();
+  return getRequiredProductApproverIds().filter((approverId) => String(approverId) !== ownerId);
+}
+
 function currentProductApproverSlotId() {
   const currentUserId = String(state.currentUser?.id || "");
-  const requiredApproverIds = getRequiredProductApproverIds();
+  const requiredApproverIds = getEffectiveProductApproverIds();
   if (currentUserId && requiredApproverIds.includes(currentUserId)) return currentUserId;
   return "";
 }
@@ -2703,6 +2937,12 @@ function countOpenDisapprovalComments(selection) {
   return productApprovalComments(selection).filter((comment) => comment.type === "disapproval" && comment.resolved !== true).length;
 }
 
+function latestOpenDisapprovalComment(selection) {
+  return productApprovalComments(selection)
+    .filter((comment) => comment.type === "disapproval" && comment.resolved !== true)
+    .sort((a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || ""))[0] || null;
+}
+
 function hasProductApprovalFrom(selection, approverId) {
   return productApprovalRecords(selection).some((approval) =>
     String(approval.userId || "") === String(approverId || "") && approval.approvedAt,
@@ -2710,7 +2950,7 @@ function hasProductApprovalFrom(selection, approverId) {
 }
 
 function countProductApprovals(selection) {
-  const requiredApproverIds = getRequiredProductApproverIds();
+  const requiredApproverIds = getEffectiveProductApproverIds();
   const approvedApproverIds = new Set(
     productApprovalRecords(selection)
       .filter((approval) => approval.approvedAt)
@@ -3138,6 +3378,8 @@ function clearOpenProject() {
   state.projectId = "";
   state.projectName = "";
   state.projectDescription = "";
+  state.productRequirementOwnerId = "";
+  state.productRequirementOwnerName = "";
   state.projectFileName = "";
   state.projectSavedSnapshot = "";
   state.projectDirty = false;
@@ -3165,10 +3407,12 @@ function resetProjectApprovalState() {
   state.productApprovalApproverIds = new Set();
   state.productApprovalStartedAt = "";
   state.productApprovalStartedBy = "";
+  state.productApprovalStartedById = "";
   state.productApprovalListSearch = "";
   state.productApprovalStatusFilter = "all";
   state.productApprovalActiveTab = "comments";
   state.productApprovalDecisionMode = "";
+  state.productApprovalReplyDrafts = {};
   state.productReviewActiveTab = "final";
   state.productReviewTechTypeSearch = "";
   state.productReviewTechTypeFilter = "all";
@@ -3187,13 +3431,15 @@ function closeSettingsDialog() {
   els.settingsOverlay.hidden = true;
 }
 
-function openProjectDialog() {
+async function openProjectDialog() {
   if (!canCreateProject()) return;
 
   els.projectName.value = state.projectName;
   els.projectDescription.value = state.projectDescription;
+  renderProductRequirementOwnerSelect();
   els.projectOverlay.hidden = false;
   els.projectName.focus();
+  await ensureProductRequirementOwnersLoaded({ force: true });
 }
 
 function closeProjectDialog() {
@@ -3213,14 +3459,21 @@ async function createProject() {
   if (!canCreateProject()) return;
 
   const projectName = els.projectName.value.trim();
+  const ownerId = String(els.productRequirementOwner?.value || "").trim();
   if (!projectName) {
     els.projectName.focus();
+    return;
+  }
+  if (!ownerId) {
+    alert(translateUiText("Bitte wähle einen Product Requirement Owner aus."));
+    els.productRequirementOwner?.focus();
     return;
   }
 
   resetProjectState({
     projectName,
     projectDescription: els.projectDescription.value.trim(),
+    productRequirementOwner: selectedProductRequirementOwner(ownerId),
   });
 
   const created = await createProjectInDatabase();
@@ -3229,7 +3482,7 @@ async function createProject() {
   closeProjectDialog();
 }
 
-function resetProjectState({ projectName, projectDescription }) {
+function resetProjectState({ projectName, projectDescription, productRequirementOwner }) {
   clearTimeout(state.projectSaveTimerId);
   state.workbook = null;
   state.sheetName = "Projekt";
@@ -3267,6 +3520,8 @@ function resetProjectState({ projectName, projectDescription }) {
   state.sourceWorkbookEncoding = "";
   state.projectName = projectName;
   state.projectDescription = projectDescription;
+  state.productRequirementOwnerId = productRequirementOwner?.id || "";
+  state.productRequirementOwnerName = productRequirementOwnerName(productRequirementOwner) || "";
   state.projectId = "";
   state.projectFileName = "";
   state.projectSavedSnapshot = "";
@@ -3297,6 +3552,68 @@ function resetProjectState({ projectName, projectDescription }) {
   renderProductApprovalPanel();
   renderProductApprovalState();
   renderMetrics();
+}
+
+function renderProductRequirementOwnerSelect() {
+  if (!els.productRequirementOwner) return;
+
+  const currentOwnerId = state.productRequirementOwnerId || (currentUserHasExplicitRole("productRequirementOwner") ? state.currentUser?.id || "" : "");
+  els.productRequirementOwner.innerHTML = "";
+
+  if (state.productRequirementOwnersLoading) {
+    els.productRequirementOwner.append(new Option(translateUiText("PR Owner wird geladen"), ""));
+    els.productRequirementOwner.disabled = true;
+    return;
+  }
+
+  if (state.productRequirementOwnersError) {
+    els.productRequirementOwner.append(new Option(translateUiText(state.productRequirementOwnersError), ""));
+    els.productRequirementOwner.disabled = true;
+    return;
+  }
+
+  const owners = state.productRequirementOwners.length
+    ? state.productRequirementOwners
+    : currentUserHasExplicitRole("productRequirementOwner")
+      ? [state.currentUser]
+      : [];
+
+  if (!owners.length) {
+    els.productRequirementOwner.append(new Option(translateUiText("Keine Product Requirement Owner verfügbar"), ""));
+    els.productRequirementOwner.disabled = true;
+    return;
+  }
+
+  owners.forEach((owner) => {
+    const option = new Option(productRequirementOwnerLabel(owner), String(owner.id || ""));
+    els.productRequirementOwner.append(option);
+  });
+  els.productRequirementOwner.disabled = false;
+  const nextOwnerId = owners.some((owner) => String(owner.id || "") === String(currentOwnerId))
+    ? currentOwnerId
+    : String(owners[0]?.id || "");
+  els.productRequirementOwner.value = nextOwnerId;
+}
+
+function selectedProductRequirementOwner(ownerId) {
+  const id = String(ownerId || "").trim();
+  return state.productRequirementOwners.find((owner) => String(owner.id || "") === id) ||
+    (String(state.currentUser?.id || "") === id ? state.currentUser : null);
+}
+
+function productRequirementOwnerLabel(owner) {
+  if (!owner) return "";
+  if (owner.name && owner.email) return `${owner.name} (${owner.email})`;
+  return owner.name || owner.email || "";
+}
+
+function productRequirementOwnerName(owner) {
+  if (!owner) return "";
+  return owner.name || owner.email || "";
+}
+
+function ownerNameOnly(value) {
+  return String(value || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
 }
 
 function loadSheet(sheetName) {
@@ -3624,10 +3941,14 @@ function renderTable() {
   if (!rows.length) {
     const message = state.scoreFilterActive
       ? `Keine Requirements mit Score unter ${PRODUCT_STEP_MIN_SCORE} gefunden.`
+      : state.productApprovalStatusFilter === "in-approval"
+        ? "Keine offenen Freigaben fuer deinen Benutzer gefunden."
+      : state.productApprovalStatusFilter === "rework-required"
+        ? "Keine offene Nacharbeit fuer deinen Benutzer gefunden."
       : state.productApprovalListSearch || state.productApprovalStatusFilter !== "all"
         ? "Keine Requirements fuer den aktuellen Filter gefunden."
       : "Keine Requirements in der gewaehlten Spalte gefunden.";
-    els.resultsBody.innerHTML = `<tr><td colspan="${visibleResultColumnCount()}" class="empty">${message}</td></tr>`;
+    els.resultsBody.innerHTML = `<tr><td colspan="${visibleResultColumnCount()}" class="empty">${escapeHtml(translateUiText(message))}</td></tr>`;
     return;
   }
 
@@ -3706,8 +4027,18 @@ function filteredProductApprovalRows(rows, resultByRow) {
     if (statusFilter === "approved") return processState === "approved";
     if (statusFilter === "transferred") return processState === "transferred";
     if (statusFilter === "changed") return processState === "changed";
+    if (statusFilter === "in-approval") return isProductApprovalOpenForCurrentUser(rowNumber);
+    if (statusFilter === "rework-required") return isProductReworkOpenForCurrentUser(selection);
     return processState === statusFilter;
   });
+}
+
+function isProductApprovalOpenForCurrentUser(rowNumber) {
+  return canApproveProductRequirement(rowNumber);
+}
+
+function isProductReworkOpenForCurrentUser(selection) {
+  return canEditProductRequirements() && countOpenDisapprovalComments(selection) > 0;
 }
 
 function renderProductApprovalListCount(visibleCount, totalCount) {
@@ -3809,6 +4140,7 @@ function productTechTypeSummary(requirement, selection) {
 
 function productRequirementProcessState(requirement, result, selection, isUpdatingFinalScore = false) {
   if (selection?.choice === "excluded") return "excluded";
+  if (countOpenDisapprovalComments(selection) > 0) return "rework-required";
   if (state.changedProductRequirementRows.has(Number(requirement?.rowNumber))) return "changed";
   if (state.productWindchillTransferComplete && isProductSelectionApproved(selection)) return "transferred";
   if (isProductSelectionApproved(selection)) return "approved";
@@ -3829,6 +4161,7 @@ function renderProductProcessBadge(status) {
     approved: "Freigegeben",
     transferred: "Transferiert",
     changed: "Geändert",
+    "rework-required": "Nacharbeit erforderlich",
     excluded: "Ausgeschlossen",
   };
   const className =
@@ -3836,7 +4169,7 @@ function renderProductProcessBadge(status) {
       ? "approved"
       : status === "excluded"
         ? "excluded"
-        : status === "changed"
+        : status === "changed" || status === "rework-required"
           ? "critical"
         : status === "editing"
           ? "selected"
@@ -3987,7 +4320,7 @@ function migrateProductApprovalSelections() {
 function renderProductApprovalProgress(selection) {
   if (!isProductApprovalStarted()) return "";
 
-  const requiredCount = getRequiredProductApproverIds().length;
+  const requiredCount = getEffectiveProductApproverIds().length;
   if (!requiredCount) return "";
 
   const approvedCount = countProductApprovals(selection);
@@ -4024,6 +4357,7 @@ function handleResultRowClick(event) {
 function selectProductRequirement(rowNumber) {
   if (Number(state.activeSelectionRow) !== Number(rowNumber)) {
     resetProductDisapprovalDraft();
+    state.productApprovalActiveTab = "comments";
   }
   state.activeSelectionRow = Number(rowNumber);
   state.productApprovalDecisionMode = "";
@@ -4067,6 +4401,7 @@ function openSelectionDialog(rowNumber) {
   els.prImprovementInstruction.value = "";
   els.prImprovementAttachments.value = "";
   renderImprovementAttachmentList(els.prImprovementAttachments, els.prImprovementAttachmentList);
+  mountTechTypeSelectionPanel(document.querySelector("#selectionOverlay .selection-content"));
   renderTechTypeSelection(item, state.finalSelections.get(rowNumber));
   const canEditProduct = canModifyProductRequirements();
   els.selectOriginalButton.disabled = !canEditProduct;
@@ -4136,40 +4471,61 @@ function renderProductApprovalPanel() {
     return;
   }
 
-  const score = productVisibleScore(result, selection, state.finalScoreUpdates.has(rowNumber));
   const openDisapprovals = countOpenDisapprovalComments(selection);
+  const hasComments = productApprovalComments(selection).length > 0;
+  const isUpdatingFinalScore = state.finalScoreUpdates.has(rowNumber);
+  const visibleScore = productVisibleScore(result, selection, isUpdatingFinalScore);
+  const finalScoreStatus = productFinalScoreStatus(result, selection, isUpdatingFinalScore);
   const fullyApproved = isProductSelectionFullyApproved(selection) && openDisapprovals === 0;
-  const requiredApproverIds = getRequiredProductApproverIds();
+  const requiredApproverIds = getEffectiveProductApproverIds();
   const approvedCount = countProductApprovals(selection);
   const versions = productApprovalVersions(selection);
-  const statusLabel = fullyApproved ? translateUiText("Final freigegeben") : translateUiText("Bereit für Freigabe");
-  const canEdit = canReviseProductApprovalRequirement(rowNumber);
+  const statusLabel = openDisapprovals
+    ? translateUiText("Nacharbeit erforderlich")
+    : fullyApproved
+      ? translateUiText("Final freigegeben")
+      : translateUiText("Bereit für Freigabe");
   const canApprove = canApproveProductRequirement(rowNumber);
   const canDisapprove = canDisapproveProductRequirement(rowNumber);
+  const hasApproverSlot = Boolean(currentProductApproverSlotId());
+  const canEdit = canReviseProductApprovalRequirementInDialog(rowNumber);
+  const isDisapprovalMode = state.productApprovalDecisionMode === "disapprove";
+  const isPureApprovalMode = hasApproverSlot && !canEdit;
+  const isCompactApprovalMode = isPureApprovalMode || (!canEdit && !isDisapprovalMode);
   els.productApprovalDetailEmpty.hidden = true;
   els.productApprovalDetailContent.hidden = false;
+  els.productApprovalDetailPanel.classList.toggle("is-approval-compact", isCompactApprovalMode);
+  els.productApprovalDetailPanel.classList.toggle("is-disapproval-expanded", isDisapprovalMode);
+  els.productApprovalDetailPanel.classList.toggle("is-pure-approval", isPureApprovalMode);
+  els.productApprovalDetailPanel.classList.toggle("has-approval-comments", hasComments);
   els.productApprovalDetailStatus.textContent = statusLabel;
-  els.productApprovalDetailStatus.className = `status-badge ${fullyApproved ? "approved" : "pending"}`;
+  els.productApprovalDetailStatus.className = `status-badge ${openDisapprovals ? "critical" : fullyApproved ? "approved" : "pending"}`;
   els.productApprovalDetailTitle.textContent = requirement.name || requirement.id || `Zeile ${rowNumber}`;
   els.productApprovalDetailSubtitle.textContent = requirement.id || `Zeile ${rowNumber}`;
-  els.productApprovalDetailProgress.textContent = `${approvedCount} / ${requiredApproverIds.length}`;
-  els.productApprovalDetailId.textContent = requirement.id || "-";
-  els.productApprovalDetailScore.textContent = Number.isFinite(Number(score)) ? String(score) : "-";
-  els.productApprovalDetailOwner.textContent = state.productApprovalStartedBy || state.projectName || currentApprovalUserName();
-  els.productApprovalDetailVersion.textContent = versions.length ? `v${versions.length}` : "v1";
-  els.productApprovalDetailMetaStatus.textContent = statusLabel;
-  els.productApprovalDetailOpenComments.textContent = String(openDisapprovals);
+  els.productApprovalDetailProgress.textContent = openDisapprovals
+    ? `${approvedCount} / ${requiredApproverIds.length} · ${openDisapprovals} ${translateUiText("offen")}`
+    : `${approvedCount} / ${requiredApproverIds.length}`;
+  els.productApprovalDetailProgress.classList.toggle("is-blocking-score", openDisapprovals > 0);
   els.productApprovalFinalText.value = selection.text || result?.rewrittenRequirement || requirement.text || "";
   els.productApprovalFinalText.disabled = !canEdit;
+  renderProductApprovalScoreState({
+    visible: canEdit,
+    score: visibleScore,
+    status: finalScoreStatus,
+  });
   els.productApprovalOriginalText.textContent = requirement.text || "-";
   els.productApprovalOwnerActions.hidden = !canEdit;
   els.productApprovalSaveTextButton.disabled = !canEdit;
   els.productApprovalSubmitButton.disabled = !canEdit;
-  els.productApprovalAiImprovement.hidden = !canEdit;
-  els.productApprovalImprovementInstruction.disabled = !canEdit;
-  els.productApprovalImprovementAttachments.disabled = !canEdit;
-  els.productApprovalImproveButton.disabled = !canEdit;
-  els.productApprovalDecision.hidden = !canApproveProductRequirements();
+  els.productApprovalAiAssist.hidden = !canEdit;
+  els.productApprovalAiInstruction.disabled = !canEdit;
+  els.productApprovalAiAttachments.disabled = !canEdit;
+  els.productApprovalAiButton.disabled = !canEdit;
+  const latestDisapproval = latestOpenDisapprovalComment(selection);
+  if (canEdit && latestDisapproval && !els.productApprovalAiInstruction.value.trim()) {
+    els.productApprovalAiInstruction.value = `${translateUiText("Ablehnungskommentar berücksichtigen")}: ${latestDisapproval.text || ""}`;
+  }
+  els.productApprovalDecision.hidden = !hasApproverSlot;
   els.productApprovalApproveButton.disabled = !canApprove || openDisapprovals > 0;
   els.productApprovalShowDisapproveButton.disabled = !canDisapprove;
   els.productApprovalDisapproveBox.hidden = state.productApprovalDecisionMode !== "disapprove";
@@ -4177,6 +4533,39 @@ function renderProductApprovalPanel() {
   restoreProductDisapprovalDraft(rowNumber);
   updateProductDisapprovalSubmitState();
   renderProductApprovalTabs(selection);
+}
+
+function renderProductApprovalScoreState({ visible, score, status }) {
+  if (!els.productApprovalScoreRow) return;
+
+  els.productApprovalScoreRow.hidden = !visible;
+  if (!visible) return;
+
+  els.productApprovalScore.textContent = Number.isFinite(Number(score)) ? `Score ${score}` : "Score -";
+  els.productApprovalScoreStatus.textContent = translateUiText(status);
+  els.productApprovalScoreStatus.className = `quality-badge ${productFinalScoreStatusClass(status)}`;
+  els.productApprovalScoreHint.textContent = productFinalScoreHint(status);
+}
+
+function updateProductApprovalDraftScoreState() {
+  const rowNumber = Number(state.activeSelectionRow);
+  const selection = state.finalSelections.get(rowNumber);
+  if (!selection || !canReviseProductApprovalRequirementInDialog(rowNumber)) return;
+
+  const currentText = String(selection.text || "").trim();
+  const draftText = els.productApprovalFinalText.value.trim();
+  if (draftText && draftText !== currentText) {
+    renderProductApprovalScoreState({ visible: true, score: null, status: "STALE" });
+    return;
+  }
+
+  const result = state.results.find((entry) => Number(entry.rowNumber) === rowNumber);
+  const isUpdatingFinalScore = state.finalScoreUpdates.has(rowNumber);
+  renderProductApprovalScoreState({
+    visible: true,
+    score: productVisibleScore(result, selection, isUpdatingFinalScore),
+    status: productFinalScoreStatus(result, selection, isUpdatingFinalScore),
+  });
 }
 
 function renderProductReviewPanel() {
@@ -4223,8 +4612,7 @@ function renderProductReviewPanel() {
   els.productReviewFinalScoreHint.textContent = productFinalScoreHint(finalScoreStatus);
   els.productReviewSaveFinalTextButton.disabled = true;
   els.productReviewRecalculateScoreButton.disabled = true;
-  renderTechTypeSelection(item, selection);
-  applyProductReviewTechTypeFilter();
+  renderTechTypeSummaryCard(item, selection, els.productReviewTechTypesHost);
   const canEditProduct = canModifyProductRequirements();
   els.selectOriginalButton.disabled = true;
   els.selectOriginalButton.hidden = true;
@@ -4341,12 +4729,26 @@ function renderProductReviewHistory(selection) {
 }
 
 function renderProductApprovalTabs(selection) {
+  const rowNumber = Number(state.activeSelectionRow);
+  const canShowTechTypes = canReviseProductApprovalRequirementInDialog(rowNumber);
+  if (els.productApprovalTechTypesTabButton) {
+    els.productApprovalTechTypesTabButton.hidden = !canShowTechTypes;
+  }
+  if (state.productApprovalActiveTab === "techtypes" && !canShowTechTypes) {
+    state.productApprovalActiveTab = "comments";
+  }
   const activeTab = state.productApprovalActiveTab || "comments";
   els.productApprovalTabs.querySelectorAll("[data-approval-tab]").forEach((button) => {
     const isActive = button.dataset.approvalTab === activeTab;
     button.classList.toggle("is-active", isActive);
     button.setAttribute("aria-selected", isActive ? "true" : "false");
   });
+
+  if (activeTab === "techtypes" && canShowTechTypes) {
+    const requirement = state.requirements.find((item) => Number(item.rowNumber) === rowNumber);
+    renderTechTypeSummaryCard(requirement, selection, els.productApprovalTabContent);
+    return;
+  }
 
   if (activeTab === "approvals") {
     els.productApprovalTabContent.innerHTML = renderProductApprovalApprovals(selection);
@@ -4401,13 +4803,37 @@ function resetProductDisapprovalDraft() {
   }
 }
 
-function submitProductRequirementForApproval() {
+async function submitProductRequirementForApproval() {
   const rowNumber = Number(state.activeSelectionRow);
-  if (!state.finalSelections.has(rowNumber) || !canReviseProductApprovalRequirement(rowNumber)) return;
+  const selection = state.finalSelections.get(rowNumber);
+  if (!selection || !canReviseProductApprovalRequirement(rowNumber)) return;
 
+  const pendingSave = await savePendingProductApprovalTextChange();
+  if (!pendingSave.ok) return;
+
+  const updatedSelection = state.finalSelections.get(rowNumber);
+  if (!updatedSelection) return;
+
+  if (updatedSelection.needsFinalAssessment) {
+    alert(translateUiText("Bitte speichere das Requirement und berechne den Score neu, bevor du es erneut zur Freigabe bereitstellst."));
+    return;
+  }
+
+  const openDisapprovals = productApprovalComments(updatedSelection)
+    .filter((comment) => comment.type === "disapproval" && comment.resolved !== true);
+  if (openDisapprovals.length && !resolveProductApprovalDisapprovalsWithReplies(updatedSelection, openDisapprovals)) {
+    return;
+  }
+
+  state.changedProductRequirementRows.delete(rowNumber);
+  updateFinalProductApproval(updatedSelection);
   setProjectRevisionAction("PR erneut zur Freigabe bereitgestellt");
   renderProductApprovalPanel();
+  renderTable();
+  renderMetrics();
+  updateExportAvailability();
   updateProjectActions();
+  closeProductRequirementDetailDialog();
 }
 
 async function handleProductReviewPrimaryAction() {
@@ -4735,6 +5161,13 @@ function addProductChangeRequestComment(selection, text, changeType = "Änderung
   });
 }
 
+function resetProductApprovalForResubmission(selection) {
+  if (!selection) return;
+  selection.approvedAt = "";
+  selection.approvedBy = "";
+  selection.approvals = [];
+}
+
 function productChangeHistoryReason(reason, changeComment) {
   const normalizedComment = String(changeComment || "").trim();
   return normalizedComment ? `${reason}: ${normalizedComment}` : reason;
@@ -4762,10 +5195,102 @@ function applyProductReviewTechTypeFilter() {
       (filter === "unselected" && !input.checked);
     if (label) label.hidden = !matchesSearch || !matchesFilter;
   });
+  els.techTypeSelectionList.querySelectorAll(".techtype-group").forEach((group) => {
+    const visibleRows = [...group.querySelectorAll("[data-techtype-designation]")]
+      .some((input) => !input.closest("label")?.hidden);
+    group.hidden = !visibleRows;
+  });
+  if (els.productReviewSelectVisibleTechTypesButton) {
+    els.productReviewSelectVisibleTechTypesButton.hidden = !search;
+  }
+}
+
+function mountTechTypeSelectionPanel(host) {
+  if (!host || !els.techTypeSelectionPanel || els.techTypeSelectionPanel.parentElement === host) return;
+  host.append(els.techTypeSelectionPanel);
+}
+
+function techTypeSelectionStats(requirement, selection) {
+  const selected = new Set(selectedTechTypesForRequirement(requirement, selection));
+  const groups = groupedTechTypes().map((group) => {
+    const selectedCount = group.items.filter((item) => selected.has(item.designation)).length;
+    return {
+      name: group.valueClass,
+      selectedCount,
+      totalCount: group.items.length,
+    };
+  });
+  return {
+    selectedCount: selected.size,
+    totalCount: state.techTypes.length,
+    groups,
+  };
+}
+
+function techTypeSelectedText(selectedCount, totalCount) {
+  return `${selectedCount} ${translateUiText("von")} ${totalCount} ${translateUiText("ausgewählt")}`;
+}
+
+function renderTechTypeSummaryCard(requirement, selection, host) {
+  if (!host) return;
+
+  const stats = techTypeSelectionStats(requirement, selection);
+  const canEdit = canEditActiveProductTechTypes();
+  host.innerHTML = `
+    <section class="techtype-summary-card">
+      <div class="techtype-summary-header">
+        <div>
+          <h3>${escapeHtml(translateUiText("TechTypes"))}</h3>
+          <p>${escapeHtml(techTypeSelectedText(stats.selectedCount, stats.totalCount))}</p>
+        </div>
+        <button type="button" data-techtype-edit ${canEdit ? "" : "disabled"}>${escapeHtml(translateUiText("TechTypes bearbeiten"))}</button>
+      </div>
+      <div class="techtype-summary-groups">
+        ${stats.groups.map((group) => `
+          <span class="techtype-summary-group ${group.selectedCount === group.totalCount ? "is-complete" : group.selectedCount > 0 ? "is-mixed" : ""}">
+            <strong>${escapeHtml(group.name)}</strong>
+            <span>${group.selectedCount} / ${group.totalCount}</span>
+          </span>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function handleProductReviewTechTypeSummaryClick(event) {
+  const button = event.target.closest("[data-techtype-edit]");
+  if (!button || button.disabled) return;
+  openTechTypeModal();
+}
+
+function openTechTypeModal() {
+  const rowNumber = Number(state.activeSelectionRow);
+  const requirement = state.requirements.find((item) => Number(item.rowNumber) === rowNumber);
+  if (!requirement) return;
+
+  state.productReviewTechTypeSearch = "";
+  state.productReviewTechTypeFilter = "all";
+  els.productReviewTechTypeSearch.value = "";
+  els.productReviewTechTypeFilter.value = "all";
+  els.techTypeModalOverlay.hidden = false;
+  mountTechTypeSelectionPanel(els.techTypeModalSelectionHost);
+  renderTechTypeSelection(requirement, state.finalSelections.get(rowNumber));
+  els.productReviewTechTypeSearch.focus();
+}
+
+function closeTechTypeModal() {
+  if (!els.techTypeModalOverlay || els.techTypeModalOverlay.hidden) return;
+
+  els.techTypeModalOverlay.hidden = true;
+  renderProductApprovalPanel();
+}
+
+function canEditActiveProductTechTypes() {
+  return canModifyProductRequirements() || canReviseProductApprovalRequirementInDialog(state.activeSelectionRow);
 }
 
 function clearTechTypesForActiveRequirement() {
-  if (!canModifyProductRequirements()) return;
+  if (!canEditActiveProductTechTypes()) return;
 
   els.techTypeSelectionList.querySelectorAll("input[type='checkbox']").forEach((input) => {
     input.checked = false;
@@ -4777,7 +5302,7 @@ function clearTechTypesForActiveRequirement() {
 }
 
 function resetTechTypesForActiveRequirement() {
-  if (!canModifyProductRequirements()) return;
+  if (!canEditActiveProductTechTypes()) return;
 
   const selected = new Set(allTechTypeDesignations());
   els.techTypeSelectionList.querySelectorAll("[data-techtype-designation]").forEach((input) => {
@@ -4791,8 +5316,22 @@ function resetTechTypesForActiveRequirement() {
 function canReviseProductApprovalRequirement(rowNumber = state.activeSelectionRow) {
   if (!isProductApprovalStarted()) return false;
   if (!state.finalSelections.has(Number(rowNumber))) return false;
-  if (state.productWindchillTransferComplete) return canEditProductRequirements();
-  return canEditProductRequirements() || Boolean(currentProductApproverSlotId());
+  return canEditProductRequirements();
+}
+
+function canReviseProductApprovalRequirementInDialog(rowNumber = state.activeSelectionRow) {
+  if (!canUseOwnerProductApprovalDialog()) return false;
+  return canReviseProductApprovalRequirement(rowNumber);
+}
+
+function canUseOwnerProductApprovalDialog() {
+  if (!canEditProductRequirements()) return false;
+  if (currentUserHasExplicitRole("admin")) return true;
+
+  const ownerId = getProductApprovalOwnerId();
+  const currentUserId = String(state.currentUser?.id || "");
+  if (ownerId) return currentUserId === ownerId;
+  return currentUserHasExplicitRole("productRequirementOwner");
 }
 
 async function saveProductApprovalText() {
@@ -4802,7 +5341,7 @@ async function saveProductApprovalText() {
 async function savePendingProductApprovalTextChange() {
   const rowNumber = Number(state.activeSelectionRow);
   const selection = state.finalSelections.get(rowNumber);
-  if (!selection || !canReviseProductApprovalRequirement(rowNumber)) return { ok: false, changed: false };
+  if (!selection || !canReviseProductApprovalRequirementInDialog(rowNumber)) return { ok: false, changed: false };
 
   const nextText = els.productApprovalFinalText.value.trim();
   if (!nextText) {
@@ -4837,6 +5376,7 @@ async function applyProductApprovalTextChange(rowNumber, nextText, options = {})
   selection.selectedSource = options.selectedSource || selection.selectedSource || "MANUAL_EDIT";
   selection.needsFinalAssessment = true;
   selection.finalizedAt = "";
+  resetProductApprovalForResubmission(selection);
   addProductReviewHistory(
     selection,
     productChangeHistoryReason(options.historyReason || "Approval-Änderung", changeComment),
@@ -4860,7 +5400,7 @@ async function applyProductApprovalTextChange(rowNumber, nextText, options = {})
 
 async function improveProductApprovalRequirementWithAi() {
   const rowNumber = Number(state.activeSelectionRow);
-  if (!canReviseProductApprovalRequirement(rowNumber)) return;
+  if (!canReviseProductApprovalRequirementInDialog(rowNumber)) return;
 
   const endpoint = getAnalyzeEndpoint();
   if (!endpoint) {
@@ -4868,22 +5408,23 @@ async function improveProductApprovalRequirementWithAi() {
     return;
   }
 
-  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
-  const result = state.results.find((entry) => Number(entry.rowNumber) === Number(rowNumber));
-  const instruction = els.productApprovalImprovementInstruction.value.trim();
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === rowNumber);
+  const result = state.results.find((entry) => Number(entry.rowNumber) === rowNumber);
+  const instruction = els.productApprovalAiInstruction.value.trim();
   const currentText = els.productApprovalFinalText.value.trim();
   if (!item || !currentText || !instruction) {
     alert(translateUiText("Bitte beschreibe, was die AI am Product Requirement verbessern soll."));
     return;
   }
 
-  const previousStatus = els.productApprovalImproveButton.textContent;
-  els.productApprovalImproveButton.disabled = true;
+  const previousStatus = els.productApprovalAiButton.textContent;
+  els.productApprovalAiButton.disabled = true;
   els.productApprovalSaveTextButton.disabled = true;
-  els.productApprovalImproveButton.textContent = translateUiText("AI verbessert...");
+  els.productApprovalSubmitButton.disabled = true;
+  els.productApprovalAiButton.textContent = translateUiText("AI verbessert...");
 
   try {
-    const improvementAttachments = await readImprovementAttachments(els.productApprovalImprovementAttachments);
+    const improvementAttachments = await readImprovementAttachments(els.productApprovalAiAttachments);
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -4920,24 +5461,20 @@ async function improveProductApprovalRequirementWithAi() {
       originalIssues: result?.originalIssues || improved.originalIssues || [],
     });
     els.productApprovalFinalText.value = improvedText;
-    els.productApprovalImprovementInstruction.value = "";
-    els.productApprovalImprovementAttachments.value = "";
-    renderImprovementAttachmentList(
-      els.productApprovalImprovementAttachments,
-      els.productApprovalImprovementAttachmentList,
-    );
-    await applyProductApprovalTextChange(rowNumber, improvedText, {
-      choice: "ai",
-      selectedSource: "AI_ASSISTED_EDIT",
-      historyReason: "AI-unterstützte Approval-Änderung",
-      revisionAction: "AI-Vorschlag fuer PR im Approval erstellt",
-    });
+    updateProductApprovalDraftScoreState();
+    els.productApprovalAiInstruction.value = "";
+    els.productApprovalAiAttachments.value = "";
+    renderImprovementAttachmentList(els.productApprovalAiAttachments, els.productApprovalAiAttachmentList);
+    setProjectRevisionAction(projectRevisionActionFor("AI-Vorschlag fuer PR im Approval erstellt", item, "PR"));
+    updateProjectActions();
   } catch (error) {
     alert(error.message);
   } finally {
-    els.productApprovalImproveButton.disabled = !canReviseProductApprovalRequirement(rowNumber);
-    els.productApprovalSaveTextButton.disabled = !canReviseProductApprovalRequirement(rowNumber);
-    els.productApprovalImproveButton.textContent = previousStatus;
+    const canEdit = canReviseProductApprovalRequirementInDialog(rowNumber);
+    els.productApprovalAiButton.disabled = !canEdit;
+    els.productApprovalSaveTextButton.disabled = !canEdit;
+    els.productApprovalSubmitButton.disabled = !canEdit;
+    els.productApprovalAiButton.textContent = previousStatus;
   }
 }
 
@@ -4979,11 +5516,19 @@ function disapproveProductRequirement() {
   renderTable();
   renderProductApprovalPanel();
   renderMetrics();
+  updateExportAvailability();
   updateProjectActions();
   closeProductRequirementDetailDialog();
 }
 
-function handleProductApprovalCommentClick(event) {
+async function handleProductApprovalCommentClick(event) {
+  const techTypeButton = event.target.closest("[data-techtype-edit]");
+  if (techTypeButton) {
+    event.preventDefault();
+    if (!techTypeButton.disabled) openTechTypeModal();
+    return;
+  }
+
   const replyButton = event.target.closest("[data-comment-reply]");
   const resolveButton = event.target.closest("[data-comment-resolve]");
   if (!replyButton && !resolveButton) return;
@@ -4996,24 +5541,21 @@ function handleProductApprovalCommentClick(event) {
     event.preventDefault();
     const comment = productApprovalComments(selection).find((item) => item.id === replyButton.dataset.commentReply);
     if (!comment || !canEditProductRequirements()) return;
-    const input = replyButton.closest(".approval-comment")?.querySelector("[data-comment-reply-text]");
-    const text = input?.value.trim() || "";
-    if (!text) {
-      input?.focus();
-      return;
-    }
-    comment.replies = Array.isArray(comment.replies) ? comment.replies : [];
-    comment.replies.push({
-      text,
-      authorId: state.currentUser?.id || "",
-      authorName: currentApprovalUserName(),
-      createdAt: new Date().toISOString(),
-    });
-    comment.resolved = true;
-    comment.resolvedAt = new Date().toISOString();
-    comment.resolvedBy = currentApprovalUserName();
+
+    const pendingSave = await savePendingProductApprovalTextChange();
+    if (!pendingSave.ok) return;
+
+    if (!resolveProductApprovalDisapprovalsWithReplies(selection, [comment])) return;
+    state.changedProductRequirementRows.delete(rowNumber);
     updateFinalProductApproval(selection);
     setProjectRevisionAction("PR-Approval-Kommentar beantwortet");
+    renderProductApprovalPanel();
+    renderTable();
+    renderMetrics();
+    updateExportAvailability();
+    updateProjectActions();
+    closeProductRequirementDetailDialog();
+    return;
   }
 
   if (resolveButton) {
@@ -5029,7 +5571,61 @@ function handleProductApprovalCommentClick(event) {
   renderProductApprovalPanel();
   renderTable();
   renderMetrics();
+  updateExportAvailability();
   updateProjectActions();
+}
+
+function handleProductApprovalCommentInput(event) {
+  const replyInput = event.target.closest("[data-comment-reply-text]");
+  if (!replyInput) return;
+
+  state.productApprovalReplyDrafts[replyInput.dataset.commentReplyText] = replyInput.value;
+}
+
+function resolveProductApprovalDisapprovalsWithReplies(selection, comments) {
+  for (const comment of comments) {
+    if (!isActionableProductApprovalComment(comment) || comment.resolved) continue;
+
+    const text = productApprovalReplyText(comment.id);
+    if (!text) {
+      state.productApprovalActiveTab = "comments";
+      renderProductApprovalTabs(selection);
+      focusProductApprovalReply(comment.id);
+      alert(translateUiText("Bitte beantworte zuerst alle offenen Ablehnungskommentare."));
+      return false;
+    }
+
+    comment.replies = Array.isArray(comment.replies) ? comment.replies : [];
+    comment.replies.push({
+      text,
+      authorId: state.currentUser?.id || "",
+      authorName: currentApprovalUserName(),
+      createdAt: new Date().toISOString(),
+    });
+    comment.resolved = true;
+    comment.resolvedAt = new Date().toISOString();
+    comment.resolvedBy = currentApprovalUserName();
+    delete state.productApprovalReplyDrafts[comment.id];
+  }
+
+  return true;
+}
+
+function productApprovalReplyText(commentId) {
+  const input = productApprovalReplyInput(commentId);
+  return String(input?.value ?? state.productApprovalReplyDrafts[commentId] ?? "").trim();
+}
+
+function productApprovalReplyInput(commentId) {
+  return [...els.productApprovalTabContent.querySelectorAll("[data-comment-reply-text]")]
+    .find((input) => input.dataset.commentReplyText === String(commentId)) || null;
+}
+
+function focusProductApprovalReply(commentId) {
+  const input = productApprovalReplyInput(commentId);
+  if (input) {
+    input.focus();
+  }
 }
 
 function renderProductApprovalComments(selection) {
@@ -5038,12 +5634,14 @@ function renderProductApprovalComments(selection) {
 
   return comments
     .map((comment) => `
-      <article class="approval-comment ${comment.resolved ? "is-resolved" : ""}" data-comment-id="${escapeHtml(comment.id)}">
-        <div>
-          <strong>${escapeHtml(comment.authorName || "Approver")}</strong>
-          <small>${escapeHtml(new Date(comment.createdAt || Date.now()).toLocaleString())}</small>
+      <article class="approval-comment ${comment.resolved ? "is-resolved" : ""} ${comment.type === "disapproval" && !comment.resolved ? "is-open-disapproval" : ""}" data-comment-id="${escapeHtml(comment.id)}">
+        <div class="approval-comment-header">
+          <div>
+            <strong>${escapeHtml(comment.authorName || "Approver")}</strong>
+            <small>${escapeHtml(new Date(comment.createdAt || Date.now()).toLocaleString())}</small>
+          </div>
+          <span class="approver-chip">${escapeHtml(translateUiText(productApprovalCommentTypeLabel(comment)))}</span>
         </div>
-        <span class="approver-chip">${escapeHtml(translateUiText(productApprovalCommentTypeLabel(comment)))}</span>
         <p>${escapeHtml(comment.text || "")}</p>
         ${(Array.isArray(comment.replies) ? comment.replies : [])
           .map((reply) => `
@@ -5056,8 +5654,10 @@ function renderProductApprovalComments(selection) {
           .join("")}
         ${isActionableProductApprovalComment(comment) && comment.resolved ? `<span class="approver-chip">${escapeHtml(translateUiText("Gelöst"))}</span>` : ""}
         ${isActionableProductApprovalComment(comment) && canEditProductRequirements() && !comment.resolved ? `
-          <textarea data-comment-reply-text="${escapeHtml(comment.id)}" rows="2" placeholder="${escapeHtml(translateUiText("Antwort des Owners"))}"></textarea>
-          <button type="button" data-comment-reply="${escapeHtml(comment.id)}">${escapeHtml(translateUiText("Antworten"))}</button>
+          <div class="approval-reply-form">
+            <textarea data-comment-reply-text="${escapeHtml(comment.id)}" rows="2" placeholder="${escapeHtml(translateUiText("Antwort des Owners"))}">${escapeHtml(state.productApprovalReplyDrafts[comment.id] || "")}</textarea>
+            <button type="button" data-comment-reply="${escapeHtml(comment.id)}">${escapeHtml(translateUiText("Antworten und erneut freigeben"))}</button>
+          </div>
         ` : ""}
         ${isActionableProductApprovalComment(comment) && canResolveProductApprovalComment(comment) && !comment.resolved ? `
           <button type="button" data-comment-resolve="${escapeHtml(comment.id)}">${escapeHtml(translateUiText("Kommentar lösen"))}</button>
@@ -5083,7 +5683,7 @@ function canResolveProductApprovalComment(comment) {
 }
 
 function renderProductApprovalApprovals(selection) {
-  const requiredApproverIds = getRequiredProductApproverIds();
+  const requiredApproverIds = getEffectiveProductApproverIds();
   if (!requiredApproverIds.length) return `<p class="muted-cell">${escapeHtml(translateUiText("Keine PR Approver ausgewählt"))}</p>`;
 
   const approvals = productApprovalRecords(selection);
@@ -5135,7 +5735,11 @@ function renderTechTypeSelection(requirement, selection) {
   if (!state.techTypes.length) {
     els.techTypeSelectionPanel.hidden = false;
     els.selectAllTechTypesButton.disabled = true;
-  els.techTypeSelectionSummary.textContent = translateUiText("Keine TechTypes erkannt");
+    if (els.productReviewSelectAllTechTypesButton) els.productReviewSelectAllTechTypesButton.disabled = true;
+    if (els.productReviewSelectVisibleTechTypesButton) els.productReviewSelectVisibleTechTypesButton.disabled = true;
+    if (els.productReviewClearTechTypesButton) els.productReviewClearTechTypesButton.disabled = true;
+    if (els.productReviewResetTechTypesButton) els.productReviewResetTechTypesButton.disabled = true;
+    els.techTypeSelectionSummary.textContent = translateUiText("Keine TechTypes erkannt");
     els.techTypeSelectionList.innerHTML = `
       <p class="techtype-empty">
         Keine TechTypes verfügbar. Prüfe im Datei-Import die TechType-Spalten für Gruppierung und Appliance Designation.
@@ -5145,31 +5749,39 @@ function renderTechTypeSelection(requirement, selection) {
   }
 
   els.techTypeSelectionPanel.hidden = false;
-  const canEditProduct = canModifyProductRequirements();
+  const canEditProduct = canEditActiveProductTechTypes();
   els.selectAllTechTypesButton.disabled = !canEditProduct;
+  if (els.productReviewSelectAllTechTypesButton) els.productReviewSelectAllTechTypesButton.disabled = !canEditProduct;
+  if (els.productReviewSelectVisibleTechTypesButton) els.productReviewSelectVisibleTechTypesButton.disabled = !canEditProduct;
+  if (els.productReviewClearTechTypesButton) els.productReviewClearTechTypesButton.disabled = !canEditProduct;
+  if (els.productReviewResetTechTypesButton) els.productReviewResetTechTypesButton.disabled = !canEditProduct;
   const selected = new Set(selectedTechTypesForRequirement(requirement, selection));
   const groups = groupedTechTypes();
   els.techTypeSelectionList.innerHTML = groups
     .map((group) => {
       const groupSelectedCount = group.items.filter((item) => selected.has(item.designation)).length;
       const groupChecked = groupSelectedCount === group.items.length;
+      const groupMixed = groupSelectedCount > 0 && groupSelectedCount < group.items.length;
+      const groupAriaChecked = groupMixed ? "mixed" : groupChecked ? "true" : "false";
       return `
-        <details class="techtype-group" open>
-          <summary>
+        <details class="techtype-group" open aria-expanded="true">
+          <summary class="techtype-group-summary">
             <label class="techtype-group-select">
-              <input type="checkbox" data-techtype-group="${escapeHtml(group.valueClass)}" ${groupChecked ? "checked" : ""} ${canEditProduct ? "" : "disabled"} />
+              <input type="checkbox" data-techtype-group="${escapeHtml(group.valueClass)}" aria-checked="${groupAriaChecked}" ${groupChecked ? "checked" : ""} ${canEditProduct ? "" : "disabled"} />
+              <span class="techtype-checkmark" aria-hidden="true"></span>
               <span>${escapeHtml(group.valueClass)}</span>
             </label>
             <small>${groupSelectedCount} / ${group.items.length}</small>
-            <button class="techtype-toggle" type="button" data-techtype-toggle aria-label="Gruppe ein- oder ausklappen"></button>
+            <button class="techtype-toggle" type="button" data-techtype-toggle aria-label="${escapeHtml(translateUiText("Gruppe ein- oder ausklappen"))}" aria-expanded="true"></button>
           </summary>
           <div class="techtype-options">
             ${group.items
               .map((item, index) => {
                 const designation = item.designation || `TechType ${index + 1}`;
                 return `
-                  <label>
+                  <label class="techtype-row">
                     <input type="checkbox" data-techtype-designation="${escapeHtml(item.designation)}" data-techtype-designation-group="${escapeHtml(item.valueClass)}" ${selected.has(item.designation) ? "checked" : ""} ${canEditProduct ? "" : "disabled"} />
+                    <span class="techtype-checkmark" aria-hidden="true"></span>
                     <span title="${escapeHtml(designation)}">${escapeHtml(designation)}</span>
                   </label>
                 `;
@@ -5182,6 +5794,7 @@ function renderTechTypeSelection(requirement, selection) {
     .join("");
   syncTechTypeGroupCheckboxes();
   renderTechTypeSummary(selected.size);
+  applyProductReviewTechTypeFilter();
 }
 
 function groupedTechTypes() {
@@ -5224,10 +5837,11 @@ function currentTechTypeSelection() {
 
 function renderTechTypeSummary(selectedCount = currentTechTypeSelection().length) {
   const total = state.techTypes.length;
-  els.techTypeSelectionSummary.textContent =
-    selectedCount === total
-      ? `Alle ${total} TechTypes ausgewählt`
-      : `${selectedCount} von ${total} TechTypes ausgewählt`;
+  const text = techTypeSelectedText(selectedCount, total);
+  els.techTypeSelectionSummary.textContent = text;
+  if (els.techTypeModalSummary) {
+    els.techTypeModalSummary.textContent = text;
+  }
 }
 
 function handleTechTypeSelectionChange(event) {
@@ -5254,13 +5868,27 @@ function handleTechTypeSelectionClick(event) {
     event.preventDefault();
     event.stopPropagation();
     const group = toggleButton.closest(".techtype-group");
-    if (group) group.open = !group.open;
+    if (group) {
+      group.open = !group.open;
+      group.setAttribute("aria-expanded", group.open ? "true" : "false");
+      toggleButton.setAttribute("aria-expanded", group.open ? "true" : "false");
+    }
     return;
   }
 
   if (event.target.closest(".techtype-group-select")) {
     event.stopPropagation();
   }
+}
+
+function handleTechTypeGroupToggle(event) {
+  const group = event.target.closest?.(".techtype-group");
+  if (!group) return;
+
+  const expanded = group.open ? "true" : "false";
+  group.setAttribute("aria-expanded", expanded);
+  const toggleButton = group.querySelector("[data-techtype-toggle]");
+  if (toggleButton) toggleButton.setAttribute("aria-expanded", expanded);
 }
 
 function syncTechTypeGroupCheckboxes() {
@@ -5272,13 +5900,14 @@ function syncTechTypeGroupCheckboxes() {
     const selectedCount = items.filter((input) => input.checked).length;
     groupInput.checked = items.length > 0 && selectedCount === items.length;
     groupInput.indeterminate = selectedCount > 0 && selectedCount < items.length;
+    groupInput.setAttribute("aria-checked", groupInput.indeterminate ? "mixed" : groupInput.checked ? "true" : "false");
     const count = groupInput.closest("summary")?.querySelector("small");
     if (count) count.textContent = `${selectedCount} / ${items.length}`;
   });
 }
 
 function selectAllTechTypesForActiveRequirement() {
-  if (!canModifyProductRequirements()) {
+  if (!canEditActiveProductTechTypes()) {
     alert(productApprovalLockedMessage());
     return;
   }
@@ -5292,8 +5921,25 @@ function selectAllTechTypesForActiveRequirement() {
   void persistActiveRequirementTechTypes();
 }
 
+function selectVisibleTechTypesForActiveRequirement() {
+  if (!canEditActiveProductTechTypes()) {
+    alert(productApprovalLockedMessage());
+    return;
+  }
+
+  els.techTypeSelectionList.querySelectorAll("[data-techtype-designation]").forEach((input) => {
+    const row = input.closest("label");
+    if (row && !row.hidden) {
+      input.checked = true;
+    }
+  });
+  syncTechTypeGroupCheckboxes();
+  renderTechTypeSummary();
+  void persistActiveRequirementTechTypes();
+}
+
 async function persistActiveRequirementTechTypes() {
-  if (!canModifyProductRequirements()) return;
+  if (!canEditActiveProductTechTypes()) return;
 
   const rowNumber = state.activeSelectionRow;
   if (!rowNumber) return;
@@ -5605,7 +6251,7 @@ function isProductSelectionApproved(selection) {
 }
 
 function isProductSelectionFullyApproved(selection) {
-  const requiredApproverIds = getRequiredProductApproverIds();
+  const requiredApproverIds = getEffectiveProductApproverIds();
   return (
     requiredApproverIds.length > 0 &&
     countOpenDisapprovalComments(selection) === 0 &&
@@ -5741,7 +6387,7 @@ function decisionStatus(selection, score, isUpdatingFinalScore = false) {
 }
 
 function productApprovalStatusLabel(baseLabel, selection) {
-  const requiredCount = getRequiredProductApproverIds().length;
+  const requiredCount = getEffectiveProductApproverIds().length;
   if (!requiredCount) return baseLabel;
 
   return `${baseLabel} (${countProductApprovals(selection)}/${requiredCount})`;
@@ -6081,23 +6727,329 @@ function renderMetrics() {
   const scores = getIncludedScores();
   const criticalScoreCount = getCriticalScoreRows().size;
   const productReady = isProductReadyForTransferSimulation();
-
-  els.countMetric.textContent = state.analysisComplete
+  const countMetricText = state.analysisComplete
     ? `${progress.assignedCount} / ${state.requirements.length}`
     : String(state.requirements.length);
-  els.countMetricLabel.textContent = state.analysisComplete ? "Requirements zugeordnet" : "Requirements";
-  els.scoreMetric.textContent = scores.length ? String(progress.averageScore) : "-";
-  els.issueMetric.textContent = String(criticalScoreCount);
-  els.criticalIssuesButton.disabled = criticalScoreCount === 0;
-  els.criticalIssuesButton.classList.toggle("is-active", state.scoreFilterActive);
+  const countMetricLabel = state.analysisComplete ? "Requirements zugeordnet" : "Requirements";
+  const scoreMetricText = scores.length ? String(progress.averageScore) : "-";
+
+  if (els.countMetric) {
+    els.countMetric.textContent = countMetricText;
+  }
+  if (els.countMetricLabel) {
+    els.countMetricLabel.textContent = countMetricLabel;
+  }
+  if (els.scoreMetric) {
+    els.scoreMetric.textContent = scoreMetricText;
+  }
+  if (els.issueMetric) {
+    els.issueMetric.textContent = String(criticalScoreCount);
+  }
+  renderProductWorkflowMetrics({
+    count: countMetricText,
+    countLabel: countMetricLabel,
+    score: scoreMetricText,
+    issues: String(criticalScoreCount),
+  });
+  if (els.criticalIssuesButton) {
+    els.criticalIssuesButton.disabled = criticalScoreCount === 0;
+    els.criticalIssuesButton.classList.toggle("is-active", state.scoreFilterActive);
+  }
   els.scoreFilterBar.hidden = !state.scoreFilterActive;
   renderProductAnalyzeState();
   renderProductQualityGate();
   renderProductApprovalState();
   renderProductTransferState(productReady);
+  renderProductNextAction(productReady);
   updateWorkflowState();
   renderSoftwarePage();
   renderE2ePage();
+}
+
+function renderProductWorkflowMetrics({ count, countLabel, score, issues }) {
+  if (!els.productWorkflowMetrics) return;
+
+  const showWorkflowMetrics = hasProject() && state.requirements.length > 0;
+  els.productWorkflowMetrics.hidden = !showWorkflowMetrics;
+  if (!showWorkflowMetrics) return;
+
+  els.workflowCountMetric.textContent = count;
+  els.workflowCountMetricLabel.textContent = translateUiText(countLabel);
+  els.workflowScoreMetric.textContent = score;
+  const numericScore = Number(score);
+  els.workflowScoreMetric.classList.toggle(
+    "is-critical",
+    Number.isFinite(numericScore) && numericScore < PRODUCT_STEP_MIN_SCORE,
+  );
+  els.workflowIssueMetric.textContent = issues;
+  const productStep = [...els.workflowSteps].find((step) => step.dataset.processStep === "product");
+  if (productStep) {
+    productStep.setAttribute("aria-describedby", "productWorkflowMetrics");
+  }
+}
+
+function renderProductNextAction(productReady = isProductReadyForTransferSimulation()) {
+  if (!els.productNextActionPanel) return;
+
+  const projectOpen = hasProject();
+  els.productNextActionPanel.hidden = !projectOpen;
+  if (!projectOpen) return;
+
+  const gate = getProductQualityGate();
+  const approvalStarted = isProductApprovalStarted();
+  const approvalComplete = hasApprovedFinalProductSelections();
+  const approvalPending = isProductApprovalPending();
+  const canAnalyzeProduct = state.requirements.length > 0 && canModifyProductRequirements() && !state.analysisComplete;
+  const canEditProduct = state.analysisComplete && state.requirements.length > 0 && canModifyProductRequirements();
+  const canStartApproval = !approvalComplete && productReady && !approvalStarted && canEditProductRequirements();
+  const canOpenApproval = approvalStarted || approvalComplete;
+  const canTransferProduct = productReady && !approvalPending && canEditProductRequirements() && !state.productWindchillTransferComplete;
+  const personalReworkCount = productReworkTodoItems().length;
+  const personalApprovalCount = productApprovalTodoItems().length;
+
+  const nextAction = productNextActionState({
+    canAnalyzeProduct,
+    canEditProduct,
+    canStartApproval,
+    canOpenApproval,
+    canTransferProduct,
+    gate,
+    approvalStarted,
+    approvalComplete,
+    personalReworkCount,
+    personalApprovalCount,
+  });
+
+  els.productNextActionKicker.textContent = translateUiText(nextAction.kicker || "Arbeitszentrale");
+  els.productNextActionTitle.textContent = translateUiText(nextAction.title);
+  els.productNextActionText.textContent = translateUiText(nextAction.text);
+  els.productNextActionButton.textContent = translateUiText(nextAction.button);
+  els.productNextActionButton.disabled = nextAction.disabled;
+  els.productNextActionButton.dataset.productAction = nextAction.action;
+  els.productNextActionPanel.classList.toggle("is-complete", nextAction.state === "complete");
+  els.productNextActionPanel.classList.toggle("is-blocked", nextAction.state === "blocked");
+
+  [
+    els.productAnalyzeAction,
+    els.productQualityGateCard,
+    els.productApprovalBar,
+    els.productTransferBar,
+  ].forEach((step) => step?.classList.remove("is-current"));
+  nextAction.currentStep?.classList.add("is-current");
+  renderProductTodoList();
+}
+
+function productNextActionState({
+  canAnalyzeProduct,
+  canEditProduct,
+  canStartApproval,
+  canOpenApproval,
+  canTransferProduct,
+  gate,
+  approvalStarted,
+  approvalComplete,
+  personalReworkCount = 0,
+  personalApprovalCount = 0,
+}) {
+  if (!state.requirements.length) {
+    return {
+      kicker: "Arbeitszentrale",
+      title: "Product Requirements vorbereiten",
+      text: "Importiere Product Requirements, um den Workflow zu starten.",
+      button: "Requirements importieren",
+      action: "none",
+      disabled: true,
+      state: "blocked",
+      currentStep: els.productAnalyzeAction,
+    };
+  }
+
+  if (!state.analysisComplete) {
+    return {
+      kicker: "Arbeitszentrale",
+      title: "Analyse starten",
+      text: "Analysiere die importierten Product Requirements, bevor Bearbeitung und Freigabe möglich sind.",
+      button: "Analyse starten",
+      action: "analyze",
+      disabled: !canAnalyzeProduct,
+      state: canAnalyzeProduct ? "active" : "blocked",
+      currentStep: els.productAnalyzeAction,
+    };
+  }
+
+  if (personalReworkCount > 0) {
+    return {
+      kicker: "Offene Aufgaben",
+      title: "Nacharbeit erforderlich",
+      text: "Es gibt Product Requirements mit offenen Ablehnungskommentaren für dich.",
+      button: "Meine Nacharbeit öffnen",
+      action: "rework",
+      disabled: false,
+      state: "blocked",
+      currentStep: els.productApprovalBar,
+    };
+  }
+
+  if (personalApprovalCount > 0) {
+    return {
+      kicker: "Offene Aufgaben",
+      title: "Freigabe ausstehend",
+      text: "Es gibt Product Requirements, die auf deine Freigabe warten.",
+      button: "Meine Freigaben öffnen",
+      action: "my-approvals",
+      disabled: false,
+      state: "active",
+      currentStep: els.productApprovalBar,
+    };
+  }
+
+  if (gate.status !== "PASSED") {
+    return {
+      kicker: "Arbeitszentrale",
+      title: "Bearbeitung fortsetzen",
+      text: "Bearbeite offene Requirements, bis alle Scores und TechTypes vollständig sind.",
+      button: "PR bearbeiten",
+      action: "edit",
+      disabled: !canEditProduct,
+      state: canEditProduct ? "active" : "blocked",
+      currentStep: els.productQualityGateCard,
+    };
+  }
+
+  if (!approvalComplete) {
+    return {
+      kicker: "Arbeitszentrale",
+      title: approvalStarted ? "Freigabe prüfen" : "Freigabe starten",
+      text: approvalStarted
+        ? "Der Approval-Prozess läuft. Für dich sind aktuell keine offenen Aufgaben vorhanden."
+        : "Alle Product Requirements sind bearbeitet. Starte die Freigabe mit den ausgewählten Approvern.",
+      button: approvalStarted ? "Approval-Status ansehen" : "Freigabe starten",
+      action: "approval",
+      disabled: approvalStarted ? !canOpenApproval : !canStartApproval,
+      state: approvalStarted || canStartApproval ? "active" : "blocked",
+      currentStep: els.productApprovalBar,
+    };
+  }
+
+  if (!state.productWindchillTransferComplete) {
+    return {
+      kicker: "Arbeitszentrale",
+      title: "Transfer-Simulation starten",
+      text: "Alle Product Requirements sind freigegeben. Starte jetzt die Transfer-Simulation.",
+      button: "Transfer-Simulation starten",
+      action: "transfer",
+      disabled: !canTransferProduct,
+      state: canTransferProduct ? "active" : "blocked",
+      currentStep: els.productTransferBar,
+    };
+  }
+
+  return {
+    kicker: "Arbeitszentrale",
+    title: "Product Requirements abgeschlossen",
+    text: "Product Requirements wurden simuliert übertragen. Du kannst die finalen PRs weiterhin ansehen.",
+    button: "PRs ansehen",
+    action: "edit",
+    disabled: !canEditProduct,
+    state: "complete",
+    currentStep: els.productTransferBar,
+  };
+}
+
+function handleProductNextAction() {
+  const action = els.productNextActionButton?.dataset.productAction || "";
+  if (action === "analyze") {
+    void analyzeRequirements();
+  } else if (action === "edit") {
+    openProductEditDialog();
+  } else if (action === "rework") {
+    openProductPersonalWorkList("rework-required");
+  } else if (action === "my-approvals") {
+    openProductPersonalWorkList("in-approval");
+  } else if (action === "approval") {
+    handleProductApprovalButtonClick();
+  } else if (action === "transfer") {
+    void simulateProductWindchillTransfer();
+  }
+}
+
+function productReworkTodoItems() {
+  if (!hasProject() || !state.analysisComplete) return [];
+  return state.requirements
+    .filter((requirement) => {
+      const selection = state.finalSelections.get(Number(requirement.rowNumber));
+      return isProductReworkOpenForCurrentUser(selection);
+    })
+    .map((requirement) => ({
+      rowNumber: Number(requirement.rowNumber),
+      filter: "rework-required",
+      label: "Offene Nacharbeit",
+      title: requirement.name || requirement.id || `Zeile ${requirement.rowNumber}`,
+    }));
+}
+
+function productApprovalTodoItems() {
+  if (!hasProject() || !state.analysisComplete) return [];
+  return state.requirements
+    .filter((requirement) => isProductApprovalOpenForCurrentUser(requirement.rowNumber))
+    .map((requirement) => ({
+      rowNumber: Number(requirement.rowNumber),
+      filter: "in-approval",
+      label: "Offene Freigabe",
+      title: requirement.name || requirement.id || `Zeile ${requirement.rowNumber}`,
+    }));
+}
+
+function productTodoItems() {
+  return [...productReworkTodoItems(), ...productApprovalTodoItems()];
+}
+
+function renderProductTodoList() {
+  if (!els.productTodoList) return;
+
+  const items = productTodoItems();
+  els.productTodoList.hidden = items.length === 0;
+  if (!items.length) {
+    els.productTodoList.innerHTML = "";
+    return;
+  }
+
+  const visibleItems = items.slice(0, 4);
+  const remainingCount = items.length - visibleItems.length;
+  const taskButtons = visibleItems.map((item) => `
+    <button class="product-todo-item" type="button" data-product-todo-row="${item.rowNumber}" data-product-todo-filter="${escapeHtml(item.filter)}">
+      <span>${escapeHtml(translateUiText(item.label))}</span>
+      <strong>${escapeHtml(item.title)}</strong>
+    </button>
+  `);
+  const moreItem = remainingCount > 0
+    ? `<button class="product-todo-more" type="button" data-product-todo-filter="${escapeHtml(items[0].filter)}">${remainingCount} ${escapeHtml(translateUiText("Mehr Aufgaben anzeigen"))}</button>`
+    : "";
+  els.productTodoList.innerHTML = `
+    <span class="product-todo-heading">${escapeHtml(translateUiText("Offene Aufgaben"))}</span>
+    ${taskButtons.join("")}
+    ${moreItem}
+  `;
+}
+
+function handleProductTodoClick(event) {
+  const button = event.target.closest("[data-product-todo-filter]");
+  if (!button) return;
+
+  const filter = button.dataset.productTodoFilter || "all";
+  const rowNumber = Number(button.dataset.productTodoRow || 0);
+  openProductPersonalWorkList(filter, Number.isFinite(rowNumber) && rowNumber > 0 ? rowNumber : null);
+}
+
+function openProductPersonalWorkList(filter, rowNumber = null) {
+  state.productApprovalStatusFilter = filter;
+  state.productApprovalListSearch = "";
+  if (els.productApprovalSearch) els.productApprovalSearch.value = "";
+  if (els.productApprovalStatusFilter) els.productApprovalStatusFilter.value = filter;
+  if (rowNumber) {
+    selectProductRequirement(rowNumber);
+  }
+  focusProductApprovalPanel();
 }
 
 function renderProductAnalyzeState() {
@@ -8156,6 +9108,56 @@ function hasWorkflowChange(processStep) {
   return false;
 }
 
+function hasOpenProductRework() {
+  return [...state.finalSelections.values()].some((selection) => countOpenDisapprovalComments(selection) > 0);
+}
+
+function hasOpenProductReworkForCurrentUser() {
+  return [...state.finalSelections.values()].some((selection) => isProductReworkOpenForCurrentUser(selection));
+}
+
+function hasPendingProductApprovalForCurrentUser() {
+  return state.requirements.some((requirement) => isProductApprovalOpenForCurrentUser(requirement.rowNumber));
+}
+
+function hasPendingSoftwareApprovalForCurrentUser() {
+  return state.softwareRequirements.some((item) => canApproveSoftwareRequirement(item));
+}
+
+function hasPendingE2eApprovalForCurrentUser() {
+  return state.e2eTests.some((item) => canApproveE2eTest(item));
+}
+
+function hasWorkflowChangeForCurrentUser(processStep) {
+  if (processStep === "product") return canEditProductRequirements() && hasWorkflowChange(processStep);
+  if (processStep === "software") return canEditSoftwareRequirements() && hasWorkflowChange(processStep);
+  if (processStep === "e2e") return canEditE2eTests() && hasWorkflowChange(processStep);
+  return false;
+}
+
+function workflowTodoText(processStep) {
+  if (processStep === "product") {
+    if (hasOpenProductReworkForCurrentUser()) return "Nacharbeit erforderlich";
+    if (hasPendingProductApprovalForCurrentUser()) return "Freigabe ausstehend";
+    if (hasWorkflowChangeForCurrentUser(processStep)) return "Änderung erkannt";
+    return "";
+  }
+
+  if (processStep === "software") {
+    if (hasPendingSoftwareApprovalForCurrentUser()) return "Freigabe ausstehend";
+    if (hasWorkflowChangeForCurrentUser(processStep)) return "Änderung erkannt";
+    return "";
+  }
+
+  if (processStep === "e2e") {
+    if (hasPendingE2eApprovalForCurrentUser()) return "Freigabe ausstehend";
+    if (hasWorkflowChangeForCurrentUser(processStep)) return "Änderung erkannt";
+    return "";
+  }
+
+  return "";
+}
+
 function updateExportAvailability() {
   const canTransferProduct =
     hasProject() &&
@@ -8271,6 +9273,7 @@ function productApprovalStartBlockReason(qualityGate = getProductQualityGate()) 
 
 function handleProductApprovalButtonClick() {
   if (isProductApprovalStarted()) {
+    applyProductPersonalWorkFilter();
     focusProductApprovalPanel();
     return;
   }
@@ -8335,14 +9338,33 @@ function closeProductApprovalDialog() {
 function focusProductApprovalPanel() {
   if (!isProductApprovalStarted()) return;
 
-  if (!state.activeSelectionRow && state.requirements.length) {
-    state.activeSelectionRow = Number(state.requirements[0].rowNumber);
+  const resultByRow = new Map(state.results.map((result) => [Number(result.rowNumber), result]));
+  const rows = filteredProductApprovalRows(state.requirements, resultByRow);
+  const activeRowVisible = rows.some((requirement) => Number(requirement.rowNumber) === Number(state.activeSelectionRow));
+  if (!activeRowVisible) {
+    state.activeSelectionRow = rows.length ? Number(rows[0].rowNumber) : null;
   }
   renderTable();
   renderProductApprovalPanel();
   if (!els.productApprovalDetailPanel.hidden) {
     els.productApprovalDetailPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
+}
+
+function applyProductPersonalWorkFilter() {
+  const nextFilter = productPersonalWorkFilterValue();
+  if (!nextFilter) return;
+
+  state.productApprovalStatusFilter = nextFilter;
+  if (els.productApprovalStatusFilter) {
+    els.productApprovalStatusFilter.value = nextFilter;
+  }
+}
+
+function productPersonalWorkFilterValue() {
+  if (hasOpenProductReworkForCurrentUser()) return "rework-required";
+  if (hasPendingProductApprovalForCurrentUser()) return "in-approval";
+  return "";
 }
 
 function renderProductApprovalDialog() {
@@ -8366,11 +9388,12 @@ function renderProductApprovalDialog() {
     return;
   }
 
-  const selectedApproverIds = new Set(getRequiredProductApproverIds());
-  const approvers = state.productApprovers.filter((user) => user.active !== false);
+  const ownerId = getProductApprovalOwnerId() || String(state.currentUser?.id || "");
+  const selectedApproverIds = new Set(getRequiredProductApproverIds().filter((approverId) => String(approverId) !== ownerId));
+  const approvers = state.productApprovers.filter((user) => user.active !== false && String(user.id || "") !== ownerId);
   els.productApprovalDialogMessage.textContent = approvers.length
     ? translateUiText("Wähle mindestens einen PR Approver aus.")
-    : translateUiText("Keine PR Approver verfügbar");
+    : translateUiText("Keine weiteren PR Approver verfügbar. Der Owner muss nicht selbst freigeben.");
   els.productApprovalApproverList.innerHTML = approvers.length
     ? approvers
         .map((user) => {
@@ -8390,7 +9413,7 @@ function renderProductApprovalDialog() {
         `;
         })
         .join("")
-    : `<span class="approver-chip">${escapeHtml(translateUiText("Keine PR Approver verfügbar"))}</span>`;
+    : `<span class="approver-chip">${escapeHtml(translateUiText("Keine weiteren PR Approver verfügbar"))}</span>`;
   updateProductApprovalConfirmState();
 }
 
@@ -8473,12 +9496,12 @@ function updateProductApprovalConfirmState() {
   if (!state.productApproversLoading && !state.productApproversError) {
     els.productApprovalDialogMessage.textContent = selectedCount
       ? `${selectedCount} PR Approver ausgewählt.`
-      : translateUiText("Wähle mindestens einen PR Approver aus.");
+      : translateUiText("Wähle mindestens einen PR Approver aus. Der Owner muss nicht selbst freigeben.");
   }
 }
 
 function productApprovalProgressText() {
-  const requiredCount = getRequiredProductApproverIds().length;
+  const requiredCount = getEffectiveProductApproverIds().length;
   const totalRequiredApprovals = state.requirements.length * requiredCount;
   const completedApprovals = state.requirements.reduce((sum, requirement) => {
     const selection = state.finalSelections.get(Number(requirement.rowNumber));
@@ -8517,19 +9540,20 @@ function startProductApprovalProcess() {
     return;
   }
 
-  const selectedApproverIds = normalizeApproverIds(selectedProductApprovalDialogApproverIds());
+  const ownerId = getProductApprovalOwnerId() || String(state.currentUser?.id || "");
+  const selectedApproverIds = normalizeApproverIds(selectedProductApprovalDialogApproverIds())
+    .filter((approverId) => String(approverId) !== ownerId);
   if (!selectedApproverIds.length) {
-    alert(translateUiText("Bitte wähle mindestens einen PR Approver aus."));
+    alert(translateUiText("Bitte wähle mindestens einen PR Approver aus. Der Owner muss nicht selbst freigeben."));
     return;
   }
 
   state.productApprovalApproverIds = new Set(selectedApproverIds);
   state.productApprovalStartedAt = new Date().toISOString();
   state.productApprovalStartedBy = currentApprovalUserName();
+  state.productApprovalStartedById = String(state.currentUser?.id || "");
   state.finalSelections.forEach((selection) => clearApproval(selection));
-  if (!state.activeSelectionRow && state.requirements.length) {
-    state.activeSelectionRow = Number(state.requirements[0].rowNumber);
-  }
+  state.activeSelectionRow = null;
   closeProductApprovalDialog();
   renderTable();
   renderProductApprovalPanel();
@@ -9169,6 +10193,8 @@ function createProjectPayload() {
       name: projectDisplayName() || "Miele.DevPilot",
       description: state.projectDescription,
       id: state.projectId,
+      productRequirementOwnerId: state.productRequirementOwnerId,
+      productRequirementOwnerName: state.productRequirementOwnerName,
     },
     source: {
       fileName: state.sourceFileName,
@@ -9201,6 +10227,7 @@ function createProjectPayload() {
       productApprovalApproverIds: getRequiredProductApproverIds(),
       productApprovalStartedAt: state.productApprovalStartedAt,
       productApprovalStartedBy: state.productApprovalStartedBy,
+      productApprovalStartedById: state.productApprovalStartedById,
       analysisComplete: state.analysisComplete,
       generatedIds: state.generatedIds,
       activeProcessStep: state.activeProcessStep,
@@ -9245,6 +10272,8 @@ function loadProjectPayload(payload, fileName, projectId = "") {
   const projectMetadata = projectMetadataFromPayload(payload, fileName, state.sourceFileName);
   state.projectName = projectMetadata.name;
   state.projectDescription = projectMetadata.description;
+  state.productRequirementOwnerId = projectMetadata.productRequirementOwnerId;
+  state.productRequirementOwnerName = projectMetadata.productRequirementOwnerName;
   state.projectId = projectId || payload.project?.id || "";
   state.projectFileName = fileName || "";
   state.projectRevisionAction = "";
@@ -9302,6 +10331,10 @@ function loadProjectPayload(payload, fileName, projectId = "") {
   );
   state.productApprovalStartedAt = payload.state?.productApprovalStartedAt || "";
   state.productApprovalStartedBy = payload.state?.productApprovalStartedBy || "";
+  state.productApprovalStartedById = payload.state?.productApprovalStartedById || "";
+  if (!state.productApprovalStartedById && state.productApprovalStartedBy === currentApprovalUserName() && canEditProductRequirements()) {
+    state.productApprovalStartedById = state.currentUser?.id || "";
+  }
   state.finalScoreUpdates = new Set();
   state.openAiCostSummary = normalizedOpenAiCostSummary(payload.state?.openAiCostSummary);
   state.scoreFilterActive = false;
@@ -9425,6 +10458,8 @@ function projectMetadataFromPayload(payload, fileName, sourceFileName) {
   return {
     name: firstNonEmptyString(project.name, project.projectName, project.title, payload.projectName, payload.name, payload.title, projectNameFromFile(fileName), projectNameFromFile(sourceFileName)),
     description: firstNonEmptyString(project.description, project.projectDescription, payload.projectDescription, payload.description),
+    productRequirementOwnerId: firstNonEmptyString(project.productRequirementOwnerId, payload.productRequirementOwnerId),
+    productRequirementOwnerName: firstNonEmptyString(project.productRequirementOwnerName, payload.productRequirementOwnerName),
   };
 }
 
@@ -9896,7 +10931,7 @@ function renderWorkflowTranslations() {
       }));
     }
 
-    const statusElement = step.querySelector("small");
+    const statusElement = step.querySelector(".workflow-status");
     if (statusElement) {
       statusElement.textContent = translateUiText(statusElement.textContent);
     }
@@ -10000,6 +11035,10 @@ function getAdminUsersEndpoint() {
 
 function getApproversEndpoint(role) {
   return getApiEndpoint(`api/users/approvers?role=${encodeURIComponent(role)}`);
+}
+
+function getUsersByRoleEndpoint(role) {
+  return getApiEndpoint(`api/users/by-role?role=${encodeURIComponent(role)}`);
 }
 
 function getAdminUserEndpoint(userId) {

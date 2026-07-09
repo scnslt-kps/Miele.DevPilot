@@ -98,6 +98,19 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && pathname === "/api/users/by-role") {
+      const session = await requireSession(req, res);
+      if (!session) return;
+
+      if (!userCanLoadProjectRoleUsers(session.user)) {
+        sendJson(res, 403, { error: "User list permission required." });
+        return;
+      }
+
+      await handleListUsersByRole(res, url.searchParams.get("role"));
+      return;
+    }
+
     if (pathname.startsWith("/api/admin/")) {
       const session = await requireSession(req, res, { admin: true });
       if (!session) return;
@@ -288,6 +301,21 @@ async function handleListApprovers(res, role) {
   sendJson(res, 200, {
     users: users
       .filter((user) => user.active !== false && userHasRole(user, approverRole))
+      .map(publicUser),
+  });
+}
+
+async function handleListUsersByRole(res, role) {
+  const userRole = normalizeRoles([role])[0];
+  if (!userRole || !userRole.endsWith("Owner")) {
+    sendJson(res, 400, { error: "Valid owner role required." });
+    return;
+  }
+
+  const users = await loadUsers();
+  sendJson(res, 200, {
+    users: users
+      .filter((user) => user.active !== false && userHasRole(user, userRole))
       .map(publicUser),
   });
 }
@@ -692,6 +720,10 @@ function userCanLoadApprovers(user) {
     "softwareRequirementOwner",
     "e2eTestOwner",
   ]);
+}
+
+function userCanLoadProjectRoleUsers(user) {
+  return userCanCreateProject(user);
 }
 
 function userCanAnalyzeRequirementType(user, requirementType) {
@@ -1116,7 +1148,7 @@ function preserveSourceLanguageInstruction(uiLanguage = "de") {
 }
 
 function readableArtifactFormattingInstruction() {
-  return "Format generated and improved artifact text for readability. Use clear paragraph breaks when they improve understanding. For enumerations, prefer bullet-list style wording inside the returned text fields. Keep formatting clean and consistent, but do not add acceptance criteria, Given/When/Then blocks, test steps, or verification bullet lists where the task explicitly forbids them.";
+  return "Format generated and improved artifact text for human readability, not as one dense paragraph. Use logical line breaks, short paragraphs, and blank lines between distinct topics when the text contains multiple conditions, states, responsibilities, or outcomes. For enumerations or repeated conditions, use clean bullet-list style wording inside the returned string fields. Preserve valid JSON by encoding line breaks as newline characters in string values. Keep formatting consistent and avoid decorative markdown tables. Do not add acceptance criteria, Given/When/Then blocks, test steps, or verification bullet lists where the task explicitly forbids them.";
 }
 
 function cleanImprovementAttachments(value) {
@@ -1159,7 +1191,7 @@ async function handleProductImprovement(requirement, improvementInstruction, imp
         score: 100,
         verdict: "AI-Verbesserung angewendet",
         issues: [],
-        rewrittenRequirement: `${requirement.text} Verbesserungsfokus: ${improvementInstruction}.${attachmentSuffix}`,
+        rewrittenRequirement: `${requirement.text}\n\nVerbesserungsfokus:\n- ${improvementInstruction}.${attachmentSuffix ? `\n- ${attachmentSuffix.trim()}` : ""}`,
       },
     });
     return;
@@ -1552,11 +1584,31 @@ async function createNewProject(user, data, action = "created") {
 }
 
 async function syncProjectApprovalMembers(tx, projectId, content, ownerId = "") {
+  const productRequirementOwnerId = String(content?.project?.productRequirementOwnerId || "").trim();
   const approverIds = normalizeApproverIds(
     Array.isArray(content?.state?.productApprovalApproverIds)
       ? content.state.productApprovalApproverIds
       : [],
-  ).filter((approverId) => approverId && approverId !== ownerId);
+  ).filter((approverId) => approverId && approverId !== ownerId && approverId !== productRequirementOwnerId);
+
+  if (productRequirementOwnerId && productRequirementOwnerId !== ownerId) {
+    await tx.projectMember.upsert({
+      where: {
+        projectId_userId: {
+          projectId,
+          userId: productRequirementOwnerId,
+        },
+      },
+      update: {
+        role: "productRequirementOwner",
+      },
+      create: {
+        projectId,
+        userId: productRequirementOwnerId,
+        role: "productRequirementOwner",
+      },
+    });
+  }
 
   await Promise.all(approverIds.map((approverId) =>
     tx.projectMember.upsert({
@@ -1595,6 +1647,12 @@ function projectAccessWhere(user) {
         content: {
           path: ["state", "productApprovalApproverIds"],
           array_contains: [user.id],
+        },
+      },
+      {
+        content: {
+          path: ["project", "productRequirementOwnerId"],
+          equals: user.id,
         },
       },
     ],
@@ -1905,7 +1963,7 @@ async function handleSoftwareImprovement(sourceRequirement, softwareRequirement,
     const attachmentSuffix = improvementAttachments.length ? ` Anhänge berücksichtigt: ${improvementAttachments.map((item) => item.name).join(", ")}` : "";
     const improved = {
       ...softwareRequirement,
-      text: `${softwareRequirement.text || "Das System muss das Verhalten pruefbar bereitstellen."} Verbesserungsfokus: ${improvementInstruction}.${attachmentSuffix}`,
+      text: `${softwareRequirement.text || "Das System muss das Verhalten pruefbar bereitstellen."}\n\nVerbesserungsfokus:\n- ${improvementInstruction}.${attachmentSuffix ? `\n- ${attachmentSuffix.trim()}` : ""}`,
       acceptanceCriteria: Array.isArray(softwareRequirement.acceptanceCriteria) && softwareRequirement.acceptanceCriteria.length
         ? softwareRequirement.acceptanceCriteria
         : ["Gegeben gueltige Ausgangsbedingungen, wenn der Ablauf ausgefuehrt wird, dann ist das erwartete Systemverhalten eindeutig pruefbar."],
@@ -2233,7 +2291,7 @@ async function handleE2eImprovement(sourceRequirement, testCase, improvementInst
     const attachmentSuffix = improvementAttachments.length ? ` Anhänge berücksichtigt: ${improvementAttachments.map((item) => item.name).join(", ")}` : "";
     const improved = {
       ...testCase,
-      description: `${testCase.description || testCase.text || "E2E TestCase"} Verbesserungsfokus: ${improvementInstruction}.${attachmentSuffix}`,
+      description: `${testCase.description || testCase.text || "E2E TestCase"}\n\nVerbesserungsfokus:\n- ${improvementInstruction}.${attachmentSuffix ? `\n- ${attachmentSuffix.trim()}` : ""}`,
       preconditions: [
         ...(Array.isArray(testCase.preconditions) ? testCase.preconditions : []),
         "Alle benoetigten Testdaten, Berechtigungen und Systemdienste sind eindeutig vorbereitet.",
@@ -2651,7 +2709,7 @@ function mockAnalyzeRequirement(item) {
   }
 
   const rewrittenRequirement = detectedIssues.length
-    ? `${item.text} Der relevante Nutzer- oder Geschaeftskontext, das erwartete Ergebnis und die messbare fachliche Zielsetzung sind so beschrieben, dass daraus spaeter konkrete Software Requirements ohne zusaetzliche Interpretation abgeleitet werden koennen.`
+    ? `${item.text}\n\nDer relevante Nutzer- oder Geschaeftskontext, das erwartete Ergebnis und die messbare fachliche Zielsetzung sind so beschrieben, dass daraus spaeter konkrete Software Requirements ohne zusaetzliche Interpretation abgeleitet werden koennen.`
     : item.text;
 
   return {
@@ -2685,7 +2743,7 @@ function mockSoftwareRequirement(item, index) {
     sourceRowNumber: item.rowNumber,
     sourceId,
     id: buildMockSoftwareRequirementId(sourceId, index),
-    text: `Das System muss das Product Requirement "${sourceId}" durch eine pruefbare Systemfunktion unterstuetzen. Ausloeser, Eingabedaten, Systemreaktion und erwartetes Ergebnis muessen nachvollziehbar protokolliert und anhand definierter Akzeptanzkriterien verifizierbar sein.`,
+    text: `Das System muss das Product Requirement "${sourceId}" durch eine pruefbare Systemfunktion unterstuetzen.\n\nDabei muessen folgende Aspekte nachvollziehbar abgedeckt sein:\n- Ausloeser und relevante Eingabedaten,\n- Systemreaktion und erwartetes Ergebnis,\n- Protokollierung und Verifizierbarkeit anhand definierter Akzeptanzkriterien.`,
     happyFlow:
       "Der berechtigte Benutzer startet den vorgesehenen Ablauf mit vollstaendigen und gueltigen Eingaben. Das System verarbeitet die Eingaben, stellt das erwartete Ergebnis bereit und dokumentiert den Status nachvollziehbar.",
     alternativeFlows: [
