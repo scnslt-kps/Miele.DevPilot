@@ -213,97 +213,93 @@
             </svg>
             <button class="workflow-step is-active" type="button" data-process-step="product" aria-current="page">
               <span>1. Product<br />Requirement</span>
-              <small>Aktueller Schritt</small>
+              <small class="workflow-owner" id="productWorkflowOwner" hidden>-</small>
+              <small class="workflow-status">Aktueller Schritt</small>
+              <span class="workflow-metrics-tooltip" id="productWorkflowMetrics" role="tooltip" hidden>
+                <strong class="workflow-metrics-title">KPI</strong>
+                <span><small id="workflowCountMetricLabel">Requirements</small><strong id="workflowCountMetric">0</strong></span>
+                <span><small>Score</small><strong id="workflowScoreMetric">-</strong></span>
+                <span><small>Kritisch</small><strong id="workflowIssueMetric">0</strong></span>
+              </span>
             </button>
             <button class="workflow-step" type="button" data-process-step="software" disabled>
               <span>2. Software<br />Requirement</span>
-              <small>Step 1 abschließen</small>
+              <small class="workflow-status">Step 1 abschließen</small>
             </button>
             <button class="workflow-step" type="button" data-process-step="e2e" disabled>
               <span>E2E<br />TestCases</span>
-              <small>Step 1 abschließen</small>
+              <small class="workflow-status">Step 1 abschließen</small>
             </button>
             <button class="workflow-step" type="button" data-process-step="usecase" disabled>
               <span>UseCase</span>
-              <small>Step 1 abschließen</small>
+              <small class="workflow-status">Step 1 abschließen</small>
             </button>
             <button class="workflow-step" type="button" data-process-step="userstory" disabled>
               <span>UserStory</span>
-              <small>Step 1 abschließen</small>
+              <small class="workflow-status">Step 1 abschließen</small>
             </button>
             <button class="workflow-step" type="button" data-process-step="app-test" disabled>
               <span>App TestCase</span>
-              <small>Step 1 abschließen</small>
+              <small class="workflow-status">Step 1 abschließen</small>
             </button>
           </div>
         </nav>
 
         <section class="process-page is-active" id="page-product" data-process-page="product">
-          <div class="software-toolbar">
-            <div>
-              <p class="eyebrow">Product Requirements</p>
-              <h1>Product Requirements analysieren</h1>
-            </div>
-          </div>
-
-          <div class="tool-grid">
-            <section class="panel summary-panel">
-              <div class="metric">
-                <span id="countMetricLabel">Requirements</span>
-                <strong id="countMetric">0</strong>
-              </div>
-              <div class="metric">
-                <span>Durchschnitt</span>
-                <strong id="scoreMetric">-</strong>
-              </div>
-              <button class="metric metric-button" id="criticalIssuesButton" type="button" disabled>
-                <span>Kritische Hinweise</span>
-                <strong id="issueMetric">0</strong>
-              </button>
-            </section>
-          </div>
-
           <section class="product-action-bar" id="productActionBar" hidden>
-            <article class="product-action-step" id="productAnalyzeAction">
-              <div class="product-action-copy">
-                <span class="product-action-kicker">1. Analyse</span>
-                <strong>PR analysieren</strong>
-                <small id="productAnalyzeStatus">Importierte Requirements prüfen und bewerten.</small>
+            <article class="product-next-action" id="productNextActionPanel">
+              <div>
+                <span class="product-action-kicker" id="productNextActionKicker">Nächster Schritt</span>
+                <strong id="productNextActionTitle">Product Requirements vorbereiten</strong>
+                <span id="productNextActionText">Importiere und analysiere Product Requirements, um den Workflow zu starten.</span>
               </div>
-              <button id="analyzeProductButton" class="primary" type="button" disabled>PR analysieren</button>
+              <button id="productNextActionButton" class="primary" type="button" disabled>Aktion öffnen</button>
             </article>
 
-            <article class="product-action-step quality-gate-card" id="productQualityGateCard">
-              <div class="product-action-copy">
-                <span class="product-action-kicker">2. Bearbeitung</span>
-                <strong id="productQualityGateTitle">Finalization Gate nicht abgeschlossen</strong>
-                <span id="productQualityGateSummary">Finale Scores fehlen für ein oder mehrere Requirements</span>
-                <small id="productQualityGateDetail">Der Approval-Prozess kann noch nicht gestartet werden.</small>
-              </div>
-              <div class="product-action-controls">
-                <span id="productQualityGateBadge" class="status-badge pending">NOT CHECKED</span>
-                <button id="productEditButton" type="button" disabled>PR bearbeiten</button>
-              </div>
-            </article>
+            <div class="product-todo-list" id="productTodoList" hidden></div>
 
-            <article class="product-action-step approval-bar" id="productApprovalBar">
-              <div class="product-action-copy">
-                <span class="product-action-kicker">3. Approval</span>
-                <strong id="productApprovalTitle">PR-Approval konfigurieren</strong>
-                <span id="productApprovalText">Wähle die PR Approver aus und starte den Approval-Prozess, sobald die Product Requirements bereit sind.</span>
-                <div id="productApproverSummary" class="approver-list"></div>
-              </div>
-              <button id="startProductApprovalButton" type="button">Approval starten</button>
-            </article>
+            <div class="product-progress-strip" aria-label="Product Requirement Fortschritt">
+              <article class="product-action-step" id="productAnalyzeAction">
+                <div class="product-action-copy">
+                  <span class="product-action-kicker">1. Analyse</span>
+                  <strong>PR analysieren</strong>
+                  <small id="productAnalyzeStatus">Importierte Requirements prüfen und bewerten.</small>
+                </div>
+                <button id="analyzeProductButton" type="button" disabled>PR analysieren</button>
+              </article>
 
-            <article class="product-action-step transfer-bar" id="productTransferBar">
-              <div class="product-action-copy">
-                <span class="product-action-kicker">4. Transfer</span>
-                <strong id="productTransferTitle">Simulierte Übergabe an Windchill</strong>
-                <span id="productTransferText">Simulation: PR würde nach Windchill übertragen. Noch keine echte Windchill-Verbindung.</span>
-              </div>
-              <button id="productTransferButton" type="button">PR-Transfer simulieren</button>
-            </article>
+              <article class="product-action-step quality-gate-card" id="productQualityGateCard">
+                <div class="product-action-copy">
+                  <span class="product-action-kicker">2. Bearbeitung</span>
+                  <strong id="productQualityGateTitle">Finalization Gate nicht abgeschlossen</strong>
+                  <span id="productQualityGateSummary">Finale Scores fehlen für ein oder mehrere Requirements</span>
+                  <small id="productQualityGateDetail">Der Approval-Prozess kann noch nicht gestartet werden.</small>
+                </div>
+                <div class="product-action-controls">
+                  <span id="productQualityGateBadge" class="status-badge pending">NOT CHECKED</span>
+                  <button id="productEditButton" type="button" disabled>PR bearbeiten</button>
+                </div>
+              </article>
+
+              <article class="product-action-step approval-bar" id="productApprovalBar">
+                <div class="product-action-copy">
+                  <span class="product-action-kicker">3. Approval</span>
+                  <strong id="productApprovalTitle">PR-Approval konfigurieren</strong>
+                  <span id="productApprovalText">Wähle die PR Approver aus und starte den Approval-Prozess, sobald die Product Requirements bereit sind.</span>
+                  <div id="productApproverSummary" class="approver-list"></div>
+                </div>
+                <button id="startProductApprovalButton" type="button">Approval starten</button>
+              </article>
+
+              <article class="product-action-step transfer-bar" id="productTransferBar">
+                <div class="product-action-copy">
+                  <span class="product-action-kicker">4. Transfer</span>
+                  <strong id="productTransferTitle">Simulierte Übergabe an Windchill</strong>
+                  <span id="productTransferText">Simulation: PR würde nach Windchill übertragen. Noch keine echte Windchill-Verbindung.</span>
+                </div>
+                <button id="productTransferButton" type="button">PR-Transfer simulieren</button>
+              </article>
+            </div>
           </section>
 
           <div class="filter-bar" id="scoreFilterBar" hidden>
@@ -324,7 +320,8 @@
                     <option value="all">Alle</option>
                     <option value="analysis">Analyse</option>
                     <option value="editing">Bearbeitung</option>
-                    <option value="in-approval">In Freigabe</option>
+                    <option value="in-approval">Meine Freigaben</option>
+                    <option value="rework-required">Meine Nacharbeit</option>
                     <option value="changed">Geändert</option>
                     <option value="approved">Freigegeben</option>
                     <option value="transferred">Transferiert</option>
@@ -382,6 +379,7 @@
 
                   <div class="review-tab-content" id="productReviewFinalTab">
                     <div id="productReviewFinalChoiceHost"></div>
+                    <div id="productReviewTechTypesHost"></div>
                     <section class="final-text-section" hidden>
                       <h3>Finales Product Requirement</h3>
                       <textarea id="productReviewFinalText" rows="8" placeholder="Finales Product Requirement"></textarea>
@@ -399,20 +397,6 @@
                   </div>
 
                   <div class="review-tab-content" id="productReviewTechTypesTab" hidden>
-                    <div class="review-techtype-toolbar">
-                      <input id="productReviewTechTypeSearch" type="search" placeholder="TechType suchen" autocomplete="off" />
-                      <select id="productReviewTechTypeFilter">
-                        <option value="all">Alle</option>
-                        <option value="selected">Ausgewählt</option>
-                        <option value="unselected">Nicht ausgewählt</option>
-                      </select>
-                    </div>
-                    <div class="approval-action-row">
-                      <button id="productReviewSelectAllTechTypesButton" type="button">Alle auswählen</button>
-                      <button id="productReviewClearTechTypesButton" type="button">Alle abwählen</button>
-                      <button id="productReviewResetTechTypesButton" type="button">Auswahl zurücksetzen</button>
-                    </div>
-                    <div id="productReviewTechTypesHost"></div>
                   </div>
 
                   <div class="review-tab-content" id="productReviewAnalysisTab" hidden>
@@ -434,42 +418,17 @@
                   <span id="productApprovalDetailProgress" class="approval-progress-pill">0 / 0</span>
                 </div>
 
-                <section class="approval-panel-section">
-                  <h3>Metadaten</h3>
-                  <dl class="approval-metadata-grid">
-                    <div>
-                      <dt>ID</dt>
-                      <dd id="productApprovalDetailId">-</dd>
-                    </div>
-                    <div>
-                      <dt>Score</dt>
-                      <dd id="productApprovalDetailScore">-</dd>
-                    </div>
-                    <div>
-                      <dt>Owner</dt>
-                      <dd id="productApprovalDetailOwner">-</dd>
-                    </div>
-                    <div>
-                      <dt>Version</dt>
-                      <dd id="productApprovalDetailVersion">-</dd>
-                    </div>
-                    <div>
-                      <dt>Status</dt>
-                      <dd id="productApprovalDetailMetaStatus">-</dd>
-                    </div>
-                    <div>
-                      <dt>Offene Kommentare</dt>
-                      <dd id="productApprovalDetailOpenComments">0</dd>
-                    </div>
-                  </dl>
-                </section>
-
                 <section class="approval-panel-section approval-candidate-section">
                   <div>
                     <h3>Freigabekandidat</h3>
                     <p>Dieser Product-Requirement-Kandidat ist für die Freigabe vorbereitet und wird später in der simulierten Zielsystem-Vorschau angezeigt.</p>
                   </div>
                   <textarea id="productApprovalFinalText" rows="8"></textarea>
+                  <div class="approval-score-row" id="productApprovalScoreRow" hidden>
+                    <span id="productApprovalScore" class="approval-progress-pill">Score -</span>
+                    <span id="productApprovalScoreStatus" class="quality-badge missing">MISSING</span>
+                    <small id="productApprovalScoreHint">Score neu berechnen erforderlich.</small>
+                  </div>
                   <details class="original-requirement">
                     <summary>Original-Requirement</summary>
                     <p id="productApprovalOriginalText">-</p>
@@ -482,19 +441,27 @@
                     <button id="productApprovalSaveTextButton" type="button">Änderungen speichern</button>
                     <button id="productApprovalSubmitButton" type="button">Zur Freigabe bereitstellen</button>
                   </div>
+                  <details class="approval-ai-assist" id="productApprovalAiAssist">
+                    <summary>AI Verbesserung</summary>
+                    <label for="productApprovalAiInstruction">Was soll verbessert werden?</label>
+                    <textarea id="productApprovalAiInstruction" rows="2" placeholder="z. B. Disapproval-Kommentar berücksichtigen, klarer formulieren, messbarer machen"></textarea>
+                    <div class="attachment-control">
+                      <input id="productApprovalAiAttachments" class="visually-hidden improvement-attachment-input" type="file" multiple accept=".txt,.md,.markdown,.csv,.json,.xml,.yaml,.yml,.log,.xlsx,.xls" />
+                      <label class="attachment-picker" for="productApprovalAiAttachments" title="Text-, CSV-, JSON-, XML-, Markdown- und Excel-Dateien werden als zusätzlicher Kontext berücksichtigt.">+ Anhang hinzufügen</label>
+                      <div id="productApprovalAiAttachmentList" class="attachment-list" aria-live="polite"></div>
+                    </div>
+                    <button id="productApprovalAiButton" type="button">AI Verbesserung</button>
+                  </details>
                 </section>
 
-                <section class="approval-panel-section ai-improvement-panel" id="productApprovalAiImprovement">
-                  <h3>AI Verbesserung</h3>
-                  <label for="productApprovalImprovementInstruction">Was soll verbessert werden?</label>
-                  <textarea id="productApprovalImprovementInstruction" rows="3" placeholder="z. B. klarer formulieren, messbarer machen, Mehrdeutigkeiten entfernen"></textarea>
-                  <label for="productApprovalImprovementAttachments">Anhänge für die Verbesserung</label>
-                  <div class="attachment-control">
-                    <input id="productApprovalImprovementAttachments" class="visually-hidden improvement-attachment-input" type="file" multiple accept=".txt,.md,.markdown,.csv,.json,.xml,.yaml,.yml,.log,.xlsx,.xls" />
-                    <label class="attachment-picker" for="productApprovalImprovementAttachments" title="Text-, CSV-, JSON-, XML-, Markdown- und Excel-Dateien werden als zusätzlicher Kontext berücksichtigt.">+ Anhang hinzufügen</label>
-                    <div id="productApprovalImprovementAttachmentList" class="attachment-list" aria-live="polite"></div>
+                <section class="approval-panel-section approval-tabs-section">
+                  <div class="approval-tabs" id="productApprovalTabs" role="tablist" aria-label="Approval-Details">
+                    <button type="button" data-approval-tab="comments" class="is-active">Kommentare</button>
+                    <button type="button" data-approval-tab="techtypes" id="productApprovalTechTypesTabButton" hidden>TechTypes</button>
+                    <button type="button" data-approval-tab="approvals">Freigaben</button>
+                    <button type="button" data-approval-tab="versions">Versionen</button>
                   </div>
-                  <button id="productApprovalImproveButton" type="button">AI Verbesserung</button>
+                  <div class="approval-tab-content" id="productApprovalTabContent"></div>
                 </section>
 
                 <section class="approval-panel-section approver-decision" id="productApprovalDecision">
@@ -508,15 +475,6 @@
                     <textarea id="productApprovalDisapproveComment" rows="3" placeholder="Bitte begründe, warum dieses Requirement nicht freigegeben werden kann."></textarea>
                     <button id="productApprovalDisapproveButton" type="button">Ablehnung senden</button>
                   </div>
-                </section>
-
-                <section class="approval-panel-section approval-tabs-section">
-                  <div class="approval-tabs" id="productApprovalTabs" role="tablist" aria-label="Approval-Details">
-                    <button type="button" data-approval-tab="comments" class="is-active">Kommentare</button>
-                    <button type="button" data-approval-tab="approvals">Freigaben</button>
-                    <button type="button" data-approval-tab="versions">Versionen</button>
-                  </div>
-                  <div class="approval-tab-content" id="productApprovalTabContent"></div>
                 </section>
               </div>
             </aside>
@@ -761,6 +719,10 @@
             <label for="projectDescription">Kurzbeschreibung</label>
             <textarea id="projectDescription" rows="4" placeholder="Kurze Beschreibung des Projektinhalts"></textarea>
           </div>
+          <div class="field-group">
+            <label for="productRequirementOwner">Product Requirement Owner</label>
+            <select id="productRequirementOwner"></select>
+          </div>
         </section>
 
         <div class="selection-actions">
@@ -897,7 +859,7 @@
           <button class="icon-button" id="productApprovalCloseButton" type="button" aria-label="Dialog schließen">×</button>
         </div>
 
-        <p class="approval-dialog-text">Wähle die Personen aus, die jedes Product Requirement freigeben müssen. Nach dem Start ist diese Auswahl für den Approval-Lauf verbindlich.</p>
+        <p class="approval-dialog-text">Wähle die Personen aus, die jedes Product Requirement freigeben müssen. Der Owner muss die eigenen Requirements nicht selbst freigeben.</p>
         <div id="productApprovalDialogMessage" class="form-message" role="status"></div>
         <div class="approval-selection-layout">
           <section class="approval-selected-panel" aria-labelledby="productApprovalSelectedTitle">
@@ -1041,6 +1003,37 @@
           <button id="selectionDeferButton" type="button">Auswahl später treffen</button>
         </div>
       </div>
+    </div>
+
+    <div class="techtype-modal-overlay" id="techTypeModalOverlay" hidden>
+      <section class="techtype-modal" role="dialog" aria-modal="true" aria-labelledby="techTypeModalTitle">
+        <header class="techtype-modal-header">
+          <div>
+            <h2 id="techTypeModalTitle">TechTypes auswählen</h2>
+            <p id="techTypeModalSummary">0 von 0 ausgewählt</p>
+          </div>
+          <button class="icon-button" id="techTypeModalCloseButton" type="button" aria-label="Dialog schließen">×</button>
+        </header>
+
+        <div class="review-techtype-toolbar">
+          <input id="productReviewTechTypeSearch" type="search" placeholder="TechType suchen ..." autocomplete="off" />
+          <select id="productReviewTechTypeFilter">
+            <option value="all">Alle</option>
+            <option value="selected">Ausgewählt</option>
+            <option value="unselected">Nicht ausgewählt</option>
+          </select>
+        </div>
+        <div class="approval-action-row product-review-techtype-actions">
+          <button id="productReviewSelectAllTechTypesButton" type="button">Alle auswählen</button>
+          <button id="productReviewSelectVisibleTechTypesButton" type="button" hidden>Nur sichtbare auswählen</button>
+          <button id="productReviewClearTechTypesButton" type="button">Auswahl löschen</button>
+          <button id="productReviewResetTechTypesButton" type="button">Auswahl zurücksetzen</button>
+        </div>
+        <div id="techTypeModalSelectionHost"></div>
+        <footer class="techtype-modal-footer">
+          <button id="techTypeModalDoneButton" class="primary" type="button">Fertig</button>
+        </footer>
+      </section>
     </div>
 
     <div class="selection-overlay" id="softwareSelectionOverlay" hidden>
