@@ -38,6 +38,8 @@
 }
 
 body {
+  min-width: 0;
+  overflow-x: hidden;
   margin: 0;
   background:
     radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.92) 0, rgba(245, 245, 247, 0) 460px),
@@ -58,16 +60,17 @@ select {
 
 .app-shell {
   min-height: 100vh;
-  padding: 24px;
+  padding: clamp(12px, 2vw, 24px);
 }
 
 .workspace {
-  width: min(100%, 1280px);
+  width: min(100%, 1680px);
   margin: 0 auto;
 }
 
 .app-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
@@ -126,7 +129,8 @@ h2 {
   display: grid;
   justify-items: end;
   gap: 14px;
-  min-width: 280px;
+  flex: 1 1 280px;
+  min-width: min(280px, 100%);
 }
 
 .language-switch {
@@ -808,6 +812,7 @@ input[type="file"] {
   position: relative;
   z-index: var(--z-menu);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
@@ -824,6 +829,7 @@ input[type="file"] {
   display: flex;
   flex-wrap: wrap;
   gap: 0;
+  min-width: 0;
 }
 
 .menu-dropdown {
@@ -881,6 +887,8 @@ input[type="file"] {
   z-index: var(--z-menu-popover);
   display: grid;
   min-width: 220px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
   border: 0.5px solid var(--hairline);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.95);
@@ -895,12 +903,14 @@ input[type="file"] {
   min-height: 36px;
   justify-content: flex-start;
   width: 100%;
+  min-width: max-content;
   border-color: transparent;
   background: transparent;
   color: var(--text);
   padding: 8px 12px;
   text-align: left;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .menu-popover button:hover,
@@ -933,10 +943,12 @@ input[type="file"] {
 }
 
 .file-state {
+  min-width: 0;
   color: var(--muted);
   font-size: 0.9rem;
   font-weight: 400;
   text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .action-row {
@@ -959,6 +971,10 @@ button {
   padding: 9px 14px;
   font-weight: 500;
   cursor: pointer;
+}
+
+button[hidden] {
+  display: none;
 }
 
 button:hover:not(:disabled) {
@@ -989,6 +1005,7 @@ button.primary:focus-visible {
   align-items: center;
   gap: 10px;
   background: #fff;
+  min-width: max-content;
 }
 
 .windchill-button img {
@@ -1190,7 +1207,7 @@ button:disabled {
 
 .product-progress-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
   gap: 8px;
 }
 
@@ -1494,7 +1511,7 @@ button:disabled {
 }
 
 .approval-list-pane table {
-  min-width: 1120px;
+  min-width: min(1120px, calc(100vw - 48px));
 }
 
 .approval-list-toolbar {
@@ -1685,9 +1702,9 @@ button:disabled {
   top: 50%;
   left: 50%;
   z-index: 70;
-  width: min(860px, calc(100vw - 64px));
+  width: min(860px, calc(100vw - 32px));
   height: auto;
-  max-height: calc(100vh - 64px);
+  max-height: calc(100dvh - 32px);
   margin: auto;
   overflow: auto;
   border: 0.5px solid var(--hairline);
@@ -1699,19 +1716,19 @@ button:disabled {
 }
 
 .approval-detail-panel.is-approval-compact {
-  width: min(720px, calc(100vw - 64px));
+  width: min(720px, calc(100vw - 32px));
 }
 
 .approval-detail-panel.is-disapproval-expanded {
-  width: min(900px, calc(100vw - 64px));
+  width: min(900px, calc(100vw - 32px));
 }
 
 .approval-detail-panel.is-pure-approval.is-disapproval-expanded {
-  width: min(760px, calc(100vw - 64px));
+  width: min(760px, calc(100vw - 32px));
 }
 
 .approval-detail-panel:has(#productReviewDetailContent:not([hidden])) {
-  width: min(980px, calc(100vw - 64px));
+  width: min(1280px, calc(100vw - 32px));
 }
 
 .approval-detail-panel[hidden] {
@@ -1783,7 +1800,7 @@ button:disabled {
 }
 
 .product-review-simple #productReviewFinalChoiceHost .selection-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  grid-template-columns: minmax(280px, 0.9fr) minmax(340px, 1.1fr);
   align-items: stretch;
 }
 
@@ -1905,7 +1922,7 @@ button:disabled {
 
 .review-techtype-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 160px;
+  grid-template-columns: minmax(min(240px, 100%), 1fr) minmax(140px, 180px);
   gap: 8px;
   margin: 14px 0 10px;
 }
@@ -2039,8 +2056,8 @@ button:disabled {
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   width: min(760px, calc(100vw - 32px));
-  height: min(860px, calc(100vh - 48px));
-  max-height: calc(100vh - 48px);
+  height: min(860px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
   border: 0.5px solid rgba(148, 163, 184, 0.22);
   border-radius: 18px;
   background: rgba(15, 23, 34, 0.96);
@@ -2103,6 +2120,8 @@ button:disabled {
 }
 
 .product-review-techtype-actions {
+  display: flex;
+  flex-wrap: wrap;
   margin-bottom: 10px;
 }
 
@@ -2382,6 +2401,10 @@ button:disabled {
   gap: 8px;
 }
 
+.approval-action-row > button {
+  min-width: min(180px, 100%);
+}
+
 .disapproval-box {
   margin-top: 12px;
   border-radius: 8px;
@@ -2391,7 +2414,7 @@ button:disabled {
 
 .approval-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 4px;
   border-radius: 8px;
   background: #f1f5f9;
@@ -2540,11 +2563,28 @@ button:disabled {
   .approval-detail-panel {
     top: 50%;
     left: 50%;
-    width: calc(100vw - 24px);
-    height: auto;
-    max-height: calc(100vh - 24px);
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
     padding: 12px;
     transform: translate(-50%, -50%);
+  }
+
+  .approval-detail-header,
+  .techtype-summary-header,
+  .selection-actions,
+  .about-actions,
+  .software-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .approval-progress-pill,
+  .status-badge,
+  .quality-badge {
+    width: fit-content;
+    max-width: 100%;
+    white-space: normal;
   }
 
   .approval-list-toolbar {
@@ -2553,6 +2593,15 @@ button:disabled {
 
   .approval-list-count {
     justify-self: start;
+  }
+
+  .review-techtype-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .product-review-simple #productReviewFinalChoiceHost .choice-card:first-child,
+  .product-review-simple #productReviewFinalChoiceHost .choice-card:nth-child(2) {
+    grid-template-rows: auto minmax(160px, auto) auto;
   }
 }
 
@@ -3236,7 +3285,7 @@ tbody tr.group-row:hover td {
 
 .selection-dialog {
   width: min(100%, 1180px);
-  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   overflow: auto;
   border: 0.5px solid var(--hairline);
   border-radius: var(--radius);
@@ -3284,7 +3333,7 @@ tbody tr.group-row:hover td {
 
 .settings-dialog {
   width: min(100%, 760px);
-  max-height: min(88vh, 820px);
+  max-height: min(88dvh, 820px);
   overflow: auto;
   border: 0.5px solid var(--hairline);
   border-radius: var(--radius);
@@ -3295,7 +3344,7 @@ tbody tr.group-row:hover td {
 
 .project-dialog {
   width: min(100%, 620px);
-  max-height: min(88vh, 720px);
+  max-height: min(88dvh, 720px);
   overflow: auto;
   border: 0.5px solid var(--hairline);
   border-radius: var(--radius);
@@ -3416,7 +3465,7 @@ tbody tr.group-row:hover td {
 
 .openai-cost-dialog {
   width: min(100%, 520px);
-  max-height: min(88vh, 640px);
+  max-height: min(88dvh, 640px);
   overflow: auto;
   border: 0.5px solid var(--hairline);
   border-radius: var(--radius);
@@ -4228,7 +4277,7 @@ tbody tr.group-row:hover td {
   gap: 0;
   border-top: 0;
   padding: 0;
-  min-width: min(760px, 100%);
+  min-width: 0;
 }
 
 .techtype-options label {
@@ -4244,7 +4293,7 @@ tbody tr.group-row:hover td {
   border-bottom: 0.5px solid rgba(148, 163, 184, 0.1);
   padding: 8px 12px 8px 18px;
   line-height: 1.15;
-  white-space: nowrap;
+  white-space: normal;
   cursor: pointer;
 }
 
@@ -4266,9 +4315,8 @@ tbody tr.group-row:hover td {
   min-width: 0;
   color: #dbe4ee;
   font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .techtype-row:has(input:checked) {
@@ -5351,8 +5399,85 @@ tbody tr.group-row:hover td {
     min-height: 88px;
   }
 
-  table {
-    min-width: 1040px;
+  .approval-list-pane table,
+  .software-table {
+    min-width: 0;
+  }
+
+  .approval-list-pane thead,
+  .software-table thead {
+    display: none;
+  }
+
+  .approval-list-pane tbody,
+  .software-table tbody {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .approval-list-pane tr,
+  .software-table tr {
+    display: grid;
+    border: 0.5px solid var(--hairline);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: rgba(15, 20, 27, 0.96);
+  }
+
+  .approval-list-pane tr.group-row,
+  .software-table tr.group-row {
+    display: block;
+    border-radius: var(--radius);
+  }
+
+  .approval-list-pane tr.group-row td,
+  .software-table tr.group-row td {
+    display: block;
+    width: 100%;
+  }
+
+  .approval-list-pane td,
+  .software-table td {
+    display: grid;
+    grid-template-columns: minmax(96px, 0.34fr) minmax(0, 1fr);
+    gap: 10px;
+    width: 100% !important;
+    min-width: 0;
+    height: auto;
+    border-bottom: 0.5px solid var(--hairline);
+    padding: 10px 12px;
+  }
+
+  .approval-list-pane td:last-child,
+  .software-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .approval-list-pane td::before,
+  .software-table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1.25;
+    text-transform: uppercase;
+  }
+
+  .approval-list-pane td:empty::before,
+  .software-table td:empty::before,
+  .approval-list-pane td.empty::before,
+  .software-table td.empty::before,
+  .approval-list-pane tr.group-row td::before,
+  .software-table tr.group-row td::before {
+    content: "";
+  }
+
+  .approval-list-pane td.empty,
+  .software-table td.empty {
+    display: block;
+    min-height: 180px;
+    text-align: center;
   }
 
   .selection-meta,
@@ -5435,6 +5560,28 @@ tbody tr.group-row:hover td {
 
   .menu-actions {
     display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    width: 100%;
+  }
+
+  .menu-dropdown {
+    min-width: 0;
+  }
+
+  .menu-dropdown summary {
+    width: 100%;
+    justify-content: space-between;
+    border-right: 0;
+  }
+
+  .menu-popover {
+    max-width: calc(100vw - 28px);
+    overflow-x: auto;
+  }
+
+  .file-state {
+    width: 100%;
+    text-align: left;
   }
 
   .settings-overlay,

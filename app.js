@@ -88,11 +88,13 @@ const state = {
   productApprovalStartedById: "",
   productApprovalListSearch: "",
   productApprovalStatusFilter: "all",
+  productApprovalStatusFilterManual: false,
   productApprovalActiveTab: "comments",
   productApprovalDecisionMode: "",
   productApprovalDisapproveDraftRow: null,
   productApprovalDisapproveDraftText: "",
   productApprovalReplyDrafts: {},
+  productApprovalSaveBusy: false,
   appDialogResolve: null,
   changeRequestDialogResolve: null,
   productReviewActiveTab: "final",
@@ -461,6 +463,8 @@ const UI_TRANSLATIONS = {
     "Original-Requirement": "Original requirement",
     "Owner-Aktionen": "Owner actions",
     "Änderungen speichern": "Save changes",
+    "Änderungen speichern und erneut freigeben": "Save changes and resubmit",
+    "Speichert und berechnet Score...": "Saving and calculating score...",
     "Zur Freigabe bereitstellen": "Submit for approval",
     "Freigabeentscheidung": "Approval decision",
     "Approval-Details": "Approval details",
@@ -3410,9 +3414,11 @@ function resetProjectApprovalState() {
   state.productApprovalStartedById = "";
   state.productApprovalListSearch = "";
   state.productApprovalStatusFilter = "all";
+  state.productApprovalStatusFilterManual = false;
   state.productApprovalActiveTab = "comments";
   state.productApprovalDecisionMode = "";
   state.productApprovalReplyDrafts = {};
+  state.productApprovalSaveBusy = false;
   state.productReviewActiveTab = "final";
   state.productReviewTechTypeSearch = "";
   state.productReviewTechTypeFilter = "all";
@@ -3929,6 +3935,7 @@ async function analyzeRequirements() {
 }
 
 function renderTable() {
+  syncProductApprovalDefaultStatusFilter();
   els.resultsTable.classList.toggle("analysis-complete", state.analysisComplete);
   const resultByRow = new Map(state.results.map((result) => [Number(result.rowNumber), result]));
   const criticalRows = getCriticalScoreRows();
@@ -3982,20 +3989,47 @@ function renderTable() {
       const processState = productRequirementProcessState(item, result, selection, isUpdatingFinalScore);
       return `
           <tr class="requirement-row approval-list-row ${state.activeSelectionRow === rowNumber ? "is-active-row" : ""} ${isExcluded ? "excluded-row" : ""} ${isUpdatingFinalScore ? "updating-row" : ""} process-${processState} quality-${gateState}" data-row-number="${item.rowNumber}" tabindex="0">
-          <td class="approval-index-cell">${rowIndex}/${state.requirements.length}</td>
-          <td>${escapeHtml(item.id || "-")}</td>
-          <td>
+          <td class="approval-index-cell" data-label="${escapeHtml(translateUiText("#"))}">${rowIndex}/${state.requirements.length}</td>
+          <td data-label="${escapeHtml(translateUiText("ID"))}">${escapeHtml(item.id || "-")}</td>
+          <td data-label="${escapeHtml(translateUiText("Titel"))}">
             <span class="approval-list-title">${escapeHtml(item.name || item.id || `Zeile ${rowNumber}`)}</span>
           </td>
-          <td>${renderProductQualityScoreCell(result, score, isExcluded, isUpdatingFinalScore)}</td>
-          <td>${escapeHtml(productReviewSourceLabel(selection))}</td>
-          <td>${renderProductProcessCell(processState, selection)}</td>
-          <td>${escapeHtml(productTechTypeSummary(item, selection))}</td>
-          <td>${renderProductFindingSummary(issues, openComments)}</td>
+          <td data-label="${escapeHtml(translateUiText("Score"))}">${renderProductQualityScoreCell(result, score, isExcluded, isUpdatingFinalScore)}</td>
+          <td data-label="${escapeHtml(translateUiText("Quelle"))}">${escapeHtml(productReviewSourceLabel(selection))}</td>
+          <td data-label="${escapeHtml(translateUiText("Status"))}">${renderProductProcessCell(processState, selection)}</td>
+          <td data-label="${escapeHtml(translateUiText("TechTypes"))}">${escapeHtml(productTechTypeSummary(item, selection))}</td>
+          <td data-label="${escapeHtml(translateUiText("Hinweise"))}">${renderProductFindingSummary(issues, openComments)}</td>
         </tr>
       `;
     })
     .join("");
+}
+
+function syncProductApprovalDefaultStatusFilter() {
+  if (!hasProject()) return;
+
+  const approvalStarted = isProductApprovalStarted();
+  const approvalComplete = hasApprovedFinalProductSelections();
+  let nextFilter = state.productApprovalStatusFilter || "all";
+
+  if (approvalComplete) {
+    nextFilter = "all";
+    state.productApprovalStatusFilterManual = false;
+  } else if (approvalStarted && !state.productApprovalStatusFilterManual) {
+    nextFilter = productPersonalWorkFilterValue() || "all";
+  }
+
+  if (nextFilter === state.productApprovalStatusFilter) {
+    if (els.productApprovalStatusFilter && els.productApprovalStatusFilter.value !== nextFilter) {
+      els.productApprovalStatusFilter.value = nextFilter;
+    }
+    return;
+  }
+
+  state.productApprovalStatusFilter = nextFilter;
+  if (els.productApprovalStatusFilter) {
+    els.productApprovalStatusFilter.value = nextFilter;
+  }
 }
 
 function filteredProductApprovalRows(rows, resultByRow) {
@@ -4372,6 +4406,7 @@ function handleProductApprovalSearch(event) {
 
 function handleProductApprovalStatusFilter(event) {
   state.productApprovalStatusFilter = event.target.value || "all";
+  state.productApprovalStatusFilterManual = true;
   renderTable();
 }
 
@@ -4515,8 +4550,16 @@ function renderProductApprovalPanel() {
   });
   els.productApprovalOriginalText.textContent = requirement.text || "-";
   els.productApprovalOwnerActions.hidden = !canEdit;
-  els.productApprovalSaveTextButton.disabled = !canEdit;
-  els.productApprovalSubmitButton.disabled = !canEdit;
+  els.productApprovalSaveTextButton.disabled = !canEdit || state.productApprovalSaveBusy;
+  els.productApprovalSaveTextButton.textContent = translateUiText(
+    state.productApprovalSaveBusy
+      ? "Speichert und berechnet Score..."
+      : openDisapprovals > 0
+        ? "Änderungen speichern und erneut freigeben"
+        : "Änderungen speichern",
+  );
+  els.productApprovalSubmitButton.hidden = true;
+  els.productApprovalSubmitButton.disabled = true;
   els.productApprovalAiAssist.hidden = !canEdit;
   els.productApprovalAiInstruction.disabled = !canEdit;
   els.productApprovalAiAttachments.disabled = !canEdit;
@@ -4834,6 +4877,29 @@ async function submitProductRequirementForApproval() {
   updateExportAvailability();
   updateProjectActions();
   closeProductRequirementDetailDialog();
+}
+
+function releaseProductRequirementAfterOwnerSave(rowNumber) {
+  const selection = state.finalSelections.get(Number(rowNumber));
+  if (!selection || !canReviseProductApprovalRequirement(rowNumber)) return false;
+  if (selection.needsFinalAssessment) return false;
+
+  const result = state.results.find((entry) => Number(entry.rowNumber) === Number(rowNumber));
+  const finalScore = productFinalScore(result, selection);
+  if (!Number.isFinite(finalScore) || finalScore < PRODUCT_STEP_MIN_SCORE) return false;
+
+  productApprovalComments(selection)
+    .filter((comment) => comment.type === "disapproval" && comment.resolved !== true)
+    .forEach((comment) => {
+      comment.resolved = true;
+      comment.resolvedAt = new Date().toISOString();
+      comment.resolvedBy = currentApprovalUserName();
+    });
+  state.changedProductRequirementRows.delete(Number(rowNumber));
+  updateFinalProductApproval(selection);
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
+  setProjectRevisionAction(projectRevisionActionFor("PR erneut zur Freigabe bereitgestellt", item, "PR"));
+  return true;
 }
 
 async function handleProductReviewPrimaryAction() {
@@ -5335,10 +5401,21 @@ function canUseOwnerProductApprovalDialog() {
 }
 
 async function saveProductApprovalText() {
-  await savePendingProductApprovalTextChange();
+  const rowNumber = Number(state.activeSelectionRow);
+  const pendingSave = await savePendingProductApprovalTextChange({ autoRelease: true });
+  if (!pendingSave.ok) return;
+
+  if (!pendingSave.changed) {
+    releaseProductRequirementAfterOwnerSave(rowNumber);
+    renderProductApprovalPanel();
+    renderTable();
+    renderMetrics();
+    updateExportAvailability();
+    updateProjectActions();
+  }
 }
 
-async function savePendingProductApprovalTextChange() {
+async function savePendingProductApprovalTextChange(options = {}) {
   const rowNumber = Number(state.activeSelectionRow);
   const selection = state.finalSelections.get(rowNumber);
   if (!selection || !canReviseProductApprovalRequirementInDialog(rowNumber)) return { ok: false, changed: false };
@@ -5355,6 +5432,7 @@ async function savePendingProductApprovalTextChange() {
     selectedSource: "MANUAL_EDIT",
     historyReason: "Approval-Änderung",
     revisionAction: "PR-Text im Approval geaendert",
+    autoRelease: options.autoRelease === true,
   });
   if (!updatedSelection) return { ok: false, changed: false };
   return { ok: true, changed: true };
@@ -5388,14 +5466,38 @@ async function applyProductApprovalTextChange(rowNumber, nextText, options = {})
   renderProductApprovalPanel();
   renderMetrics();
   updateProjectActions();
+  setProductApprovalSaveBusy(true);
   await recalculateFinalScore(item, nextText, selection.choice || "manual");
   const updatedSelection = state.finalSelections.get(Number(rowNumber));
   if (updatedSelection) {
     addProductReviewHistory(updatedSelection, "Score neu berechnet", updatedSelection.text);
+    if (options.autoRelease === true) {
+      releaseProductRequirementAfterOwnerSave(rowNumber);
+    }
   }
+  setProductApprovalSaveBusy(false);
   renderProductApprovalPanel();
+  renderTable();
+  renderMetrics();
+  updateExportAvailability();
   updateProjectActions();
   return updatedSelection;
+}
+
+function setProductApprovalSaveBusy(isBusy) {
+  if (!els.productApprovalSaveTextButton) return;
+
+  state.productApprovalSaveBusy = isBusy;
+  els.productApprovalSaveTextButton.disabled = isBusy;
+  els.productApprovalSaveTextButton.textContent = translateUiText(
+    isBusy ? "Speichert und berechnet Score..." : "Änderungen speichern",
+  );
+  if (els.productApprovalSubmitButton) {
+    els.productApprovalSubmitButton.disabled = true;
+  }
+  if (els.productApprovalAiButton) {
+    els.productApprovalAiButton.disabled = isBusy || !canReviseProductApprovalRequirementInDialog(state.activeSelectionRow);
+  }
 }
 
 async function improveProductApprovalRequirementWithAi() {
@@ -5835,6 +5937,19 @@ function currentTechTypeSelection() {
     .filter(Boolean);
 }
 
+function currentOrPresetTechTypeSelection(requirement, selection) {
+  if (!state.techTypes.length) return [];
+
+  const inputs = [...els.techTypeSelectionList.querySelectorAll("[data-techtype-designation]")];
+  const panelIsActive = els.techTypeSelectionPanel && !els.techTypeSelectionPanel.hidden && !els.techTypeSelectionPanel.closest("[hidden]");
+  if (!inputs.length || !panelIsActive) return selectedTechTypesForRequirement(requirement, selection);
+
+  return inputs
+    .filter((input) => input.checked)
+    .map((input) => input.dataset.techtypeDesignation)
+    .filter(Boolean);
+}
+
 function renderTechTypeSummary(selectedCount = currentTechTypeSelection().length) {
   const total = state.techTypes.length;
   const text = techTypeSelectedText(selectedCount, total);
@@ -6149,12 +6264,13 @@ async function selectFinalText(choice) {
       : item?.text;
 
   if (!item || !text) return;
-  if (state.techTypes.length && !currentTechTypeSelection().length) {
+  const previousSelection = state.finalSelections.get(Number(rowNumber));
+  const techTypes = currentOrPresetTechTypeSelection(item, previousSelection);
+  if (state.techTypes.length && !techTypes.length) {
     alert(translateUiText("Bitte wähle mindestens einen TechType aus."));
     return;
   }
 
-  const previousSelection = state.finalSelections.get(Number(rowNumber));
   const changeComment = await requestApprovedProductRequirementChangeComment(
     rowNumber,
     choice === "ai" ? "AI-Vorschlag verwendet" : "Original verwendet",
@@ -6166,7 +6282,7 @@ async function selectFinalText(choice) {
     choice,
     selectedSource: choice === "ai" ? "AI_PROPOSAL" : "ORIGINAL",
     text,
-    techTypes: currentTechTypeSelection(),
+    techTypes,
     previousScore: result ? productVisibleScore(
       result,
       state.finalSelections.get(Number(rowNumber)),
@@ -6404,6 +6520,7 @@ async function recalculateFinalScore(item, finalText, choice) {
   }
 
   renderTable();
+  renderProductApprovalPanel();
   updateExportAvailability();
 
   try {
@@ -6451,6 +6568,7 @@ async function recalculateFinalScore(item, finalText, choice) {
   } finally {
     state.finalScoreUpdates.delete(rowNumber);
     renderTable();
+    renderProductApprovalPanel();
     renderMetrics();
     updateExportAvailability();
     updateProjectActions();
@@ -6819,13 +6937,20 @@ function renderProductNextAction(productReady = isProductReadyForTransferSimulat
     personalReworkCount,
     personalApprovalCount,
   });
+  els.productNextActionPanel.hidden = Boolean(nextAction.hidden);
+  if (nextAction.hidden) {
+    renderProductTodoList();
+    return;
+  }
 
   els.productNextActionKicker.textContent = translateUiText(nextAction.kicker || "Arbeitszentrale");
   els.productNextActionTitle.textContent = translateUiText(nextAction.title);
   els.productNextActionText.textContent = translateUiText(nextAction.text);
-  els.productNextActionButton.textContent = translateUiText(nextAction.button);
-  els.productNextActionButton.disabled = nextAction.disabled;
-  els.productNextActionButton.dataset.productAction = nextAction.action;
+  const hasActionButton = Boolean(nextAction.button && nextAction.action !== "none");
+  els.productNextActionButton.hidden = !hasActionButton;
+  els.productNextActionButton.textContent = hasActionButton ? translateUiText(nextAction.button) : "";
+  els.productNextActionButton.disabled = !hasActionButton || nextAction.disabled;
+  els.productNextActionButton.dataset.productAction = hasActionButton ? nextAction.action : "none";
   els.productNextActionPanel.classList.toggle("is-complete", nextAction.state === "complete");
   els.productNextActionPanel.classList.toggle("is-blocked", nextAction.state === "blocked");
 
@@ -6917,16 +7042,21 @@ function productNextActionState({
   }
 
   if (!approvalComplete) {
+    if (approvalStarted) {
+      return {
+        hidden: true,
+        currentStep: els.productApprovalBar,
+      };
+    }
+
     return {
       kicker: "Arbeitszentrale",
-      title: approvalStarted ? "Freigabe prüfen" : "Freigabe starten",
-      text: approvalStarted
-        ? "Der Approval-Prozess läuft. Für dich sind aktuell keine offenen Aufgaben vorhanden."
-        : "Alle Product Requirements sind bearbeitet. Starte die Freigabe mit den ausgewählten Approvern.",
-      button: approvalStarted ? "Approval-Status ansehen" : "Freigabe starten",
+      title: "Freigabe starten",
+      text: "Alle Product Requirements sind bearbeitet. Starte die Freigabe mit den ausgewählten Approvern.",
+      button: "Freigabe starten",
       action: "approval",
-      disabled: approvalStarted ? !canOpenApproval : !canStartApproval,
-      state: approvalStarted || canStartApproval ? "active" : "blocked",
+      disabled: !canStartApproval,
+      state: canStartApproval ? "active" : "blocked",
       currentStep: els.productApprovalBar,
     };
   }
@@ -7043,6 +7173,7 @@ function handleProductTodoClick(event) {
 
 function openProductPersonalWorkList(filter, rowNumber = null) {
   state.productApprovalStatusFilter = filter;
+  state.productApprovalStatusFilterManual = true;
   state.productApprovalListSearch = "";
   if (els.productApprovalSearch) els.productApprovalSearch.value = "";
   if (els.productApprovalStatusFilter) els.productApprovalStatusFilter.value = filter;
@@ -7216,18 +7347,18 @@ function renderSoftwarePage() {
           const isExcluded = selection?.excluded === true;
           return `
           <tr class="software-derived-row${item.pending ? " software-pending-row" : ""} ${isExcluded ? "excluded-row" : ""}" data-software-id="${escapeHtml(softwareId)}" tabindex="0">
-            <td class="decision-cell">
+            <td class="decision-cell" data-label="${escapeHtml(translateUiText("Status"))}">
               <span class="decision-icon ${status.className}" aria-label="${escapeHtml(status.label)}">
                 ${status.icon}
               </span>
             </td>
-            <td>${escapeHtml(softwareId)}</td>
-            <td>
+            <td data-label="${escapeHtml(translateUiText("SR-ID"))}">${escapeHtml(softwareId)}</td>
+            <td data-label="${escapeHtml(translateUiText("Verwendetes Product Requirement"))}">
               <strong>${escapeHtml(source.name || source.id || "Product Requirement")}</strong><br />
               ${escapeHtml(source.text)}
             </td>
-            <td>${item.pending ? '<span class="muted-cell">Noch nicht abgeleitet.</span>' : renderSoftwareRequirementContent(item)}</td>
-            <td>${item.pending ? "-" : renderSoftwareScoreCell(item, isExcluded)}</td>
+            <td data-label="${escapeHtml(translateUiText("Software Requirement"))}">${item.pending ? '<span class="muted-cell">Noch nicht abgeleitet.</span>' : renderSoftwareRequirementContent(item)}</td>
+            <td data-label="${escapeHtml(translateUiText("Score"))}">${item.pending ? "-" : renderSoftwareScoreCell(item, isExcluded)}</td>
           </tr>
         `;
         },
@@ -8154,18 +8285,18 @@ function renderE2ePage() {
         const isExcluded = selection?.excluded === true;
         return `
           <tr class="e2e-derived-row${item.pending ? " software-pending-row" : ""} ${isExcluded ? "excluded-row" : ""}" data-e2e-id="${escapeHtml(e2eId)}" tabindex="0">
-            <td class="decision-cell">
+            <td class="decision-cell" data-label="${escapeHtml(translateUiText("Status"))}">
               <span class="decision-icon ${status.className}" aria-label="${escapeHtml(status.label)}">
                 ${status.icon}
               </span>
             </td>
-            <td>${escapeHtml(e2eId)}</td>
-            <td>
+            <td data-label="${escapeHtml(translateUiText("E2E-ID"))}">${escapeHtml(e2eId)}</td>
+            <td data-label="${escapeHtml(translateUiText("Verwendetes Software Requirement"))}">
               <strong>${escapeHtml(source.id || "Software Requirement")}</strong><br />
               ${escapeHtml(source.text)}
             </td>
-            <td>${item.pending ? '<span class="muted-cell">Noch nicht abgeleitet.</span>' : renderE2eContent(item)}</td>
-            <td>${item.pending ? "-" : renderE2eScoreCell(item, isExcluded)}</td>
+            <td data-label="${escapeHtml(translateUiText("E2E TestCase"))}">${item.pending ? '<span class="muted-cell">Noch nicht abgeleitet.</span>' : renderE2eContent(item)}</td>
+            <td data-label="${escapeHtml(translateUiText("Score"))}">${item.pending ? "-" : renderE2eScoreCell(item, isExcluded)}</td>
           </tr>
         `;
       }),
@@ -9552,6 +9683,7 @@ function startProductApprovalProcess() {
   state.productApprovalStartedAt = new Date().toISOString();
   state.productApprovalStartedBy = currentApprovalUserName();
   state.productApprovalStartedById = String(state.currentUser?.id || "");
+  state.productApprovalStatusFilterManual = false;
   state.finalSelections.forEach((selection) => clearApproval(selection));
   state.activeSelectionRow = null;
   closeProductApprovalDialog();
