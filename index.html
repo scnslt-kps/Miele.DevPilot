@@ -56,12 +56,14 @@
                 <button id="newProjectButton" type="button" role="menuitem">Neues Projekt</button>
                 <button id="openProjectButton" type="button" role="menuitem">Projekt laden</button>
                 <button id="projectHistoryButton" type="button" role="menuitem" aria-disabled="true">Projekt-Historie</button>
+                <button id="closeProjectButton" type="button" role="menuitem" aria-disabled="true" hidden>Projekt schließen</button>
               </div>
             </details>
             <details class="menu-dropdown">
               <summary>Import</summary>
               <div class="menu-popover" role="menu">
-                <button id="openFileButton" type="button" role="menuitem">Datei</button>
+                <button id="openFileButton" type="button" role="menuitem">Excel-Import</button>
+                <button id="openPdfImportButton" type="button" role="menuitem">PDF-Import</button>
                 <button id="openWindchillButton" class="windchill-button" type="button" role="menuitem" aria-disabled="true" title="Die Windchill-Schnittstelle ist in diesem MVP noch nicht verbunden. Der Import wird simuliert.">
                   <img src="assets/windchill-logo.svg" alt="" />
                   <span>Demo: Import aus Windchill</span>
@@ -89,7 +91,7 @@
             <details class="menu-dropdown">
               <summary>Hilfe</summary>
               <div class="menu-popover" role="menu">
-                <button id="openAiCostButton" type="button" role="menuitem">OpenAI Kosten</button>
+                <button id="openAiCostButton" type="button" role="menuitem">Projektkosten</button>
                 <button id="aboutButton" type="button" role="menuitem">Info</button>
               </div>
             </details>
@@ -104,7 +106,7 @@
           <div class="file-state" id="fileState">Kein Projekt geöffnet</div>
         </nav>
 
-        <input id="fileInput" class="visually-hidden" type="file" accept=".xlsx,.xls,.csv" />
+        <input id="fileInput" class="visually-hidden" type="file" accept=".xlsx" />
 
         <section class="empty-workspace" id="emptyWorkspace">
           <p class="eyebrow">Arbeitsbereich</p>
@@ -366,9 +368,7 @@
                   </div>
                   <span id="productReviewDetailScore" class="approval-progress-pill">-</span>
                 </div>
-                <section class="quality-gate-detail-warning" id="productReviewQualityWarning" hidden>
-                  Nacharbeit erforderlich: Dieses Requirement blockiert den Approval-Start, weil der Score unter 85 liegt oder neu berechnet werden muss.
-                </section>
+                <section class="quality-gate-detail-warning" id="productReviewQualityWarning" hidden></section>
                 <section class="approval-panel-section product-review-simple">
                   <div id="productReviewTabs" role="tablist" aria-label="Requirement Finalization" hidden>
                     <button type="button" data-review-tab="final" class="is-active">Finales Requirement</button>
@@ -393,7 +393,6 @@
                         <button id="productReviewRecalculateScoreButton" type="button">Score neu berechnen</button>
                       </div>
                     </section>
-                    <div id="productReviewFinalActionsHost"></div>
                   </div>
 
                   <div class="review-tab-content" id="productReviewTechTypesTab" hidden>
@@ -464,6 +463,16 @@
                   <div class="approval-tab-content" id="productApprovalTabContent"></div>
                 </section>
 
+                <section class="approval-panel-section requirement-attachments-panel" id="requirementAttachmentsSection" hidden>
+                  <div class="requirement-attachments-header">
+                    <h3>Anhänge</h3>
+                    <label class="attachment-picker" for="requirementAttachmentInput">Dateien hinzufügen</label>
+                    <input id="requirementAttachmentInput" class="visually-hidden" type="file" multiple accept=".png,.jpg,.jpeg,.pdf,.doc,.docx,.xls,.xlsx,image/png,image/jpeg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                  </div>
+                  <p class="muted-cell" id="requirementAttachmentStatus"></p>
+                  <div class="requirement-attachment-list" id="requirementAttachmentList"></div>
+                </section>
+
                 <section class="approval-panel-section approver-decision" id="productApprovalDecision">
                   <h3>Freigabeentscheidung</h3>
                   <div class="approval-action-row">
@@ -479,6 +488,85 @@
               </div>
             </aside>
           </div>
+        </section>
+
+        <section class="process-page requirement-review-workspace" id="requirementReviewWorkspace" data-review-workspace hidden>
+          <header class="review-workspace-header">
+            <button id="reviewBackButton" type="button">Zurück zur Liste</button>
+            <div class="review-workspace-title">
+              <p class="eyebrow" id="reviewWorkspaceKicker">Requirement Review</p>
+              <h1 id="reviewWorkspaceTitle">Requirement prüfen</h1>
+              <p id="reviewWorkspaceSubtitle">-</p>
+            </div>
+            <div class="review-workspace-status">
+              <span id="reviewWorkspaceWorkflowStatus" class="status-badge pending">Ausstehend</span>
+              <span id="reviewWorkspaceSaveStatus" class="approval-progress-pill">Gespeichert</span>
+            </div>
+          </header>
+
+          <nav class="review-process-steps" aria-label="Requirement Review Prozess">
+            <span data-review-step="suggestion">1. Prüfen und verbessern</span>
+            <span data-review-step="final-accept">2. AI-Vorschlag übernehmen und Score berechnen</span>
+            <span data-review-step="decision">3. Entscheidung</span>
+          </nav>
+
+          <div class="review-workspace-grid">
+            <main class="review-workspace-main">
+              <section class="review-workspace-section" id="reviewOriginalSection">
+                <div class="section-heading">
+                  <span class="step-pill">1</span>
+                  <div>
+                    <h2>Original Requirement</h2>
+                    <p id="reviewOriginalMeta">-</p>
+                  </div>
+                </div>
+                <div id="reviewOriginalHost"></div>
+              </section>
+
+              <section class="review-workspace-section" id="reviewAiSection">
+                <div class="section-heading">
+                  <span class="step-pill">2</span>
+                  <div>
+                    <h2>AI Suggestion</h2>
+                    <p>Bearbeiten, formatieren, verbessern und anschließend als aktuellen Requirement-Inhalt übernehmen.</p>
+                  </div>
+                </div>
+                <div id="reviewAiHost"></div>
+              </section>
+            </main>
+
+            <aside class="review-context-sidebar">
+              <section class="review-context-card review-decision-card" id="reviewDecisionCard">
+                <h2>Entscheidung</h2>
+                <p id="reviewDecisionStatus">Entscheidung ausstehend</p>
+                <div id="productReviewFinalActionsHost"></div>
+              </section>
+              <section class="review-context-card">
+                <h2>Status & Score</h2>
+                <div id="reviewScoreHost"></div>
+              </section>
+              <section class="review-context-card">
+                <h2>Hinweise aus der Analyse</h2>
+                <div id="reviewAnalysisHost"></div>
+              </section>
+              <section class="review-context-card">
+                <h2>Metadaten</h2>
+                <dl id="reviewMetadataList" class="review-metadata-list"></dl>
+              </section>
+              <section class="review-context-card">
+                <h2>TechTypes</h2>
+                <div id="reviewTechTypesHost"></div>
+              </section>
+              <section class="review-context-card">
+                <h2>Anhänge</h2>
+                <div id="reviewAttachmentsHost"></div>
+              </section>
+              <section class="review-context-card is-secondary">
+                <div id="reviewHistoryHost"></div>
+              </section>
+            </aside>
+          </div>
+
         </section>
 
         <section class="process-page" id="page-software" data-process-page="software" hidden>
@@ -541,19 +629,95 @@
         </section>
 
         <section class="process-page" id="page-usecase" data-process-page="usecase" hidden>
-          <div class="page-placeholder">
-            <p class="eyebrow">Prozessschritt</p>
-            <h1>UseCase</h1>
-            <p>UseCase-Erstellung und Review werden als eigener Arbeitsbereich vorbereitet.</p>
+          <div class="software-toolbar">
+            <div>
+              <p class="eyebrow">UseCases</p>
+              <h1>Aus Software Requirements ableiten</h1>
+            </div>
+            <button id="generateUseCasesButton" class="primary" type="button">UseCases ableiten</button>
           </div>
+
+          <div class="tool-grid">
+            <section class="panel summary-panel software-summary-panel">
+              <div class="metric">
+                <span>UseCases abgeleitet</span>
+                <strong id="useCaseDerivedMetric">0 / 0</strong>
+              </div>
+              <div class="metric">
+                <span>UseCase Durchschnitt</span>
+                <strong id="useCaseScoreMetric">-</strong>
+              </div>
+              <div class="metric">
+                <span>Kritische UseCases</span>
+                <strong id="useCaseIssueMetric">0</strong>
+              </div>
+            </section>
+          </div>
+
+          <section class="table-wrap">
+            <table class="results-table software-table analysis-complete">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>UseCase-ID</th>
+                  <th>Verwendetes Software Requirement</th>
+                  <th>UseCase</th>
+                  <th>Score</th>
+                </tr>
+              </thead>
+              <tbody id="useCasesBody">
+                <tr>
+                  <td colspan="5" class="empty">Schließe Software Requirements ab, um UseCases abzuleiten.</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
         </section>
 
         <section class="process-page" id="page-userstory" data-process-page="userstory" hidden>
-          <div class="page-placeholder">
-            <p class="eyebrow">Prozessschritt</p>
-            <h1>UserStory</h1>
-            <p>UserStory-Erstellung und Qualitätsprüfung werden als eigener Arbeitsbereich vorbereitet.</p>
+          <div class="software-toolbar">
+            <div>
+              <p class="eyebrow">UserStories</p>
+              <h1>Aus UseCases ableiten</h1>
+            </div>
+            <button id="generateUserStoriesButton" class="primary" type="button">UserStories ableiten</button>
           </div>
+
+          <div class="tool-grid">
+            <section class="panel summary-panel software-summary-panel">
+              <div class="metric">
+                <span>UserStories abgeleitet</span>
+                <strong id="userStoryDerivedMetric">0 / 0</strong>
+              </div>
+              <div class="metric">
+                <span>UserStory Durchschnitt</span>
+                <strong id="userStoryScoreMetric">-</strong>
+              </div>
+              <div class="metric">
+                <span>Kritische UserStories</span>
+                <strong id="userStoryIssueMetric">0</strong>
+              </div>
+            </section>
+          </div>
+
+          <section class="table-wrap">
+            <table class="results-table software-table analysis-complete">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>UserStory-ID</th>
+                  <th>Verwendeter UseCase</th>
+                  <th>UserStory</th>
+                  <th>Score</th>
+                </tr>
+              </thead>
+              <tbody id="userStoriesBody">
+                <tr>
+                  <td colspan="5" class="empty">Leite zuerst UseCases ab, um UserStories zu erstellen.</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
         </section>
 
         <section class="process-page" id="page-e2e" data-process-page="e2e" hidden>
@@ -608,11 +772,49 @@
         </section>
 
         <section class="process-page" id="page-app-test" data-process-page="app-test" hidden>
-          <div class="page-placeholder">
-            <p class="eyebrow">Prozessschritt</p>
-            <h1>App TestCase</h1>
-            <p>App-TestCase-Erstellung und Prüfung werden als eigener Arbeitsbereich vorbereitet.</p>
+          <div class="software-toolbar">
+            <div>
+              <p class="eyebrow">App TestCases</p>
+              <h1>Aus UseCases ableiten</h1>
+            </div>
+            <button id="generateAppTestsButton" class="primary" type="button">App TestCases ableiten</button>
           </div>
+
+          <div class="tool-grid">
+            <section class="panel summary-panel software-summary-panel">
+              <div class="metric">
+                <span>App TestCases abgeleitet</span>
+                <strong id="appTestDerivedMetric">0 / 0</strong>
+              </div>
+              <div class="metric">
+                <span>App TestCase Durchschnitt</span>
+                <strong id="appTestScoreMetric">-</strong>
+              </div>
+              <div class="metric">
+                <span>Kritische App TestCases</span>
+                <strong id="appTestIssueMetric">0</strong>
+              </div>
+            </section>
+          </div>
+
+          <section class="table-wrap">
+            <table class="results-table software-table analysis-complete">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>App-Test-ID</th>
+                  <th>Verwendeter UseCase</th>
+                  <th>App TestCase</th>
+                  <th>Score</th>
+                </tr>
+              </thead>
+              <tbody id="appTestsBody">
+                <tr>
+                  <td colspan="5" class="empty">Leite zuerst UseCases ab, um App TestCases zu erstellen.</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
         </section>
       </section>
     </main>
@@ -692,6 +894,18 @@
           </div>
 
           <p class="hint">Nach dem Upload koennen Tabellenblatt, Requirement-Spalten und TechType-Spalten frei gewaehlt werden.</p>
+        </section>
+
+        <section class="pdf-import-preview" id="pdfImportPreview" hidden>
+          <div class="selection-header">
+            <div>
+              <p class="eyebrow">Importvorschau</p>
+              <h3 id="pdfImportPreviewTitle">PDF-Import</h3>
+            </div>
+            <span class="status-badge selected" id="pdfImportPreviewStatus">Bereit</span>
+          </div>
+          <div class="pdf-import-summary" id="pdfImportSummary"></div>
+          <div class="pdf-import-list" id="pdfImportList"></div>
         </section>
 
         <div class="selection-actions">
@@ -800,35 +1014,118 @@
       <div class="openai-cost-dialog" role="dialog" aria-modal="true" aria-labelledby="openAiCostTitle">
         <div class="selection-header">
           <div>
-            <p class="eyebrow">OpenAI Kosten</p>
-            <h2 id="openAiCostTitle">OpenAI Nutzung</h2>
+            <p class="eyebrow">Info</p>
+            <h2 id="openAiCostTitle">Projektkosten</h2>
           </div>
           <button class="icon-button" id="openAiCostCloseButton" type="button" aria-label="OpenAI-Kosten schließen">×</button>
         </div>
 
-        <section class="cost-summary-panel">
+        <p class="hint" id="projectAiUsageHint">Die Kostenerfassung ist ab dem 2026-07-16 verfügbar. Frühere API-Nutzungen sind nicht enthalten.</p>
+
+        <section class="cost-summary-panel project-cost-summary">
           <div class="cost-summary-item">
-            <span>Kosten</span>
-            <strong id="openAiCostTotal">$0.0000</strong>
+            <span>Gesamtkosten</span>
+            <strong id="openAiCostTotal">$0.00000000</strong>
           </div>
           <div class="cost-summary-item">
             <span>Token-Nutzung</span>
             <strong id="openAiCostDetail">0 Tokens</strong>
           </div>
+          <div class="cost-summary-item">
+            <span>OpenAI-Aufrufe</span>
+            <strong id="projectAiUsageCalls">0</strong>
+          </div>
+          <div class="cost-summary-item">
+            <span>Kosten im aktuellen Monat</span>
+            <strong id="projectAiUsageMonthCost">$0.00000000</strong>
+          </div>
+          <div class="cost-summary-item">
+            <span>Letzter API-Aufruf</span>
+            <strong id="projectAiUsageLastCall">-</strong>
+          </div>
         </section>
 
-        <p class="hint">Die Werte beziehen sich auf den aktuellen Projektstand und werden beim Speichern des Projekts mitgesichert.</p>
+        <p class="hint warning" id="projectAiUsageWarning" hidden></p>
+
+        <section class="project-cost-filters" aria-label="Projektkostenfilter">
+          <label>
+            <span>Zeitraum von</span>
+            <input id="projectAiUsageFrom" type="date" />
+          </label>
+          <label>
+            <span>Zeitraum bis</span>
+            <input id="projectAiUsageTo" type="date" />
+          </label>
+          <label>
+            <span>Aktion</span>
+            <select id="projectAiUsageActionFilter"></select>
+          </label>
+          <label>
+            <span>Modell</span>
+            <select id="projectAiUsageModelFilter"></select>
+          </label>
+          <label>
+            <span>Status</span>
+            <select id="projectAiUsageStatusFilter"></select>
+          </label>
+          <button id="projectAiUsageApplyFilters" type="button">Filter anwenden</button>
+        </section>
+
+        <section class="project-cost-breakdowns">
+          <div>
+            <h3>Nach Aktion</h3>
+            <div id="projectAiUsageByAction"></div>
+          </div>
+          <div>
+            <h3>Nach Modell</h3>
+            <div id="projectAiUsageByModel"></div>
+          </div>
+          <div>
+            <h3>Nach Zeitraum</h3>
+            <div id="projectAiUsageByPeriod"></div>
+          </div>
+        </section>
+
+        <div class="table-wrap project-cost-table-wrap">
+          <table class="project-cost-table">
+            <thead>
+              <tr>
+                <th>Datum und Uhrzeit</th>
+                <th>Aktion</th>
+                <th>Modell</th>
+                <th>Input Tokens</th>
+                <th>Output Tokens</th>
+                <th>Gesamttokens</th>
+                <th>Kosten</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="projectAiUsageBody">
+              <tr>
+                <td colspan="8">Keine OpenAI-Nutzung erfasst.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="project-cost-pagination">
+          <button id="projectAiUsagePreviousPage" type="button">Zurück</button>
+          <span id="projectAiUsagePageInfo">1 / 1</span>
+          <button id="projectAiUsageNextPage" type="button">Weiter</button>
+        </div>
       </div>
     </div>
 
+    <button class="progress-mini-status" id="progressMiniStatus" type="button" hidden>AI-Status anzeigen</button>
+
     <div class="progress-overlay" id="progressOverlay" hidden>
-      <div class="progress-dialog" role="status" aria-live="polite" aria-labelledby="progressTitle">
+      <div class="progress-dialog" role="dialog" aria-modal="true" aria-live="polite" aria-labelledby="progressTitle" tabindex="-1">
         <div class="progress-heading">
           <div class="activity-icon" aria-hidden="true">
             <span></span>
           </div>
           <div>
-            <p class="eyebrow">Analyse läuft</p>
+            <p class="eyebrow" id="progressEyebrow">AI-Operation läuft</p>
             <h2 id="progressTitle">Requirements werden analysiert</h2>
           </div>
         </div>
@@ -838,14 +1135,20 @@
         </div>
         <div class="progress-time">
           <div class="progress-time-label">
-            <span>Zeitfortschritt</span>
+            <span id="progressTimeLabel">Geschätzter Zeitfortschritt</span>
             <span id="progressTimeText">Restzeit wird berechnet</span>
           </div>
           <div class="progress-track progress-time-track" aria-hidden="true">
             <div class="progress-bar progress-time-bar" id="progressTimeBar"></div>
           </div>
         </div>
+        <ol class="progress-steps" id="progressSteps" aria-label="Aktuelle Verarbeitungsschritte"></ol>
         <p class="progress-detail" id="progressDetail">0 von 0 Requirements verarbeitet</p>
+        <p class="progress-result" id="progressResult" hidden></p>
+        <div class="progress-actions">
+          <button id="progressMinimizeButton" type="button">Status minimieren</button>
+          <button id="progressCloseButton" type="button" class="primary" hidden>Schließen</button>
+        </div>
       </div>
     </div>
 
@@ -956,27 +1259,73 @@
             <button id="selectOriginalButton" type="button" hidden>Original verwenden</button>
           </section>
           <section class="choice-card">
-            <h3>AI-Vorschlag</h3>
-            <p id="selectionAiText"></p>
-            <button id="selectAiButton" class="primary" type="button">AI-Vorschlag übernehmen</button>
+            <div class="rich-text-card-header">
+              <div>
+                <h3 id="selectionAiTitle">AI-Vorschlag</h3>
+                <p id="selectionAiEditMeta" class="muted-cell"></p>
+              </div>
+              <div class="rich-text-actions">
+                <button id="aiSuggestionEditButton" type="button">Bearbeiten</button>
+                <button id="aiSuggestionSaveButton" class="primary" type="button" hidden>Speichern</button>
+                <button id="aiSuggestionCancelButton" type="button" hidden>Abbrechen</button>
+              </div>
+            </div>
+            <div id="selectionAiText" class="rich-text-preview"></div>
+            <div id="aiSuggestionEditorPanel" class="rich-text-editor-panel" hidden>
+              <div id="aiSuggestionToolbar" class="rich-text-toolbar" role="toolbar" aria-label="Formatierung">
+                <button type="button" data-rich-command="undo" title="Rückgängig" aria-label="Rückgängig">↶</button>
+                <button type="button" data-rich-command="redo" title="Wiederholen" aria-label="Wiederholen">↷</button>
+                <span class="toolbar-separator" aria-hidden="true"></span>
+                <button type="button" data-rich-block="paragraph" title="Absatz" aria-label="Absatz">P</button>
+                <button type="button" data-rich-block="h1" title="Überschrift 1" aria-label="Überschrift 1">H1</button>
+                <button type="button" data-rich-block="h2" title="Überschrift 2" aria-label="Überschrift 2">H2</button>
+                <button type="button" data-rich-block="h3" title="Überschrift 3" aria-label="Überschrift 3">H3</button>
+                <span class="toolbar-separator" aria-hidden="true"></span>
+                <button type="button" data-rich-command="bold" title="Fett" aria-label="Fett"><strong>B</strong></button>
+                <button type="button" data-rich-command="italic" title="Kursiv" aria-label="Kursiv"><em>I</em></button>
+                <button type="button" data-rich-command="underline" title="Unterstrichen" aria-label="Unterstrichen"><u>U</u></button>
+                <button type="button" data-rich-command="strikeThrough" title="Durchgestrichen" aria-label="Durchgestrichen"><s>S</s></button>
+                <button type="button" data-rich-command="formatBlock" data-rich-value="code" title="Inline-Code" aria-label="Inline-Code">`</button>
+                <span class="toolbar-separator" aria-hidden="true"></span>
+                <button type="button" data-rich-command="insertUnorderedList" title="Aufzählung" aria-label="Aufzählung">•</button>
+                <button type="button" data-rich-command="insertOrderedList" title="Nummerierte Liste" aria-label="Nummerierte Liste">1.</button>
+                <button type="button" data-rich-command="outdent" title="Einzug verkleinern" aria-label="Einzug verkleinern">⇤</button>
+                <button type="button" data-rich-command="indent" title="Einzug vergrößern" aria-label="Einzug vergrößern">⇥</button>
+                <span class="toolbar-separator" aria-hidden="true"></span>
+                <button type="button" data-rich-command="createLink" title="Link einfügen" aria-label="Link einfügen">🔗</button>
+                <button type="button" data-rich-command="unlink" title="Link entfernen" aria-label="Link entfernen">⌫</button>
+                <button type="button" data-rich-command="removeFormat" title="Formatierung entfernen" aria-label="Formatierung entfernen">Tx</button>
+              </div>
+              <div id="aiSuggestionEditor" class="rich-text-editor" contenteditable="true" role="textbox" aria-label="AI-Vorschlag bearbeiten" spellcheck="true"></div>
+              <p id="aiSuggestionEditorStatus" class="muted-cell" aria-live="polite"></p>
+            </div>
+            <div class="ai-suggestion-accept-row">
+              <p id="selectAiHint">Übernimmt den gespeicherten AI-Vorschlag als aktuellen Requirement-Inhalt und berechnet den Score neu.</p>
+              <button id="selectAiButton" class="primary" type="button">AI-Vorschlag übernehmen</button>
+            </div>
             <section class="ai-improvement-panel">
               <h3>AI Verbesserung</h3>
-              <div class="approval-action-row ai-improvement-presets">
-                <button type="button" data-ai-assist="Verbesserung vorschlagen">Verbesserung vorschlagen</button>
-                <button type="button" data-ai-assist="Testbarer machen">Testbarer machen</button>
-                <button type="button" data-ai-assist="Mehrdeutigkeiten entfernen">Mehrdeutigkeiten entfernen</button>
-                <button type="button" data-ai-assist="Akzeptanzkriterien ergänzen">Akzeptanzkriterien ergänzen</button>
-                <button type="button" data-ai-assist="Kürzer formulieren">Kürzer formulieren</button>
-              </div>
               <label for="prImprovementInstruction">Was soll verbessert werden?</label>
-              <textarea id="prImprovementInstruction" rows="4" placeholder="z. B. klarer formulieren, messbarer machen, atomarer schneiden"></textarea>
-              <label for="prImprovementAttachments">Anhänge für die Verbesserung</label>
-              <div class="attachment-control">
-                <input id="prImprovementAttachments" class="visually-hidden improvement-attachment-input" type="file" multiple accept=".txt,.md,.markdown,.csv,.json,.xml,.yaml,.yml,.log,.xlsx,.xls" />
-                <label class="attachment-picker" for="prImprovementAttachments" title="Text-, CSV-, JSON-, XML-, Markdown- und Excel-Dateien werden als zusätzlicher Kontext berücksichtigt.">+ Anhang hinzufügen</label>
-                <div id="prImprovementAttachmentList" class="attachment-list" aria-live="polite"></div>
+              <textarea id="prImprovementInstruction" rows="5" placeholder="Formuliere das Requirement atomarer und ergänze eindeutig überprüfbare Akzeptanzkriterien, ohne technische Details zu erfinden."></textarea>
+              <div class="ai-improvement-presets" aria-label="Verbesserungsschwerpunkte">
+                <button type="button" data-ai-assist="Verbesserung vorschlagen" aria-pressed="false" title="Erzeugt eine allgemeine Qualitätsverbesserung.">Allgemein verbessern</button>
+                <button type="button" data-ai-assist="Testbarer machen" aria-pressed="false" title="Fokussiert auf beobachtbare und prüfbare Formulierungen.">Testbarkeit</button>
+                <button type="button" data-ai-assist="Mehrdeutigkeiten entfernen" aria-pressed="false" title="Reduziert unklare Begriffe und Referenzen.">Eindeutigkeit</button>
+                <button type="button" data-ai-assist="Akzeptanzkriterien ergänzen" aria-pressed="false" title="Ergänzt prüfbare Kriterien, ohne Fakten zu erfinden.">Akzeptanzkriterien</button>
+                <button type="button" data-ai-assist="Kürzer formulieren" aria-pressed="false" title="Strafft die Formulierung ohne Bedeutungsverlust.">Kürzer formulieren</button>
               </div>
-              <button id="prImproveButton" type="button">AI Verbesserung</button>
+              <div id="prImprovementResult" class="ai-improvement-result" hidden></div>
+              <div class="ai-improvement-action-row">
+                <div class="attachment-control compact-attachment-control">
+                  <input id="prImprovementAttachments" class="visually-hidden improvement-attachment-input" type="file" multiple accept=".txt,.md,.markdown,.csv,.json,.xml,.yaml,.yml,.log,.xlsx,.xls" />
+                  <label class="attachment-picker" for="prImprovementAttachments" title="Text-, CSV-, JSON-, XML-, Markdown- und Excel-Dateien werden als zusätzlicher Kontext berücksichtigt.">📎 Datei hinzufügen</label>
+                  <div id="prImprovementAttachmentList" class="attachment-list" aria-live="polite"></div>
+                </div>
+                <div class="ai-improvement-actions">
+                  <button id="prImprovementResetButton" type="button">Zurücksetzen</button>
+                  <button id="prImproveButton" class="primary" type="button">Verbesserung erzeugen</button>
+                </div>
+              </div>
             </section>
           </section>
         </div>
@@ -998,9 +1347,9 @@
         </section>
 
         <div class="selection-actions">
-          <button id="approveRequirementButton" class="primary" type="button">PR freigeben</button>
-          <button id="excludeRequirementButton" type="button">Requirement ausschließen</button>
-          <button id="selectionDeferButton" type="button">Auswahl später treffen</button>
+          <button id="selectionDeferButton" type="button">Später entscheiden</button>
+          <button id="excludeRequirementButton" type="button">PR ausschließen</button>
+          <button id="approveRequirementButton" class="primary" type="button">Für Approval freigeben</button>
         </div>
       </div>
     </div>

@@ -4,6 +4,32 @@ import { randomBytes, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { promisify } from "node:util";
+import { parseProductRequirementsPdf, PDF_IMPORT_MAX_BYTES, validatePdfUpload } from "./src/lib/pdf-import.mjs";
+import { EXCEL_IMPORT_MAX_BYTES, validateExcelImport } from "./src/lib/import-validation.mjs";
+import {
+  REQUIREMENT_ATTACHMENT_MAX_BYTES,
+  REQUIREMENT_ATTACHMENT_MAX_FILES,
+  REQUIREMENT_ATTACHMENT_STORAGE_ROOT,
+  RequirementAttachmentStorage,
+  contentDispositionAttachment,
+  contentDispositionInline,
+  validateAttachmentFile,
+} from "./src/lib/requirement-attachment-storage.mjs";
+import {
+  AI_USAGE_ACTIONS,
+  AI_USAGE_CAPTURE_STARTED_AT,
+  AI_USAGE_PRICING_VERSION,
+  buildAiUsageRecord,
+} from "./src/lib/ai-usage.mjs";
+import { normalizeProjectRichTextPayload } from "./src/lib/rich-text.mjs";
+import {
+  assessProductRequirementQuality,
+  normalizeProductRequirementQualityResult,
+  productRequirementQualityPromptContext,
+  productRequirementStructuredOutputSchemaExtension,
+  scoreBreakdownJsonSchema,
+  validateProductRequirementScoreBreakdown,
+} from "./src/lib/product-requirement-quality.mjs";
 import { prisma } from "./src/lib/prisma.js";
 
 const root = new URL(".", import.meta.url).pathname;
@@ -15,6 +41,7 @@ await loadDotEnv();
 const port = Number(process.env.PORT || 3000);
 const basePath = normalizeBasePath(process.env.BASE_PATH || "");
 const legacyUsersFilePath = join(root, "data/users.json");
+const attachmentStorage = new RequirementAttachmentStorage({ root: join(root, REQUIREMENT_ATTACHMENT_STORAGE_ROOT) });
 const sessionCookieName = "miele_devpilot_session";
 const sessions = new Map();
 const knownRoles = new Set([
@@ -148,9 +175,36 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "POST" && pathname === "/api/import/pdf") {
+      const session = await requireSession(req, res);
+      if (!session) return;
+
+      if (!userHasRole(session.user, "productRequirementOwner")) {
+        sendJson(res, 403, { error: "Product Requirement Owner role required." });
+        return;
+      }
+
+      await handlePdfImport(req, res);
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/import/excel") {
+      const session = await requireSession(req, res);
+      if (!session) return;
+
+      if (!userHasRole(session.user, "productRequirementOwner")) {
+        sendJson(res, 403, { error: "Product Requirement Owner role required." });
+        return;
+      }
+
+      await handleExcelImportValidation(req, res);
+      return;
+    }
+
     if (req.method === "POST" && pathname === "/api/translate-feedback") {
-      if (!(await requireSession(req, res))) return;
-      await handleTranslateFeedback(req, res);
+      const session = await requireSession(req, res);
+      if (!session) return;
+      await handleTranslateFeedback(req, res, session.user);
       return;
     }
 
@@ -175,6 +229,37 @@ const server = createServer(async (req, res) => {
 
       const projectIdMatch = pathname.match(/^\/api\/projects\/([^/]+)$/);
       const projectRevisionsMatch = pathname.match(/^\/api\/projects\/([^/]+)\/revisions$/);
+      const projectAiUsageMatch = pathname.match(/^\/api\/projects\/([^/]+)\/ai-usage$/);
+      const projectAttachmentCountsMatch = pathname.match(/^\/api\/projects\/([^/]+)\/attachment-counts$/);
+      const requirementAttachmentsMatch = pathname.match(/^\/api\/projects\/([^/]+)\/requirements\/([^/]+)\/attachments$/);
+      const attachmentDownloadMatch = pathname.match(/^\/api\/projects\/([^/]+)\/attachments\/([^/]+)\/download$/);
+      const attachmentMatch = pathname.match(/^\/api\/projects\/([^/]+)\/attachments\/([^/]+)$/);
+
+      if (requirementAttachmentsMatch && req.method === "GET") {
+        await handleListRequirementAttachments(res, session.user, requirementAttachmentsMatch[1], decodeURIComponent(requirementAttachmentsMatch[2]));
+        return;
+      }
+
+      if (requirementAttachmentsMatch && req.method === "POST") {
+        await handleUploadRequirementAttachments(req, res, session.user, requirementAttachmentsMatch[1], decodeURIComponent(requirementAttachmentsMatch[2]));
+        return;
+      }
+
+      if (attachmentDownloadMatch && req.method === "GET") {
+        await handleDownloadRequirementAttachment(res, session.user, attachmentDownloadMatch[1], attachmentDownloadMatch[2]);
+        return;
+      }
+
+      if (attachmentMatch && req.method === "DELETE") {
+        await handleDeleteRequirementAttachment(res, session.user, attachmentMatch[1], attachmentMatch[2]);
+        return;
+      }
+
+      if (projectAiUsageMatch && req.method === "GET") {
+        await handleProjectAiUsage(res, session.user, projectAiUsageMatch[1], url.searchParams);
+        return;
+      }
+
       if (projectRevisionsMatch && req.method === "GET") {
         await handleListProjectRevisions(res, session.user, projectRevisionsMatch[1]);
         return;
@@ -239,6 +324,31 @@ const server = createServer(async (req, res) => {
     sendJson(res, 500, { error: "Unexpected server error" });
   }
 });
+
+async function fetchOpenAiResponses(payload, options = {}) {
+  const timeoutMs = Number(options.timeoutMs) || Number(process.env.OPENAI_TIMEOUT_MS) || 90_000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${options.apiKey || process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`OpenAI request timed out after ${timeoutMs}ms.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 server.listen(port, () => {
   const appUrl = `http://localhost:${port}${basePath || ""}/`;
@@ -739,6 +849,10 @@ function userCanAnalyzeRequirementType(user, requirementType) {
     return userHasRole(user, "e2eTestOwner");
   }
 
+  if (requirementType === "usecase" || requirementType === "userstory" || requirementType === "app-test") {
+    return userHasAnyRole(user, ["softwareRequirementOwner", "e2eTestOwner"]);
+  }
+
   return false;
 }
 
@@ -798,7 +912,10 @@ async function handleAnalyze(req, res, user) {
     requirementType !== "software-improvement" &&
     requirementType !== "e2e" &&
     requirementType !== "e2e-improvement" &&
-    requirementType !== "product-improvement"
+    requirementType !== "product-improvement" &&
+    requirementType !== "usecase" &&
+    requirementType !== "userstory" &&
+    requirementType !== "app-test"
   ) {
     sendJson(res, 400, { error: "Unsupported requirement type." });
     return;
@@ -810,6 +927,8 @@ async function handleAnalyze(req, res, user) {
   }
 
   const requirements = Array.isArray(body.requirements) ? body.requirements : [];
+  const aiUsageContext = await resolveProjectAiUsageContext(res, user, body.projectId);
+  if (body.projectId && !aiUsageContext) return;
   const improvementAttachments = cleanImprovementAttachments(body.improvementAttachments);
   const analysisMode = body.analysisMode === "final" ? "final" : "initial";
   const finalChoice = body.finalChoice === "original" ? "original" : "ai";
@@ -827,6 +946,14 @@ async function handleAnalyze(req, res, user) {
       acceptanceCriteria: Array.isArray(item.acceptanceCriteria)
         ? item.acceptanceCriteria.map((criterion) => String(criterion || "").trim().slice(0, 2000)).filter(Boolean)
         : [],
+      issues: Array.isArray(item.issues)
+        ? item.issues.map(normalizeIncomingQualityIssue).filter(Boolean)
+        : [],
+      originalIssues: Array.isArray(item.originalIssues)
+        ? item.originalIssues.map(normalizeIncomingQualityIssue).filter(Boolean)
+        : [],
+      finalScore: Number(item.finalScore),
+      finalScoreStatus: String(item.finalScoreStatus || "").slice(0, 80),
     }))
     .filter((item) => item.text);
 
@@ -834,34 +961,38 @@ async function handleAnalyze(req, res, user) {
     sendJson(res, 400, { error: "No requirements were provided." });
     return;
   }
-
   if (cleaned.length > 25) {
     sendJson(res, 400, { error: "Please analyze 25 requirements or fewer per batch." });
     return;
   }
 
   if (requirementType === "product-improvement") {
-    await handleProductImprovement(cleaned[0], String(body.improvementInstruction || "").trim(), improvementAttachments, uiLanguage, res);
+    await handleProductImprovement(cleaned[0], String(body.improvementInstruction || "").trim(), improvementAttachments, uiLanguage, res, aiUsageContext);
     return;
   }
 
   if (requirementType === "software") {
-    await handleSoftwareDerivation(cleaned, uiLanguage, res);
+    await handleSoftwareDerivation(cleaned, uiLanguage, res, aiUsageContext);
     return;
   }
 
   if (requirementType === "software-improvement") {
-    await handleSoftwareImprovement(cleaned[0], cleanSoftwareRequirement(body.softwareRequirement), String(body.improvementInstruction || "").trim(), improvementAttachments, uiLanguage, res);
+    await handleSoftwareImprovement(cleaned[0], cleanSoftwareRequirement(body.softwareRequirement), String(body.improvementInstruction || "").trim(), improvementAttachments, uiLanguage, res, aiUsageContext);
     return;
   }
 
   if (requirementType === "e2e") {
-    await handleE2eDerivation(cleaned, uiLanguage, res);
+    await handleE2eDerivation(cleaned, uiLanguage, res, aiUsageContext);
     return;
   }
 
   if (requirementType === "e2e-improvement") {
-    await handleE2eImprovement(cleaned[0], cleanE2eTestCase(body.testCase), String(body.improvementInstruction || "").trim(), improvementAttachments, uiLanguage, res);
+    await handleE2eImprovement(cleaned[0], cleanE2eTestCase(body.testCase), String(body.improvementInstruction || "").trim(), improvementAttachments, uiLanguage, res, aiUsageContext);
+    return;
+  }
+
+  if (requirementType === "usecase" || requirementType === "userstory" || requirementType === "app-test") {
+    await handleWorkflowArtifactDerivation(requirementType, cleaned, uiLanguage, res, aiUsageContext);
     return;
   }
 
@@ -875,6 +1006,7 @@ async function handleAnalyze(req, res, user) {
     return;
   }
 
+  const qualityDefinition = productRequirementQualityPromptContext({ uiLanguage });
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     sendJson(res, 500, { error: "OPENAI_API_KEY is not configured on the server." });
@@ -883,33 +1015,30 @@ async function handleAnalyze(req, res, user) {
 
   let response;
   try {
-    response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    response = await fetchOpenAiResponses({
         model: process.env.OPENAI_MODEL || "gpt-5.5",
         input: [
           {
             role: "system",
             content:
-              "You are a senior requirements engineer. Evaluate and improve Product Requirement quality in German or English so high-quality Software Requirements can be derived later. Be specific, concise, and practical. Return only valid JSON that matches the schema.",
+              "You are a senior requirements engineer. Evaluate and improve Product Requirement quality using the provided central quality definition. Be specific, concise, and practical. Return only valid JSON that matches the schema.",
           },
           {
             role: "user",
             content: JSON.stringify({
               task:
                 analysisMode === "final"
-                  ? "Re-assess the selected final Product Requirement text for clarity, testability, completeness, atomicity, consistency, solution neutrality, measurability, ambiguity, and suitability as a basis for deriving Software Requirements later. Score the final text as it stands. Do not require or add acceptance criteria. If it is production-ready as a Product Requirement, return score 100 and no issues. Keep rewrittenRequirement identical to the selected final text unless a concrete correction is still required. For final reassessment, set originalScore equal to score and originalIssues equal to issues."
-                  : "Assess each Product Requirement for clarity, testability, completeness, atomicity, consistency, solution neutrality, measurability, ambiguity, and suitability as a basis for deriving Software Requirements later. Rewrite the Product Requirement so the generated text addresses the detected weaknesses. Do not include acceptance criteria, Given/When/Then blocks, test steps, or bullet-style verification criteria.",
+                  ? "Re-assess the selected final Product Requirement text against every criterion in qualityDefinition. Score the final text as it stands. Keep rewrittenRequirement identical to the selected final text unless a concrete correction is still required. For final reassessment, set originalScore equal to score and originalIssues equal to issues."
+                  : "Assess each Product Requirement against every criterion in qualityDefinition. Rewrite the Product Requirement so the generated text addresses all detected weaknesses that can be fixed without inventing domain facts.",
               scoring:
-                "Return originalScore and originalIssues for the original input Product Requirement. Return score, verdict, and issues for the rewrittenRequirement. Score 0-100 where 100 is a high-quality Product Requirement from which high-quality Software Requirements can be derived later. If the rewrittenRequirement addresses all relevant weaknesses, return score 100 and no issues. Severity must be low, medium, or high.",
+                "Return originalScore, originalScoreBreakdown, and originalIssues for the original input Product Requirement. Return score, scoreBreakdown, verdict, and issues for the rewrittenRequirement. Score 0-100 by applying qualityDefinition.criteria and qualityDefinition.scoringInstructions to the actual returned text. Each score must be the exact sum of its matching breakdown points. Treat the maximum score as an optimization target, never as a default or claimed generator score. Severity must be low, medium, or high.",
+              qualityDefinition,
               languageRules: preserveSourceLanguageInstruction(uiLanguage),
               formattingRules: readableArtifactFormattingInstruction(),
               rewritingRules:
-                "The rewrittenRequirement must remain a Product Requirement. Do not turn it into a Software Requirement and do not introduce implementation decisions that are not present in or safely inferable from the Product Requirement. It should describe the user or business need, outcome, scope, and relevant context clearly; remain solution-neutral; be complete enough to derive one or more Software Requirements in a later step; and stay verifiable, measurable, consistent, unambiguous, and as atomic as practical at Product Requirement level. It must not include acceptance criteria, Given/When/Then blocks, test steps, or bullet-style verification criteria. Apply the improvement suggestions internally while rewriting. Report issues only for remaining weaknesses in the rewrittenRequirement.",
+                "The rewrittenRequirement must remain a Product Requirement. Do not turn it into a Software Requirement and do not introduce implementation decisions that are not present in or safely inferable from the Product Requirement. It must not include acceptance criteria, Given/When/Then blocks, test steps, or bullet-style verification criteria. Perform the internal self-check from qualityDefinition before output. Report issues only for remaining weaknesses in the rewrittenRequirement.",
+              structuredOutputRules:
+                "Populate resolvedIssueKeys, remainingIssueKeys, missingInformation, assumptions, and qualityCheck from the qualityDefinition criterion ids. qualityCheck is a non-binding diagnostic prediction and is never the stored Requirement score.",
               requirements: cleaned,
             }),
           },
@@ -925,64 +1054,34 @@ async function handleAnalyze(req, res, user) {
               properties: {
                 results: {
                   type: "array",
-                  items: {
-                    type: "object",
-                    additionalProperties: false,
-                    properties: {
-                      rowNumber: { type: "number" },
-                      id: { type: "string" },
-                      originalScore: { type: "number" },
-                      originalIssues: {
-                        type: "array",
-                        items: {
-                          type: "object",
-                          additionalProperties: false,
-                          properties: {
-                            criterion: { type: "string" },
-                            severity: { type: "string", enum: ["low", "medium", "high"] },
-                            explanation: { type: "string" },
-                            suggestion: { type: "string" },
-                          },
-                          required: ["criterion", "severity", "explanation", "suggestion"],
-                        },
-                      },
-                      score: { type: "number" },
-                      verdict: { type: "string" },
-                      issues: {
-                        type: "array",
-                        items: {
-                          type: "object",
-                          additionalProperties: false,
-                          properties: {
-                            criterion: { type: "string" },
-                            severity: { type: "string", enum: ["low", "medium", "high"] },
-                            explanation: { type: "string" },
-                            suggestion: { type: "string" },
-                          },
-                          required: ["criterion", "severity", "explanation", "suggestion"],
-                        },
-                      },
-                      rewrittenRequirement: { type: "string" },
-                    },
-                    required: ["rowNumber", "id", "originalScore", "originalIssues", "score", "verdict", "issues", "rewrittenRequirement"],
-                  },
+                  items: requirementQualityResultSchema(),
                 },
               },
               required: ["results"],
             },
           },
         },
-        max_output_tokens: 20000,
-      }),
-    });
+        max_output_tokens: analysisMode === "final" ? 6000 : 20000,
+      }, {
+        apiKey,
+        timeoutMs: analysisMode === "final" ? Number(process.env.OPENAI_FINAL_SCORE_TIMEOUT_MS) || 15_000 : undefined,
+      });
   } catch (error) {
     console.error("OpenAI request failed:", error);
+    if (analysisMode === "final") {
+      sendJson(res, 200, productFinalQualityFallbackPayload(cleaned));
+      return;
+    }
     sendJson(res, 502, { error: "OpenAI request could not be completed. Check network connectivity and try again." });
     return;
   }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (analysisMode === "final") {
+      sendJson(res, 200, productFinalQualityFallbackPayload(cleaned));
+      return;
+    }
     sendJson(res, response.status, {
       error: payload.error?.message || "OpenAI request failed.",
     });
@@ -990,6 +1089,10 @@ async function handleAnalyze(req, res, user) {
   }
 
   if (payload.status === "incomplete") {
+    if (analysisMode === "final") {
+      sendJson(res, 200, productFinalQualityFallbackPayload(cleaned));
+      return;
+    }
     sendJson(res, 502, {
       error: "OpenAI response was incomplete. Please retry with fewer or shorter requirements.",
     });
@@ -998,47 +1101,102 @@ async function handleAnalyze(req, res, user) {
 
   const outputText = extractOutputText(payload);
   if (!outputText) {
+    if (analysisMode === "final") {
+      sendJson(res, 200, productFinalQualityFallbackPayload(cleaned));
+      return;
+    }
     sendJson(res, 502, { error: "OpenAI returned no parseable output." });
     return;
   }
 
   try {
     const parsed = JSON.parse(outputText);
+    if (Array.isArray(parsed.results)) {
+      parsed.results = parsed.results.map(normalizeProductRequirementQualityResult);
+    }
+    enforceProductRequirementScoreBreakdownRules(parsed);
     enforceSoftwareScoreRules(parsed, requirements);
+    await recordProjectAiUsage(aiUsageContext, payload, analysisMode === "final" ? AI_USAGE_ACTIONS.SCORE_RECALCULATION : AI_USAGE_ACTIONS.PRODUCT_REQUIREMENT_ANALYSIS);
     sendJson(res, 200, {
       ...parsed,
       openAiUsage: buildOpenAiUsageSummary(payload),
     });
   } catch (error) {
     console.error("OpenAI returned invalid JSON:", error);
+    if (analysisMode === "final") {
+      sendJson(res, 200, productFinalQualityFallbackPayload(cleaned));
+      return;
+    }
     sendJson(res, 502, {
       error: "OpenAI returned invalid JSON, likely because the response was too long. Please retry with fewer or shorter requirements.",
     });
   }
 }
 
-async function handleTranslateFeedback(req, res) {
-  const body = await readJsonBody(req, 500_000);
-  const uiLanguage = normalizeUiLanguage(body.uiLanguage);
-  const items = Array.isArray(body.items)
-    ? body.items
-        .slice(0, 100)
-        .map((item, index) => ({
-          id: String(item?.id || index).slice(0, 120),
-          criterion: String(item?.criterion || "").slice(0, 1000),
-          explanation: String(item?.explanation || "").slice(0, 3000),
-          suggestion: String(item?.suggestion || "").slice(0, 3000),
-        }))
-        .filter((item) => item.criterion || item.explanation || item.suggestion)
-    : [];
+function productFinalQualityFallbackPayload(requirements) {
+  return {
+    results: requirements.map((item) => {
+      const assessment = assessProductRequirementQuality(item.text);
+      return normalizeProductRequirementQualityResult({
+        rowNumber: item.rowNumber,
+        id: item.id,
+        originalScore: assessment.score,
+        originalIssues: assessment.issues,
+        originalScoreBreakdown: assessment.scoreBreakdown,
+        scoreBreakdown: assessment.scoreBreakdown,
+        score: assessment.score,
+        verdict: assessment.verdict,
+        issues: assessment.issues,
+        rewrittenRequirement: item.text,
+        resolvedIssueKeys: [],
+        remainingIssueKeys: assessment.issues.map((issue) => issue.criterion),
+        missingInformation: assessment.issues
+          .filter((issue) => issue.criterion === "completeness" || issue.criterion === "measurability")
+          .map((issue) => issue.suggestion),
+        assumptions: [],
+        qualityCheck: [],
+      });
+    }),
+    analysisSource: "local-quality-fallback",
+  };
+}
 
-  if (!items.length) {
-    sendJson(res, 200, { items: [] });
+async function handleTranslateFeedback(req, res, user) {
+  const body = await readJsonBody(req, 900_000);
+  const uiLanguage = normalizeUiLanguage(body.uiLanguage);
+  const aiUsageContext = await resolveProjectAiUsageContext(res, user, body.projectId);
+  if (body.projectId && !aiUsageContext) return;
+  const requirements = normalizeFeedbackTranslationRequirements(body);
+  const legacyItems = !requirements.length && Array.isArray(body.items)
+    ? [
+        {
+          requirementId: "legacy",
+          analysisHash: "legacy",
+          issues: body.items
+            .map((item, index) => ({
+              id: String(item?.id || index).slice(0, 160),
+              severity: String(item?.severity || "").slice(0, 40),
+              criterion: String(item?.criterion || "").slice(0, 1000),
+              explanation: String(item?.explanation || "").slice(0, 3000),
+              suggestion: String(item?.suggestion || "").slice(0, 3000),
+            }))
+            .filter((item) => item.criterion || item.explanation || item.suggestion),
+        },
+      ].filter((item) => item.issues.length)
+    : [];
+  const translationRequirements = requirements.length ? requirements : legacyItems;
+
+  if (!translationRequirements.length) {
+    sendJson(res, 200, { requirements: [], items: [] });
     return;
   }
 
   if (process.env.OPENAI_MOCK === "true") {
-    sendJson(res, 200, { items });
+    sendJson(res, 200, {
+      locale: uiLanguage,
+      requirements: translationRequirements,
+      items: translationRequirements.flatMap((requirement) => requirement.issues),
+    });
     return;
   }
 
@@ -1068,9 +1226,10 @@ async function handleTranslateFeedback(req, res) {
             role: "user",
             content: JSON.stringify({
               targetLanguage: uiLanguageName(uiLanguage),
+              locale: uiLanguage,
               instructions:
-                "Translate criterion, explanation, and suggestion into the target language. Keep the meaning concise and professional. Do not translate severity enum values, IDs, or technical names.",
-              items,
+                "Translate explanation and suggestion into the target language. Preserve every requirementId, analysisHash, issue id, severity, and criterion exactly. Keep criterion unchanged when it is a machine-readable key such as atomicity, uniqueness, completeness, clarity, consistency, testability, or measurability. Return the same number of requirements and the same number of issues for each requirement. Keep the meaning concise and professional. Do not translate severity enum values, IDs, or technical names.",
+              requirements: translationRequirements,
             }),
           },
         ],
@@ -1083,22 +1242,36 @@ async function handleTranslateFeedback(req, res) {
               type: "object",
               additionalProperties: false,
               properties: {
-                items: {
+                locale: { type: "string" },
+                requirements: {
                   type: "array",
                   items: {
                     type: "object",
                     additionalProperties: false,
                     properties: {
-                      id: { type: "string" },
-                      criterion: { type: "string" },
-                      explanation: { type: "string" },
-                      suggestion: { type: "string" },
+                      requirementId: { type: "string" },
+                      analysisHash: { type: "string" },
+                      issues: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          additionalProperties: false,
+                          properties: {
+                            id: { type: "string" },
+                            severity: { type: "string" },
+                            criterion: { type: "string" },
+                            explanation: { type: "string" },
+                            suggestion: { type: "string" },
+                          },
+                          required: ["id", "severity", "criterion", "explanation", "suggestion"],
+                        },
+                      },
                     },
-                    required: ["id", "criterion", "explanation", "suggestion"],
+                    required: ["requirementId", "analysisHash", "issues"],
                   },
                 },
               },
-              required: ["items"],
+              required: ["locale", "requirements"],
             },
           },
         },
@@ -1125,14 +1298,42 @@ async function handleTranslateFeedback(req, res) {
 
   try {
     const parsed = JSON.parse(outputText);
+    const translatedRequirements = Array.isArray(parsed.requirements) ? parsed.requirements : [];
+    await recordProjectAiUsage(aiUsageContext, payload, AI_USAGE_ACTIONS.TRANSLATION);
     sendJson(res, 200, {
-      items: Array.isArray(parsed.items) ? parsed.items : [],
+      locale: normalizeUiLanguage(parsed.locale || uiLanguage),
+      requirements: translatedRequirements,
+      items: translatedRequirements.flatMap((requirement) => Array.isArray(requirement.issues) ? requirement.issues : []),
       openAiUsage: buildOpenAiUsageSummary(payload),
     });
   } catch (error) {
     console.error("Could not parse OpenAI feedback translation output:", outputText, error);
     sendJson(res, 502, { error: "OpenAI returned invalid JSON." });
   }
+}
+
+function normalizeFeedbackTranslationRequirements(body) {
+  if (!Array.isArray(body.requirements)) return [];
+
+  return body.requirements
+    .slice(0, 20)
+    .map((requirement) => ({
+      requirementId: String(requirement?.requirementId || "").slice(0, 240),
+      analysisHash: String(requirement?.analysisHash || "").slice(0, 120),
+      issues: Array.isArray(requirement?.issues)
+        ? requirement.issues
+            .slice(0, 30)
+            .map((issue) => ({
+              id: String(issue?.id || "").slice(0, 160),
+              severity: String(issue?.severity || "").slice(0, 40),
+              criterion: String(issue?.criterion || "").slice(0, 1000),
+              explanation: String(issue?.explanation || "").slice(0, 3000),
+              suggestion: String(issue?.suggestion || "").slice(0, 3000),
+            }))
+            .filter((issue) => issue.id && (issue.explanation || issue.suggestion))
+        : [],
+    }))
+    .filter((requirement) => requirement.requirementId && requirement.analysisHash && requirement.issues.length);
 }
 
 function normalizeUiLanguage(value) {
@@ -1144,7 +1345,7 @@ function uiLanguageName(language) {
 }
 
 function preserveSourceLanguageInstruction(uiLanguage = "de") {
-  return `Preserve the source language of each requirement or test case for PR text, SR text, acceptance criteria, E2E descriptions, groups, preconditions, test data, test steps, and expected results. German source artifacts must remain German; English source artifacts must remain English. However, write all user-facing quality feedback fields in ${uiLanguageName(uiLanguage)}: criterion, explanation, suggestion, verdict, rationale, and any remaining issue descriptions. Keep the severity enum values exactly low, medium, or high. Preserve IDs and technical names unchanged.`;
+  return `Preserve the source language of each requirement or test case for PR text, SR text, acceptance criteria, E2E descriptions, groups, preconditions, test data, test steps, and expected results. German source artifacts must remain German; English source artifacts must remain English. However, write user-facing quality feedback text fields in ${uiLanguageName(uiLanguage)}: explanation, suggestion, verdict, rationale, and any remaining issue descriptions. Keep criterion as a language-neutral lowercase key where possible, for example atomicity, uniqueness, completeness, clarity, consistency, testability, measurability, ambiguity, or feasibility. Keep severity enum values exactly low, medium, or high. Preserve IDs and technical names unchanged.`;
 }
 
 function readableArtifactFormattingInstruction() {
@@ -1169,7 +1370,113 @@ function attachmentInstruction(attachments) {
   return "Use the provided improvementAttachments as additional context for the requested improvement. Prefer explicit user instructions over attachment content. Preserve requirement intent and traceability. Do not copy irrelevant attachment text verbatim. If an attachment is marked truncated, use only the available excerpt and do not invent missing content.";
 }
 
-async function handleProductImprovement(requirement, improvementInstruction, improvementAttachments, uiLanguage, res) {
+async function handlePdfImport(req, res) {
+  let body;
+  try {
+    body = await readJsonBody(req, Math.ceil(PDF_IMPORT_MAX_BYTES * 1.45));
+  } catch {
+    sendJson(res, 400, { error: "Die PDF-Anfrage konnte nicht gelesen werden." });
+    return;
+  }
+
+  const fileName = String(body.fileName || "");
+  const mimeType = String(body.mimeType || "");
+  const rawBase64 = String(body.data || "");
+  let buffer;
+  try {
+    buffer = Buffer.from(rawBase64, "base64");
+  } catch {
+    sendJson(res, 400, { error: "Die PDF-Datei konnte nicht dekodiert werden." });
+    return;
+  }
+
+  const validation = validatePdfUpload({ fileName, mimeType, size: buffer.length, bytes: buffer });
+  if (!validation.valid) {
+    sendJson(res, 400, { error: validation.errors.join(" "), errors: validation.errors, category: "Ungültige Datei" });
+    return;
+  }
+
+  const startedAt = Date.now();
+  console.info(JSON.stringify({
+    event: "pdf_import_started",
+    format: "pdf",
+    fileSize: buffer.length,
+  }));
+
+  const result = await parseProductRequirementsPdf(buffer, { fileName });
+  console.info(JSON.stringify({
+    event: result.errors.length ? "pdf_import_completed_with_findings" : "pdf_import_completed",
+    format: "pdf",
+    durationMs: Date.now() - startedAt,
+    requirements: result.summary.requirementCount,
+    techTypes: result.summary.techTypeCount,
+    warnings: result.summary.warningCount,
+    errors: result.summary.errorCount,
+  }));
+
+  if (result.errors.length || Number(result.summary?.errorCount) > 0 || Number(result.summary?.errorRequirementCount) > 0) {
+    sendJson(res, 422, {
+      ...result,
+      category: result.requirements.length ? "Fehlende Pflichtfelder" : "Erwartetes Importformat nicht erkannt",
+      error: result.errors.slice(0, 3).join(" ") || "Die Struktur des PDFs entspricht nicht dem erwarteten Confluence-Exportformat.",
+    });
+    return;
+  }
+
+  sendJson(res, 200, result);
+}
+
+async function handleExcelImportValidation(req, res) {
+  let body;
+  try {
+    body = await readJsonBody(req, Math.ceil(EXCEL_IMPORT_MAX_BYTES * 1.45));
+  } catch {
+    sendJson(res, 400, {
+      error: "Die Excel-Anfrage konnte nicht gelesen werden.",
+      errors: ["Die Excel-Anfrage konnte nicht gelesen werden."],
+      category: "Datei kann nicht gelesen werden",
+    });
+    return;
+  }
+
+  const fileName = String(body.fileName || "");
+  const mimeType = String(body.mimeType || "");
+  const rawBase64 = String(body.data || "");
+  let buffer;
+  try {
+    buffer = Buffer.from(rawBase64, "base64");
+  } catch {
+    sendJson(res, 400, {
+      error: "Die Excel-Datei konnte nicht dekodiert werden.",
+      errors: ["Die Excel-Datei konnte nicht dekodiert werden."],
+      category: "Datei kann nicht gelesen werden",
+    });
+    return;
+  }
+
+  const startedAt = Date.now();
+  const result = await validateExcelImport(buffer, { fileName, mimeType });
+  console.info(JSON.stringify({
+    event: result.ok ? "excel_import_validation_completed" : "excel_import_validation_failed",
+    format: "xlsx",
+    durationMs: Date.now() - startedAt,
+    requirements: result.summary?.requirementCount || 0,
+    warnings: result.summary?.warningCount || 0,
+    errors: result.summary?.errorCount || 0,
+  }));
+
+  if (!result.ok) {
+    sendJson(res, 422, {
+      ...result,
+      error: result.errors.slice(0, 3).join(" "),
+    });
+    return;
+  }
+
+  sendJson(res, 200, result);
+}
+
+async function handleProductImprovement(requirement, improvementInstruction, improvementAttachments, uiLanguage, res, aiUsageContext = null) {
   if (!requirement?.text) {
     sendJson(res, 400, { error: "Product Requirement is required." });
     return;
@@ -1182,21 +1489,51 @@ async function handleProductImprovement(requirement, improvementInstruction, imp
 
   if (process.env.OPENAI_MOCK === "true") {
     const attachmentSuffix = improvementAttachments.length ? ` Anhänge berücksichtigt: ${improvementAttachments.map((item) => item.name).join(", ")}` : "";
+    const rewrittenRequirement = `${requirement.text}\n\nVerbesserungsfokus:\n- ${improvementInstruction}.${attachmentSuffix ? `\n- ${attachmentSuffix.trim()}` : ""}`;
+    const originalAssessment = assessProductRequirementQuality(requirement.text);
+    const assessment = assessProductRequirementQuality(rewrittenRequirement);
     sendJson(res, 200, {
       result: {
         rowNumber: requirement.rowNumber,
         id: requirement.id,
-        originalScore: Number(requirement.score) || 90,
-        originalIssues: [],
-        score: 100,
-        verdict: "AI-Verbesserung angewendet",
-        issues: [],
-        rewrittenRequirement: `${requirement.text}\n\nVerbesserungsfokus:\n- ${improvementInstruction}.${attachmentSuffix ? `\n- ${attachmentSuffix.trim()}` : ""}`,
+        originalScore: originalAssessment.score,
+        originalIssues: originalAssessment.issues,
+        originalScoreBreakdown: originalAssessment.scoreBreakdown,
+        scoreBreakdown: assessment.scoreBreakdown,
+        score: assessment.score,
+        verdict: assessment.verdict,
+        issues: assessment.issues,
+        rewrittenRequirement,
+        resolvedIssueKeys: [],
+        remainingIssueKeys: assessment.issues.map((issue) => issue.criterion),
+        missingInformation: [],
+        assumptions: [],
+        qualityCheck: [],
       },
     });
     return;
   }
 
+  const qualityDefinition = productRequirementQualityPromptContext({ uiLanguage });
+  const knownIssues = [
+    ...(Array.isArray(requirement.issues) ? requirement.issues : []),
+    ...(Array.isArray(requirement.originalIssues) ? requirement.originalIssues : []),
+  ];
+  const uniqueKnownIssues = [...new Map(knownIssues.map((issue) => [
+    `${issue.criterion}:${issue.explanation}:${issue.suggestion}`,
+    issue,
+  ])).values()];
+  const improvementContext = {
+    currentRequirementContent: requirement.text,
+    currentRequirementVersion: requirement.sourceId || requirement.id || requirement.rowNumber || "",
+    currentScore: Number.isFinite(Number(requirement.finalScore)) ? Number(requirement.finalScore) : Number(requirement.score),
+    finalScoreStatus: requirement.finalScoreStatus || "",
+    fulfilledCriteria: qualityDefinition.criteria
+      .filter((criterion) => !uniqueKnownIssues.some((issue) => String(issue.criterion || "").toLowerCase().includes(criterion.id)))
+      .map((criterion) => criterion.id),
+    openCriteria: uniqueKnownIssues.map((issue) => issue.criterion).filter(Boolean),
+    analysisFindings: uniqueKnownIssues,
+  };
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     sendJson(res, 500, { error: "OPENAI_API_KEY is not configured on the server." });
@@ -1217,16 +1554,22 @@ async function handleProductImprovement(requirement, improvementInstruction, imp
           {
             role: "system",
             content:
-              "You are a senior product requirements engineer. Improve one Product Requirement according to the user's instruction. Return only valid JSON that matches the schema.",
+              "You are a senior product requirements engineer. Improve one Product Requirement against the provided central quality definition and the actual current score findings. Return only valid JSON that matches the schema.",
           },
           {
             role: "user",
             content: JSON.stringify({
               task:
-                "Improve the Product Requirement according to the improvement instruction. Preserve the intent, scope, product level, and solution neutrality. Do not turn it into a Software Requirement. Do not add acceptance criteria, Given/When/Then blocks, test steps, or implementation details. Make it clearer, more atomic, measurable, unambiguous, complete, and suitable for deriving Software Requirements. Return no issues when the rewritten requirement is production-ready.",
+                "Improve the Product Requirement according to the improvement instruction, improvementContext, and every criterion in qualityDefinition. Resolve all current score gaps that can be resolved by rewriting. Preserve already fulfilled criteria, intent, scope, product level, solution neutrality, formatting that carries meaning, and all factual information. Do not turn it into a Software Requirement. Do not add acceptance criteria, Given/When/Then blocks, test steps, or implementation details. The optimization target is content that should independently score the maximum, but do not invent facts and do not claim a binding score.",
+              qualityDefinition,
+              improvementContext,
               languageRules: preserveSourceLanguageInstruction(uiLanguage),
               formattingRules: readableArtifactFormattingInstruction(),
               attachmentRules: attachmentInstruction(improvementAttachments),
+              missingInformationRules:
+                "Distinguish fixable wording/structure gaps from missing domain facts. If a needed threshold, response time, target platform, responsibility, error behavior, interface, or system state is absent from the provided context, mark it in missingInformation or as an open point in rewrittenRequirement when needed. Never fabricate it to reach the target score.",
+              internalSelfCheck:
+                "Draft the improved requirement, check it against every qualityDefinition criterion, revise all partially fulfilled criteria, then return the optimized rewrittenRequirement plus structured diagnostics. qualityCheck is only a diagnostic prediction and is never the stored score.",
               improvementInstruction,
               improvementAttachments,
               requirement,
@@ -1271,6 +1614,11 @@ async function handleProductImprovement(requirement, improvementInstruction, imp
 
   try {
     const parsed = JSON.parse(outputText);
+    if (parsed.result) {
+      parsed.result = normalizeProductRequirementQualityResult(parsed.result);
+      enforceProductRequirementScoreBreakdownRules({ results: [parsed.result] });
+    }
+    await recordProjectAiUsage(aiUsageContext, payload, AI_USAGE_ACTIONS.IMPROVEMENT_SUGGESTION);
     sendJson(res, 200, {
       ...parsed,
       openAiUsage: buildOpenAiUsageSummary(payload),
@@ -1295,7 +1643,19 @@ function issueSchema() {
   };
 }
 
+function normalizeIncomingQualityIssue(issue) {
+  if (!issue || typeof issue !== "object") return null;
+  const severity = ["low", "medium", "high"].includes(issue.severity) ? issue.severity : "medium";
+  return {
+    criterion: String(issue.criterion || "").slice(0, 200),
+    severity,
+    explanation: String(issue.explanation || "").slice(0, 2000),
+    suggestion: String(issue.suggestion || "").slice(0, 2000),
+  };
+}
+
 function requirementQualityResultSchema() {
+  const structuredOutputFields = productRequirementStructuredOutputSchemaExtension();
   return {
     type: "object",
     additionalProperties: false,
@@ -1307,6 +1667,8 @@ function requirementQualityResultSchema() {
         type: "array",
         items: issueSchema(),
       },
+      originalScoreBreakdown: scoreBreakdownJsonSchema(),
+      scoreBreakdown: scoreBreakdownJsonSchema(),
       score: { type: "number" },
       verdict: { type: "string" },
       issues: {
@@ -1314,8 +1676,25 @@ function requirementQualityResultSchema() {
         items: issueSchema(),
       },
       rewrittenRequirement: { type: "string" },
+      ...structuredOutputFields,
     },
-    required: ["rowNumber", "id", "originalScore", "originalIssues", "score", "verdict", "issues", "rewrittenRequirement"],
+    required: [
+      "rowNumber",
+      "id",
+      "originalScore",
+      "originalIssues",
+      "originalScoreBreakdown",
+      "scoreBreakdown",
+      "score",
+      "verdict",
+      "issues",
+      "rewrittenRequirement",
+      "resolvedIssueKeys",
+      "remainingIssueKeys",
+      "missingInformation",
+      "assumptions",
+      "qualityCheck",
+    ],
   };
 }
 
@@ -1434,6 +1813,319 @@ async function handleListProjectRevisions(res, user, projectId) {
   sendJson(res, 200, { revisions: revisions.map(projectRevisionSummary) });
 }
 
+async function handleProjectAiUsage(res, user, projectId, searchParams) {
+  const project = await prisma.project.findFirst({
+    where: {
+      id: projectId,
+      ...projectAccessWhere(user),
+    },
+    select: { id: true },
+  });
+
+  if (!project) {
+    sendJson(res, 404, { error: "Project not found." });
+    return;
+  }
+
+  const filters = projectAiUsageFilters(projectId, searchParams);
+  const page = Math.max(Number(searchParams.get("page")) || 1, 1);
+  const pageSize = Math.min(Math.max(Number(searchParams.get("pageSize")) || 25, 1), 100);
+  const currentMonthStart = new Date();
+  currentMonthStart.setUTCDate(1);
+  currentMonthStart.setUTCHours(0, 0, 0, 0);
+
+  const [summaryRows, monthRows, actionRows, modelRows, periodRows, records, totalRecords] = await Promise.all([
+    prisma.projectAiUsage.aggregate({
+      where: filters.where,
+      _count: { _all: true },
+      _sum: {
+        inputTokens: true,
+        outputTokens: true,
+        totalTokens: true,
+        totalCost: true,
+      },
+      _max: { createdAt: true },
+    }),
+    prisma.projectAiUsage.aggregate({
+      where: {
+        ...filters.where,
+        createdAt: { gte: currentMonthStart },
+      },
+      _sum: { totalCost: true },
+    }),
+    prisma.projectAiUsage.groupBy({
+      by: ["action"],
+      where: filters.where,
+      _count: { _all: true },
+      _sum: {
+        inputTokens: true,
+        outputTokens: true,
+        totalTokens: true,
+        totalCost: true,
+      },
+      orderBy: { _sum: { totalCost: "desc" } },
+    }),
+    prisma.projectAiUsage.groupBy({
+      by: ["model"],
+      where: filters.where,
+      _count: { _all: true },
+      _sum: {
+        inputTokens: true,
+        outputTokens: true,
+        totalTokens: true,
+        totalCost: true,
+      },
+      orderBy: { _sum: { totalCost: "desc" } },
+    }),
+    prisma.$queryRaw`
+      SELECT date_trunc('month', "createdAt") AS period,
+             count(*)::int AS calls,
+             coalesce(sum("inputTokens"), 0)::int AS "inputTokens",
+             coalesce(sum("outputTokens"), 0)::int AS "outputTokens",
+             coalesce(sum("totalTokens"), 0)::int AS "totalTokens",
+             coalesce(sum("totalCost"), 0)::text AS "totalCost"
+      FROM "ProjectAiUsage"
+      WHERE "projectId" = ${projectId}
+      GROUP BY period
+      ORDER BY period DESC
+      LIMIT 24
+    `,
+    prisma.projectAiUsage.findMany({
+      where: filters.where,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.projectAiUsage.count({ where: filters.where }),
+  ]);
+
+  const statusCounts = await prisma.projectAiUsage.groupBy({
+    by: ["status"],
+    where: { projectId },
+    _count: { _all: true },
+  });
+
+  sendJson(res, 200, {
+    captureStartedAt: AI_USAGE_CAPTURE_STARTED_AT,
+    currency: "USD",
+    pricingVersion: AI_USAGE_PRICING_VERSION,
+    summary: {
+      requestCount: summaryRows._count._all,
+      inputTokens: summaryRows._sum.inputTokens || 0,
+      outputTokens: summaryRows._sum.outputTokens || 0,
+      totalTokens: summaryRows._sum.totalTokens || 0,
+      totalCost: decimalToString(summaryRows._sum.totalCost),
+      currentMonthCost: decimalToString(monthRows._sum.totalCost),
+      lastCallAt: summaryRows._max.createdAt,
+      incompleteCount: statusCounts
+        .filter((item) => item.status !== "captured")
+        .reduce((sum, item) => sum + item._count._all, 0),
+    },
+    breakdowns: {
+      byAction: actionRows.map(projectAiUsageGroupSummary("action")),
+      byModel: modelRows.map(projectAiUsageGroupSummary("model")),
+      byPeriod: periodRows.map((row) => ({
+        key: row.period instanceof Date ? row.period.toISOString().slice(0, 7) : String(row.period || ""),
+        requestCount: Number(row.calls) || 0,
+        inputTokens: Number(row.inputTokens) || 0,
+        outputTokens: Number(row.outputTokens) || 0,
+        totalTokens: Number(row.totalTokens) || 0,
+        totalCost: decimalToString(row.totalCost),
+      })),
+    },
+    filters: {
+      actions: actionRows.map((item) => item.action).filter(Boolean),
+      models: modelRows.map((item) => item.model).filter(Boolean),
+      statuses: statusCounts.map((item) => item.status).filter(Boolean),
+    },
+    records: records.map(projectAiUsageSummary),
+    pagination: {
+      page,
+      pageSize,
+      totalRecords,
+      totalPages: Math.max(Math.ceil(totalRecords / pageSize), 1),
+    },
+  });
+}
+
+async function handleListRequirementAttachments(res, user, projectId, requirementId) {
+  const project = await findAccessibleProject(user, projectId);
+  if (!project || !projectRequirementExists(project.content, requirementId)) {
+    sendJson(res, 404, { error: "Requirement not found." });
+    return;
+  }
+
+  const attachments = await prisma.projectRequirementAttachment.findMany({
+    where: { projectId, requirementId },
+    include: { uploadedBy: true },
+    orderBy: { uploadedAt: "desc" },
+  });
+  sendJson(res, 200, { attachments: attachments.map(attachmentSummary) });
+}
+
+async function handleProjectAttachmentCounts(res, user, projectId) {
+  const project = await findAccessibleProject(user, projectId);
+  if (!project) {
+    sendJson(res, 404, { error: "Project not found." });
+    return;
+  }
+
+  const validRequirementIds = new Set((Array.isArray(project.content?.state?.requirements) ? project.content.state.requirements : [])
+    .map(requirementStableId)
+    .filter(Boolean));
+  const rows = await prisma.projectRequirementAttachment.groupBy({
+    by: ["requirementId"],
+    where: { projectId },
+    _count: { _all: true },
+  });
+  sendJson(res, 200, {
+    counts: Object.fromEntries(rows
+      .filter((row) => validRequirementIds.has(row.requirementId))
+      .map((row) => [row.requirementId, row._count._all])),
+  });
+}
+
+async function handleUploadRequirementAttachments(req, res, user, projectId, requirementId) {
+  if (!userCanEditRequirementAttachments(user)) {
+    sendJson(res, 403, { error: "Attachment upload permission required." });
+    return;
+  }
+
+  const project = await findAccessibleProject(user, projectId);
+  if (!project || !projectRequirementExists(project.content, requirementId)) {
+    sendJson(res, 404, { error: "Requirement not found." });
+    return;
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req, Math.ceil(REQUIREMENT_ATTACHMENT_MAX_BYTES * REQUIREMENT_ATTACHMENT_MAX_FILES * 1.45));
+  } catch {
+    sendJson(res, 400, { error: "Attachment request could not be read." });
+    return;
+  }
+
+  const files = Array.isArray(body.files) ? body.files.slice(0, REQUIREMENT_ATTACHMENT_MAX_FILES) : [];
+  if (!files.length) {
+    sendJson(res, 400, { error: "No attachment files provided." });
+    return;
+  }
+  if (Array.isArray(body.files) && body.files.length > REQUIREMENT_ATTACHMENT_MAX_FILES) {
+    sendJson(res, 400, { error: `Maximal ${REQUIREMENT_ATTACHMENT_MAX_FILES} Dateien pro Upload-Vorgang.` });
+    return;
+  }
+
+  const preparedFiles = [];
+  for (const file of files) {
+    const buffer = Buffer.from(String(file.data || ""), "base64");
+    const validation = validateAttachmentFile({
+      fileName: file.fileName,
+      mimeType: String(file.mimeType || ""),
+      buffer,
+    });
+    if (!validation.valid) {
+      sendJson(res, 400, { error: validation.errors[0], errors: validation.errors });
+      return;
+    }
+    preparedFiles.push({
+      buffer,
+      validation,
+      description: String(file.description || "").trim().slice(0, 500),
+    });
+  }
+
+  const createdAttachments = [];
+  const savedKeys = [];
+  try {
+    for (const preparedFile of preparedFiles) {
+      const storageKey = await attachmentStorage.save(preparedFile.buffer, {
+        projectId,
+        requirementId,
+        extension: preparedFile.validation.extension,
+      });
+      savedKeys.push(storageKey);
+      const attachment = await prisma.projectRequirementAttachment.create({
+        data: {
+          projectId,
+          requirementId,
+          originalFileName: preparedFile.validation.originalFileName,
+          storageKey,
+          mimeType: preparedFile.validation.mimeType,
+          fileSize: preparedFile.validation.fileSize,
+          uploadedByUserId: user.id,
+          description: preparedFile.description,
+          checksum: preparedFile.validation.checksum,
+        },
+        include: { uploadedBy: true },
+      });
+      createdAttachments.push(attachment);
+    }
+  } catch (error) {
+    console.error("Requirement attachment upload failed:", { projectId, requirementId, error: error.message });
+    await Promise.allSettled(savedKeys.map((storageKey) => attachmentStorage.delete(storageKey)));
+    if (createdAttachments.length) {
+      await prisma.projectRequirementAttachment.deleteMany({
+        where: { id: { in: createdAttachments.map((attachment) => attachment.id) } },
+      });
+    }
+    sendJson(res, 500, { error: "Der Anhang konnte nicht gespeichert werden. Bitte versuche es erneut." });
+    return;
+  }
+
+  sendJson(res, 201, { attachments: createdAttachments.map(attachmentSummary) });
+}
+
+async function handleDownloadRequirementAttachment(res, user, projectId, attachmentId) {
+  const attachment = await findAuthorizedAttachment(user, projectId, attachmentId);
+  if (!attachment) {
+    sendJson(res, 404, { error: "Der Anhang wurde nicht gefunden." });
+    return;
+  }
+
+  let buffer;
+  try {
+    buffer = await attachmentStorage.get(attachment.storageKey);
+  } catch {
+    sendJson(res, 404, { error: "Der Anhang wurde nicht gefunden." });
+    return;
+  }
+
+  res.writeHead(200, {
+    "Content-Type": attachment.mimeType,
+    "Content-Length": buffer.length,
+    "Content-Disposition": attachment.mimeType.startsWith("image/")
+      ? contentDispositionInline(attachment.originalFileName)
+      : contentDispositionAttachment(attachment.originalFileName),
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "private, no-store",
+  });
+  res.end(buffer);
+}
+
+async function handleDeleteRequirementAttachment(res, user, projectId, attachmentId) {
+  if (!userCanEditRequirementAttachments(user)) {
+    sendJson(res, 403, { error: "Attachment delete permission required." });
+    return;
+  }
+
+  const attachment = await findAuthorizedAttachment(user, projectId, attachmentId);
+  if (!attachment) {
+    sendJson(res, 404, { error: "Der Anhang wurde nicht gefunden." });
+    return;
+  }
+
+  try {
+    await attachmentStorage.delete(attachment.storageKey);
+    await prisma.projectRequirementAttachment.delete({ where: { id: attachment.id } });
+  } catch (error) {
+    console.error("Requirement attachment delete failed:", { projectId, attachmentId, error: error.message });
+    sendJson(res, 500, { error: "Der Anhang konnte nicht gelöscht werden." });
+    return;
+  }
+
+  sendJson(res, 200, { ok: true });
+}
+
 async function handleUpdateProject(req, res, user, projectId) {
   const body = await readJsonBody(req, 75_000_000);
   const data = parseProjectPayload(body, projectId);
@@ -1451,6 +2143,12 @@ async function handleUpdateProject(req, res, user, projectId) {
 
   if (!existingProject) {
     sendJson(res, 404, { error: "Project not found." });
+    return;
+  }
+
+  const attachmentsCleaned = await cleanupRemovedRequirementAttachments(projectId, existingProject.content, data.content);
+  if (!attachmentsCleaned) {
+    sendJson(res, 500, { error: "Projektanhänge konnten nicht bereinigt werden." });
     return;
   }
 
@@ -1513,6 +2211,12 @@ async function handleRestoreProjectRevision(res, user, projectId, revisionId) {
     return;
   }
 
+  const attachmentsCleaned = await cleanupRemovedRequirementAttachments(projectId, existingProject.content, data.content);
+  if (!attachmentsCleaned) {
+    sendJson(res, 500, { error: "Projektanhänge konnten nicht bereinigt werden." });
+    return;
+  }
+
   const project = await prisma.$transaction(async (tx) => {
     const restoredProject = await tx.project.update({
       where: { id: projectId },
@@ -1546,6 +2250,18 @@ async function handleDeleteProject(res, projectId) {
   const project = await prisma.project.findUnique({ where: { id: projectId } });
   if (!project) {
     sendJson(res, 404, { error: "Project not found." });
+    return;
+  }
+
+  const attachments = await prisma.projectRequirementAttachment.findMany({
+    where: { projectId },
+    select: { storageKey: true },
+  });
+  try {
+    await Promise.all(attachments.map((attachment) => attachmentStorage.delete(attachment.storageKey)));
+  } catch (error) {
+    console.error("Project attachment cleanup failed:", { projectId, error: error.message });
+    sendJson(res, 500, { error: "Project attachments could not be deleted." });
     return;
   }
 
@@ -1659,6 +2375,153 @@ function projectAccessWhere(user) {
   };
 }
 
+async function findAccessibleProject(user, projectId) {
+  return prisma.project.findFirst({
+    where: {
+      id: projectId,
+      ...projectAccessWhere(user),
+    },
+  });
+}
+
+function projectRequirementExists(content, requirementId) {
+  const id = String(requirementId || "");
+  return projectRequirementIds(content).includes(id);
+}
+
+function projectRequirementIds(content) {
+  const requirements = Array.isArray(content?.state?.requirements) ? content.state.requirements : [];
+  return requirements.map(requirementStableId).filter(Boolean);
+}
+
+function requirementStableId(requirement) {
+  return String(requirement?.id || requirement?.sourceId || requirement?.rowNumber || "").trim();
+}
+
+async function cleanupRemovedRequirementAttachments(projectId, previousContent, nextContent) {
+  const nextRequirementIds = new Set(projectRequirementIds(nextContent));
+  const removedRequirementIds = projectRequirementIds(previousContent).filter((requirementId) => !nextRequirementIds.has(requirementId));
+  if (!removedRequirementIds.length) return true;
+
+  const attachments = await prisma.projectRequirementAttachment.findMany({
+    where: {
+      projectId,
+      requirementId: { in: removedRequirementIds },
+    },
+    select: { id: true, storageKey: true },
+  });
+  if (!attachments.length) return true;
+
+  try {
+    await Promise.all(attachments.map((attachment) => attachmentStorage.delete(attachment.storageKey)));
+    await prisma.projectRequirementAttachment.deleteMany({
+      where: { id: { in: attachments.map((attachment) => attachment.id) } },
+    });
+    return true;
+  } catch (error) {
+    console.error("Removed requirement attachment cleanup failed:", { projectId, error: error.message });
+    return false;
+  }
+}
+
+function userCanEditRequirementAttachments(user) {
+  return userHasAnyRole(user, ["admin", "productRequirementOwner"]);
+}
+
+async function findAuthorizedAttachment(user, projectId, attachmentId) {
+  const project = await findAccessibleProject(user, projectId);
+  if (!project) return null;
+  const attachment = await prisma.projectRequirementAttachment.findFirst({
+    where: {
+      id: attachmentId,
+      projectId,
+    },
+    include: { uploadedBy: true },
+  });
+  if (!attachment || !projectRequirementExists(project.content, attachment.requirementId)) return null;
+  return attachment;
+}
+
+function attachmentSummary(attachment) {
+  return {
+    id: attachment.id,
+    projectId: attachment.projectId,
+    requirementId: attachment.requirementId,
+    originalFileName: attachment.originalFileName,
+    mimeType: attachment.mimeType,
+    fileSize: attachment.fileSize,
+    uploadedAt: attachment.uploadedAt,
+    uploadedByUserId: attachment.uploadedByUserId || "",
+    uploadedByName: attachment.uploadedBy?.name || attachment.uploadedBy?.email || "",
+    description: attachment.description || "",
+    checksum: attachment.checksum || "",
+  };
+}
+
+async function resolveProjectAiUsageContext(res, user, projectId) {
+  const id = String(projectId || "").trim();
+  if (!id) return null;
+
+  const project = await prisma.project.findFirst({
+    where: {
+      id,
+      ...projectAccessWhere(user),
+    },
+    select: { id: true },
+  });
+
+  if (!project) {
+    sendJson(res, 404, { error: "Project not found." });
+    return null;
+  }
+
+  return {
+    projectId: project.id,
+    userId: user.id,
+  };
+}
+
+async function recordProjectAiUsage(context, payload, action) {
+  if (!context?.projectId) return null;
+
+  const record = buildAiUsageRecord({
+    payload,
+    action: action || AI_USAGE_ACTIONS.OTHER_AI_PROCESSING,
+    projectId: context.projectId,
+    userId: context.userId,
+    env: process.env,
+  });
+
+  try {
+    if (record.providerRequestId) {
+      const existing = await prisma.projectAiUsage.findUnique({
+        where: { providerRequestId: record.providerRequestId },
+        select: { id: true },
+      });
+      if (existing) return existing;
+    }
+
+    return await prisma.projectAiUsage.create({ data: record });
+  } catch (error) {
+    console.error("Project AI usage could not be stored:", {
+      projectId: context.projectId,
+      action: record.action,
+      model: record.model,
+      providerRequestId: record.providerRequestId,
+      status: record.status,
+      error: error.message,
+    });
+    return null;
+  }
+}
+
+function workflowArtifactAiUsageAction(requirementType) {
+  if (requirementType === "usecase") return AI_USAGE_ACTIONS.USE_CASE_GENERATION;
+  if (requirementType === "userstory") return AI_USAGE_ACTIONS.USER_STORY_GENERATION;
+  if (requirementType === "app-test") return AI_USAGE_ACTIONS.APP_TESTCASE_GENERATION;
+  return AI_USAGE_ACTIONS.OTHER_AI_PROCESSING;
+}
+
 function parseProjectPayload(body, fallbackProjectId = "") {
   const rawContent = body.content ?? body.payload;
   const payload = typeof rawContent === "string" ? parseJson(rawContent) : rawContent;
@@ -1678,10 +2541,11 @@ function parseProjectPayload(body, fallbackProjectId = "") {
   const id = String(fallbackProjectId || body.projectId || payload.project?.id || randomUUID()).trim();
   const name = normalizeProjectName(body.name || payload.project?.name || "Miele.DevPilot");
   const description = String(body.description ?? payload.project?.description ?? "").trim().slice(0, 2000);
+  const normalizedPayload = normalizeProjectRichTextPayload(payload, body.userId || "");
   const content = {
-    ...payload,
+    ...normalizedPayload,
     project: {
-      ...(payload.project || {}),
+      ...(normalizedPayload.project || {}),
       id,
       name,
       description,
@@ -1783,6 +2647,70 @@ function projectRevisionSummary(revision) {
   };
 }
 
+function projectAiUsageFilters(projectId, searchParams) {
+  const where = { projectId };
+  const from = parseFilterDate(searchParams.get("from"));
+  const to = parseFilterDate(searchParams.get("to"));
+  if (from || to) {
+    where.createdAt = {};
+    if (from) where.createdAt.gte = from;
+    if (to) where.createdAt.lte = to;
+  }
+
+  for (const key of ["action", "model", "status"]) {
+    const value = String(searchParams.get(key) || "").trim();
+    if (value) where[key] = value;
+  }
+
+  return { where };
+}
+
+function projectAiUsageGroupSummary(keyName) {
+  return (row) => ({
+    key: row[keyName],
+    requestCount: row._count._all,
+    inputTokens: row._sum.inputTokens || 0,
+    outputTokens: row._sum.outputTokens || 0,
+    totalTokens: row._sum.totalTokens || 0,
+    totalCost: decimalToString(row._sum.totalCost),
+  });
+}
+
+function projectAiUsageSummary(record) {
+  return {
+    id: record.id,
+    projectId: record.projectId,
+    userId: record.userId || "",
+    action: record.action,
+    model: record.model,
+    inputTokens: record.inputTokens,
+    outputTokens: record.outputTokens,
+    cachedInputTokens: record.cachedInputTokens,
+    reasoningTokens: record.reasoningTokens,
+    totalTokens: record.totalTokens,
+    inputCost: decimalToString(record.inputCost),
+    outputCost: decimalToString(record.outputCost),
+    cachedInputCost: decimalToString(record.cachedInputCost),
+    totalCost: decimalToString(record.totalCost),
+    currency: record.currency,
+    status: record.status,
+    errorType: record.errorType || "",
+    pricingVersion: record.pricingVersion,
+    createdAt: record.createdAt,
+  };
+}
+
+function parseFilterDate(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function decimalToString(value) {
+  return value === null || value === undefined ? "0.00000000" : String(value);
+}
+
 async function pruneProjectRevisions(tx, projectId) {
   const staleRevisions = await tx.projectRevision.findMany({
     where: { projectId },
@@ -1802,7 +2730,7 @@ async function pruneProjectRevisions(tx, projectId) {
   });
 }
 
-async function handleSoftwareDerivation(requirements, uiLanguage, res) {
+async function handleSoftwareDerivation(requirements, uiLanguage, res, aiUsageContext = null) {
   if (process.env.OPENAI_MOCK === "true") {
     sendJson(res, 200, {
       softwareRequirements: requirements.map((item, index) => mockSoftwareRequirement(item, index)),
@@ -1938,6 +2866,7 @@ async function handleSoftwareDerivation(requirements, uiLanguage, res) {
   }
 
   try {
+    await recordProjectAiUsage(aiUsageContext, payload, AI_USAGE_ACTIONS.SOFTWARE_REQUIREMENT_GENERATION);
     sendJson(res, 200, {
       ...JSON.parse(outputText),
       openAiUsage: buildOpenAiUsageSummary(payload),
@@ -1948,7 +2877,7 @@ async function handleSoftwareDerivation(requirements, uiLanguage, res) {
   }
 }
 
-async function handleSoftwareImprovement(sourceRequirement, softwareRequirement, improvementInstruction, improvementAttachments, uiLanguage, res) {
+async function handleSoftwareImprovement(sourceRequirement, softwareRequirement, improvementInstruction, improvementAttachments, uiLanguage, res, aiUsageContext = null) {
   if (!sourceRequirement?.text || !softwareRequirement?.id) {
     sendJson(res, 400, { error: "Product Requirement and Software Requirement are required." });
     return;
@@ -2051,6 +2980,7 @@ async function handleSoftwareImprovement(sourceRequirement, softwareRequirement,
   try {
     const parsed = JSON.parse(outputText);
     enforceSoftwareScoreRules({ softwareRequirements: [parsed.softwareRequirement] }, [sourceRequirement]);
+    await recordProjectAiUsage(aiUsageContext, payload, AI_USAGE_ACTIONS.IMPROVEMENT_SUGGESTION);
     sendJson(res, 200, {
       ...parsed,
       openAiUsage: buildOpenAiUsageSummary(payload),
@@ -2064,55 +2994,41 @@ async function handleSoftwareImprovement(sourceRequirement, softwareRequirement,
 function enforceSoftwareScoreRules(payload, sourceRequirements) {
   if (!Array.isArray(payload?.softwareRequirements)) return;
 
-  const sourcesByRow = new Map(sourceRequirements.map((item) => [Number(item.rowNumber), item]));
-  const sourcesById = new Map(sourceRequirements.map((item) => [String(item.id || ""), item]));
-  payload.softwareRequirements.forEach((item, index) => {
-    const source =
-      sourcesByRow.get(Number(item.sourceRowNumber)) ||
-      sourcesById.get(String(item.sourceId || "")) ||
-      sourceRequirements[index] ||
-      {};
-    const sourceScore = Number(source.score);
+  payload.softwareRequirements.forEach((item) => {
     const score = Number(item.score);
-
-    if (sourceScore === 100) {
-      item.score = 100;
-      item.issues = [];
-      return;
-    }
 
     if (!Number.isFinite(score) || score < 85) {
       item.score = 85;
     } else if (score > 100) {
-      item.score = 100;
+      item.score = Math.min(score, 100);
     }
+  });
+}
+
+function enforceProductRequirementScoreBreakdownRules(payload) {
+  if (!Array.isArray(payload?.results)) return;
+
+  payload.results.forEach((item) => {
+    item.originalScoreBreakdown = validateProductRequirementScoreBreakdown(item.originalScoreBreakdown, item.originalScore);
+    item.scoreBreakdown = validateProductRequirementScoreBreakdown(item.scoreBreakdown, item.score);
   });
 }
 
 function enforceE2eScoreRules(payload, sourceRequirements) {
   if (!Array.isArray(payload?.e2eTests)) return;
 
-  const sourcesById = new Map(sourceRequirements.map((item) => [String(item.id || ""), item]));
   payload.e2eTests.forEach((item) => {
-    const source = sourcesById.get(String(item.sourceId || "")) || {};
-    const sourceScore = Number(source.score);
     const score = Number(item.score);
-
-    if (sourceScore === 100) {
-      item.score = 100;
-      item.issues = [];
-      return;
-    }
 
     if (!Number.isFinite(score) || score <= 85) {
       item.score = 86;
     } else if (score > 100) {
-      item.score = 100;
+      item.score = Math.min(score, 100);
     }
   });
 }
 
-async function handleE2eDerivation(requirements, uiLanguage, res) {
+async function handleE2eDerivation(requirements, uiLanguage, res, aiUsageContext = null) {
   if (process.env.OPENAI_MOCK === "true") {
     sendJson(res, 200, {
       e2eTests: requirements.map((item, index) => mockE2eTest(item, index)),
@@ -2266,6 +3182,7 @@ async function handleE2eDerivation(requirements, uiLanguage, res) {
   try {
     const parsed = JSON.parse(outputText);
     enforceE2eScoreRules(parsed, requirements);
+    await recordProjectAiUsage(aiUsageContext, payload, AI_USAGE_ACTIONS.E2E_TESTCASE_GENERATION);
     sendJson(res, 200, {
       ...parsed,
       openAiUsage: buildOpenAiUsageSummary(payload),
@@ -2276,7 +3193,7 @@ async function handleE2eDerivation(requirements, uiLanguage, res) {
   }
 }
 
-async function handleE2eImprovement(sourceRequirement, testCase, improvementInstruction, improvementAttachments, uiLanguage, res) {
+async function handleE2eImprovement(sourceRequirement, testCase, improvementInstruction, improvementAttachments, uiLanguage, res, aiUsageContext = null) {
   if (!sourceRequirement?.text || !testCase?.id) {
     sendJson(res, 400, { error: "Software Requirement and E2E TestCase are required." });
     return;
@@ -2456,6 +3373,7 @@ async function handleE2eImprovement(sourceRequirement, testCase, improvementInst
   try {
     const parsed = JSON.parse(outputText);
     enforceE2eScoreRules({ e2eTests: [parsed.e2eTest] }, [sourceRequirement]);
+    await recordProjectAiUsage(aiUsageContext, payload, AI_USAGE_ACTIONS.IMPROVEMENT_SUGGESTION);
     sendJson(res, 200, {
       ...parsed,
       openAiUsage: buildOpenAiUsageSummary(payload),
@@ -2519,6 +3437,209 @@ function cleanSoftwareRequirement(value) {
     issues: Array.isArray(item.issues) ? item.issues.slice(0, 20) : [],
     rationale: String(item.rationale || "").trim().slice(0, 3000),
   };
+}
+
+async function handleWorkflowArtifactDerivation(requirementType, requirements, uiLanguage, res, aiUsageContext = null) {
+  const config = workflowArtifactConfig(requirementType);
+  if (!config) {
+    sendJson(res, 400, { error: "Unsupported workflow artifact type." });
+    return;
+  }
+
+  if (process.env.OPENAI_MOCK === "true") {
+    sendJson(res, 200, {
+      [config.responseKey]: requirements.map((item, index) => mockWorkflowArtifact(config, item, index)),
+    });
+    return;
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    sendJson(res, 500, { error: "OPENAI_API_KEY is not configured on the server." });
+    return;
+  }
+
+  let response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-5.5",
+        input: [
+          {
+            role: "system",
+            content: `${config.systemPrompt} Return only valid JSON that matches the schema.`,
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              task: config.task,
+              languageRules: preserveSourceLanguageInstruction(uiLanguage),
+              formattingRules: readableArtifactFormattingInstruction(),
+              requirements,
+            }),
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: `${config.type}_derivation`,
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                [config.responseKey]: {
+                  type: "array",
+                  items: workflowArtifactSchema(),
+                },
+              },
+              required: [config.responseKey],
+            },
+          },
+        },
+        max_output_tokens: 16000,
+      }),
+    });
+  } catch (error) {
+    console.error(`OpenAI ${config.label} derivation failed:`, error);
+    sendJson(res, 502, { error: "OpenAI request could not be completed. Check network connectivity and try again." });
+    return;
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    sendJson(res, response.status, { error: payload.error?.message || "OpenAI request failed." });
+    return;
+  }
+
+  const outputText = extractOutputText(payload);
+  if (!outputText) {
+    sendJson(res, 502, { error: "OpenAI returned no parseable output." });
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(outputText);
+    await recordProjectAiUsage(aiUsageContext, payload, workflowArtifactAiUsageAction(requirementType));
+    sendJson(res, 200, {
+      ...parsed,
+      openAiUsage: buildOpenAiUsageSummary(payload),
+    });
+  } catch (error) {
+    console.error(`Could not parse OpenAI ${config.label} output:`, outputText, error);
+    sendJson(res, 502, { error: "OpenAI returned invalid JSON." });
+  }
+}
+
+function workflowArtifactSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      sourceId: { type: "string" },
+      sourcePrId: { type: "string" },
+      id: { type: "string" },
+      title: { type: "string" },
+      description: { type: "string" },
+      details: {
+        type: "array",
+        items: { type: "string" },
+      },
+      acceptanceCriteria: {
+        type: "array",
+        items: { type: "string" },
+      },
+      score: { type: "number", minimum: 85, maximum: 100 },
+      issues: {
+        type: "array",
+        items: issueSchema(),
+      },
+      rationale: { type: "string" },
+    },
+    required: [
+      "sourceId",
+      "sourcePrId",
+      "id",
+      "title",
+      "description",
+      "details",
+      "acceptanceCriteria",
+      "score",
+      "issues",
+      "rationale",
+    ],
+  };
+}
+
+function workflowArtifactConfig(requirementType) {
+  const configs = {
+    usecase: {
+      type: "usecase",
+      label: "UseCase",
+      responseKey: "useCases",
+      idPrefix: "UC",
+      systemPrompt: "You are a senior business analyst and requirements engineer. Derive precise UseCases from approved Software Requirements.",
+      task:
+        "Derive one or more UseCases for each Software Requirement. Include actor goal, trigger, preconditions, main flow, alternative or exception flows, postconditions, acceptance criteria, traceability to the source Software Requirement and source Product Requirement, and a quality score from 85-100.",
+    },
+    userstory: {
+      type: "userstory",
+      label: "UserStory",
+      responseKey: "userStories",
+      idPrefix: "US",
+      systemPrompt: "You are a senior product owner. Derive implementation-ready UserStories from approved UseCases.",
+      task:
+        "Derive one or more UserStories for each UseCase. Use the format and content needed for backlog refinement: role, goal, benefit, concise story text, INVEST-quality acceptance criteria, traceability to the source UseCase and source Product Requirement, and a quality score from 85-100.",
+    },
+    "app-test": {
+      type: "app_test",
+      label: "App TestCase",
+      responseKey: "appTests",
+      idPrefix: "AT",
+      systemPrompt: "You are a senior application test engineer. Derive executable App TestCases from approved UseCases.",
+      task:
+        "Derive one or more App TestCases for each UseCase. Include scenario title, test objective, preconditions, test data, executable steps, expected results, acceptance criteria coverage, traceability to the source UseCase and source Product Requirement, and a quality score from 85-100.",
+    },
+  };
+
+  return configs[requirementType] || null;
+}
+
+function mockWorkflowArtifact(config, item, index) {
+  const sourceId = item.id || `${config.idPrefix}-SOURCE-${index + 1}`;
+  return {
+    sourceId,
+    sourcePrId: item.sourcePrId || item.sourceId || "",
+    id: buildMockWorkflowArtifactId(config.idPrefix, sourceId, index),
+    title: `${config.label} fuer ${sourceId}`,
+    description: `${config.label} leitet das relevante Verhalten aus "${sourceId}" nachvollziehbar ab.`,
+    details: [
+      "Ausloeser, beteiligte Rolle und erwarteter Zielzustand sind beschrieben.",
+      "Hauptablauf, Abweichungen und pruefbare Ergebnisse sind als Review-Basis vorbereitet.",
+    ],
+    acceptanceCriteria: [
+      "Der fachliche Ablauf ist eindeutig nachvollziehbar.",
+      "Die Ableitung bleibt zur Quelle rueckverfolgbar.",
+      "Die Kriterien sind als Basis fuer Review und Test verwendbar.",
+    ],
+    score: 92,
+    issues: [],
+    rationale: `Mock-${config.label} abgeleitet aus: ${item.text.slice(0, 180)}`,
+  };
+}
+
+function buildMockWorkflowArtifactId(prefix, sourceId, index) {
+  const normalizedSourceId = String(sourceId || "").trim();
+  if (normalizedSourceId) {
+    return `${prefix}_${normalizedSourceId.replace(/^(SR|UC|US|E2E|PR)[_-]?/i, "").replace(/[^a-z0-9.]+/gi, "_")}.${index + 1}`;
+  }
+
+  return `${prefix}-${String(index + 1).padStart(3, "0")}`;
 }
 
 async function serveStatic(pathname, res, headOnly = false) {
@@ -2712,33 +3833,59 @@ function mockAnalyzeRequirement(item) {
     ? `${item.text}\n\nDer relevante Nutzer- oder Geschaeftskontext, das erwartete Ergebnis und die messbare fachliche Zielsetzung sind so beschrieben, dass daraus spaeter konkrete Software Requirements ohne zusaetzliche Interpretation abgeleitet werden koennen.`
     : item.text;
 
+  const originalAssessment = mockRequirementQualityAssessment(item.text);
+  const assessment = mockRequirementQualityAssessment(rewrittenRequirement);
   return {
     rowNumber: item.rowNumber,
     id: item.id,
-    originalScore: Math.max(45, 90 - detectedIssues.length * 18),
-    originalIssues: detectedIssues,
-    score: 100,
-    verdict: detectedIssues.length ? "Verbesserter Product-Requirement-Vorschlag ohne verbleibende Hinweise" : "Solide formuliert",
-    issues: [],
+    originalScore: originalAssessment.score,
+    originalIssues: originalAssessment.issues.length ? originalAssessment.issues : detectedIssues,
+    originalScoreBreakdown: originalAssessment.scoreBreakdown,
+    scoreBreakdown: assessment.scoreBreakdown,
+    score: assessment.score,
+    verdict: assessment.verdict,
+    issues: assessment.issues,
     rewrittenRequirement,
+    resolvedIssueKeys: detectedIssues.map((issue) => issue.criterion),
+    remainingIssueKeys: assessment.issues.map((issue) => issue.criterion),
+    missingInformation: assessment.issues
+      .filter((issue) => issue.criterion === "completeness" || issue.criterion === "measurability")
+      .map((issue) => issue.suggestion),
+    assumptions: [],
+    qualityCheck: [],
   };
 }
 
 function mockFinalizeRequirement(item) {
+  const assessment = mockRequirementQualityAssessment(item.text);
   return {
     rowNumber: item.rowNumber,
     id: item.id,
-    score: 100,
-    verdict: "Finaler Text ausgewaehlt",
-    issues: [],
+    originalScore: assessment.score,
+    originalIssues: assessment.issues,
+    originalScoreBreakdown: assessment.scoreBreakdown,
+    scoreBreakdown: assessment.scoreBreakdown,
+    score: assessment.score,
+    verdict: assessment.verdict,
+    issues: assessment.issues,
     rewrittenRequirement: item.text,
+    resolvedIssueKeys: [],
+    remainingIssueKeys: assessment.issues.map((issue) => issue.criterion),
+    missingInformation: assessment.issues
+      .filter((issue) => issue.criterion === "completeness" || issue.criterion === "measurability")
+      .map((issue) => issue.suggestion),
+    assumptions: [],
+    qualityCheck: [],
   };
+}
+
+function mockRequirementQualityAssessment(text) {
+  return assessProductRequirementQuality(text);
 }
 
 function mockSoftwareRequirement(item, index) {
   const sourceId = item.id || `PR-${item.rowNumber || index + 1}`;
-  const sourceScore = Number(item.score);
-  const score = sourceScore === 100 ? 100 : 90;
+  const score = 90;
   return {
     sourceRowNumber: item.rowNumber,
     sourceId,

@@ -7,6 +7,7 @@
     "start": "BASE_PATH=/Miele.DevPilot node server.mjs",
     "start:mock": "OPENAI_MOCK=true BASE_PATH=/Miele.DevPilot node server.mjs",
     "check": "node --check server.mjs && node --check app.js",
+    "test": "node --test",
     "lint": "npm run check",
     "build": "npm run check",
     "build:release": "sh scripts/build-release.sh"
@@ -14,6 +15,7 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "pdfjs-dist": "^6.1.200",
     "pg": "^8.22.0"
   },
   "devDependencies": {

@@ -33,11 +33,25 @@ http://localhost:3000/Miele.DevPilot
 Die Prompt-Vorlage fuer die Ableitung von SR aus PR liegt in `software-requirements-prompt.md`.
 
 Die OpenAI-Anfrage laeuft serverseitig ueber `.env.local`, damit der API-Key nicht im Browser landet.
-Die Projektoberflaeche zeigt eine projektspezifische OpenAI-Kostensumme. Die
-Summe wird aus der API-Token-Usage geschaetzt; dafuer koennen die aktuellen
-Modellpreise in `.env.local` als USD pro 1M Tokens gesetzt werden:
+Die Projektoberflaeche zeigt unter `Info > Projektkosten` serverseitig
+gespeicherte OpenAI-Nutzung pro Projekt. Erfasst werden nur technische
+Usage- und Abrechnungsdaten, keine Prompt- oder Antwortinhalte.
+
+Modellpreise werden zentral auf dem Server gepflegt. Bevor neue OpenAI-Modelle
+verwendet werden, sollte `.env.local` um eine Preisdefinition mit eindeutigem
+Preisstand erweitert werden:
+
+```bash
+OPENAI_PRICING_VERSION="prices-YYYY-MM-DD"
+OPENAI_MODEL_PRICING_JSON='{"MODELNAME":{"inputUsdPer1m":0,"cachedInputUsdPer1m":0,"outputUsdPer1m":0,"version":"prices-YYYY-MM-DD"}}'
+```
+
+Alternativ gelten die bestehenden Einzelwerte
 `OPENAI_INPUT_USD_PER_1M_TOKENS`, `OPENAI_CACHED_INPUT_USD_PER_1M_TOKENS` und
-`OPENAI_OUTPUT_USD_PER_1M_TOKENS`.
+`OPENAI_OUTPUT_USD_PER_1M_TOKENS` fuer `OPENAI_MODEL`. Unbekannte Modelle
+werden mit Tokenverbrauch gespeichert, aber als `price_unavailable`
+gekennzeichnet. Historische Datensaetze behalten die berechneten Kosten und
+den gespeicherten Preisstand.
 
 ## Persistenz
 
