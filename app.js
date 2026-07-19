@@ -19,8 +19,12 @@ const state = {
   softwareSelections: new Map(),
   e2eTests: [],
   e2eSelections: new Map(),
+  useCases: [],
+  userStories: [],
+  appTests: [],
   finalSelections: new Map(),
   finalScoreUpdates: new Set(),
+  finalScoreOperations: new Map(),
   activeSelectionRow: null,
   activeSoftwareRequirementId: "",
   activeE2eTestId: "",
@@ -41,6 +45,15 @@ const state = {
   runtimeInfo: null,
   runtimeMock: false,
   openAiCostSummary: null,
+  projectAiUsage: null,
+  projectAiUsagePage: 1,
+  projectAiUsageFilters: {
+    from: "",
+    to: "",
+    action: "",
+    model: "",
+    status: "",
+  },
   scoreFilterActive: false,
   softwareScoreFilterActive: false,
   e2eScoreFilterActive: false,
@@ -67,8 +80,15 @@ const state = {
   progressTimerId: null,
   progressMode: "",
   progressInputCharCount: 0,
+  progressStatus: "idle",
+  progressOperation: null,
+  progressSteps: [],
+  progressStepIndex: 0,
+  progressLastPercent: 0,
+  progressLastTimePercent: 0,
   projectSaveTimerId: null,
   projectSaveInFlight: false,
+  projectSavePromise: null,
   projectSaveQueued: false,
   projectSavePaused: false,
   projectRevisionAction: "",
@@ -88,17 +108,40 @@ const state = {
   productApprovalStartedById: "",
   productApprovalListSearch: "",
   productApprovalStatusFilter: "all",
+  productApprovalStatusFilterManual: false,
   productApprovalActiveTab: "comments",
   productApprovalDecisionMode: "",
   productApprovalDisapproveDraftRow: null,
   productApprovalDisapproveDraftText: "",
   productApprovalReplyDrafts: {},
+  productApprovalSaveBusy: false,
+  requirementAttachments: new Map(),
+  requirementAttachmentCounts: new Map(),
+  requirementAttachmentLoadingId: "",
+  requirementAttachmentUploading: false,
   appDialogResolve: null,
   changeRequestDialogResolve: null,
   productReviewActiveTab: "final",
   productReviewTechTypeSearch: "",
   productReviewTechTypeFilter: "all",
+  requirementReviewOpen: false,
+  requirementReviewReturnContext: null,
+  requirementReviewHighlightRow: null,
+  pendingProductImprovement: null,
+  aiSuggestionEditingRow: null,
+  aiSuggestionEditorInitialHtml: "",
+  aiSuggestionEditorDirty: false,
   loginPasswordVisible: false,
+  pendingImportFormat: "excel",
+  pdfImportPreview: null,
+  feedbackTranslationRequestId: 0,
+  feedbackTranslationLoadingLanguage: "",
+  feedbackTranslationErrorLanguage: "",
+  feedbackTranslationInFlight: new Map(),
+  feedbackTranslationProgress: null,
+  scoreBreakdownCloseTimer: null,
+  scoreBreakdownOpenTrigger: null,
+  scoreBreakdownOpenedByClick: false,
 };
 
 const PROJECT_FILE_TYPE = "miele-devpilot-project";
@@ -107,15 +150,121 @@ const ANALYSIS_BATCH_SIZE = 5;
 const PRODUCT_STEP_MIN_SCORE = 85;
 const PRODUCT_WINDCHILL_EXPORT_SHEET = "Product Requirements App";
 const PRODUCT_WINDCHILL_EXPORT_NUMBER_HEADER = "Requirement Number";
+const RICH_TEXT_FORMAT_VERSION = "miele-rich-text-v1";
+const PDF_IMPORT_MAX_BYTES = 25 * 1024 * 1024;
+const REQUIREMENT_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+const REQUIREMENT_ATTACHMENT_MAX_FILES = 10;
+const REQUIREMENT_ATTACHMENT_TYPES = new Map([
+  ["image/png", [".png"]],
+  ["image/jpeg", [".jpg", ".jpeg"]],
+  ["application/pdf", [".pdf"]],
+  ["application/msword", [".doc"]],
+  ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", [".docx"]],
+  ["application/vnd.ms-excel", [".xls"]],
+  ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", [".xlsx"]],
+]);
 const LOCAL_SERVER_APP_URL = "http://localhost:3000/Miele.DevPilot/";
 const LEGACY_PR_ANALYSIS_TIMING_STORAGE_KEY = "mieleDevPilot.prAnalysisTiming";
 const PROGRESS_TIMING_STORAGE_KEY = "mieleDevPilot.progressTiming";
+const AI_OPERATION_TIMING_STORAGE_KEY = "mieleDevPilot.aiOperationRuntimeStats.v1";
+const AI_OPERATION_PROMPT_VERSION = "2026-07-16-product-quality-v1";
 const LANGUAGE_STORAGE_KEY = "mieleDevPilot.language";
+const FEEDBACK_TRANSLATION_BATCH_SIZE = 10;
+const FEEDBACK_TRANSLATION_MAX_ATTEMPTS = 3;
+const ISSUE_SEVERITY_LABELS = {
+  low: "niedrig",
+  medium: "mittel",
+  high: "hoch",
+};
+const ISSUE_CRITERION_LABELS = {
+  atomicity: "Atomarität",
+  uniqueness: "Eindeutigkeit",
+  completeness: "Vollständigkeit",
+  clarity: "Klarheit",
+  consistency: "Konsistenz",
+  testability: "Testbarkeit",
+  measurability: "Messbarkeit",
+  ambiguity: "Eindeutigkeit",
+  feasibility: "Machbarkeit",
+  solution_neutrality: "Lösungsneutralität",
+  format_and_semantic_structure: "Semantische Struktur",
+};
+const QUALITY_SCORE_CRITERION_IDS = Object.freeze([
+  "clarity",
+  "completeness",
+  "testability",
+  "measurability",
+  "atomicity",
+  "consistency",
+  "solution_neutrality",
+  "feasibility",
+  "format_and_semantic_structure",
+]);
+const QUALITY_SCORE_CRITERION_LABELS = Object.freeze({
+  clarity: "Klarheit und Verständlichkeit",
+  completeness: "Vollständigkeit der fachlichen Produktanforderung",
+  testability: "Testbarkeit und Verifizierbarkeit",
+  measurability: "Messbarkeit und Präzision",
+  atomicity: "Atomarität und Fokussierung",
+  consistency: "Konsistenz und Widerspruchsfreiheit",
+  solution_neutrality: "Lösungsneutralität",
+  feasibility: "Machbarkeit und Realitätsnähe",
+  format_and_semantic_structure: "Lesbare semantische Struktur",
+});
+const ISSUE_CRITERION_ALIASES = {
+  atomaritaet: "atomicity",
+  atomarität: "atomicity",
+  atomicity: "atomicity",
+  eindeutigkeit: "uniqueness",
+  uniqueness: "uniqueness",
+  vollständigkeit: "completeness",
+  vollstaendigkeit: "completeness",
+  completeness: "completeness",
+  klarheit: "clarity",
+  clarity: "clarity",
+  konsistenz: "consistency",
+  consistency: "consistency",
+  testbarkeit: "testability",
+  testability: "testability",
+  messbarkeit: "measurability",
+  measurability: "measurability",
+  ambiguity: "ambiguity",
+  machbarkeit: "feasibility",
+  feasibility: "feasibility",
+  lösungsneutralität: "solution_neutrality",
+  loesungsneutralitaet: "solution_neutrality",
+  solution_neutrality: "solution_neutrality",
+  "solution neutrality": "solution_neutrality",
+  semantische_struktur: "format_and_semantic_structure",
+  format_and_semantic_structure: "format_and_semantic_structure",
+  "readable semantic structure": "format_and_semantic_structure",
+};
 const PROGRESS_TIMING_DEFAULTS = {
   default: { msPerRequirement: 4500, msPer1000Chars: 650, batchOverheadMs: 1200 },
   "pr-analysis": { msPerRequirement: 4500, msPer1000Chars: 650, batchOverheadMs: 1200 },
   "sr-derivation": { msPerRequirement: 7000, msPer1000Chars: 900, batchOverheadMs: 1200 },
   "e2e-derivation": { msPerRequirement: 6500, msPer1000Chars: 850, batchOverheadMs: 1200 },
+  "usecase-derivation": { msPerRequirement: 5500, msPer1000Chars: 750, batchOverheadMs: 1000 },
+  "userstory-derivation": { msPerRequirement: 4500, msPer1000Chars: 650, batchOverheadMs: 900 },
+  "app-test-derivation": { msPerRequirement: 5500, msPer1000Chars: 750, batchOverheadMs: 1000 },
+};
+const AI_OPERATION_SIZE_CLASS_LIMITS = {
+  small: { maxRequirements: 1, maxChars: 2500, maxAttachments: 0 },
+  medium: { maxRequirements: 2, maxChars: 8000, maxAttachments: 2 },
+  large: { maxRequirements: 8, maxChars: 25000, maxAttachments: 6 },
+  batch: { minRequirements: 9 },
+};
+const AI_OPERATION_DEFAULT_ESTIMATES = {
+  default: { small: 9000, medium: 18000, large: 38000, batch: 65000 },
+  "pr-analysis": { small: 12000, medium: 26000, large: 52000, batch: 90000 },
+  "product-improvement": { small: 12000, medium: 22000, large: 42000, batch: 70000 },
+  "final-score": { small: 9000, medium: 16000, large: 30000, batch: 52000 },
+  "feedback-translation": { small: 10000, medium: 22000, large: 45000, batch: 80000 },
+  "sr-derivation": { small: 14000, medium: 30000, large: 62000, batch: 110000 },
+  "software-improvement": { small: 12000, medium: 24000, large: 48000, batch: 78000 },
+  "e2e-derivation": { small: 14000, medium: 28000, large: 58000, batch: 100000 },
+  "e2e-improvement": { small: 12000, medium: 24000, large: 48000, batch: 78000 },
+  "workflow-derivation": { small: 12000, medium: 26000, large: 54000, batch: 90000 },
 };
 const PROCESS_STEP_DEPENDENCIES = {
   product: null,
@@ -181,6 +330,10 @@ const UI_TRANSLATIONS = {
     "Von Produktanforderungen zu umsetzbaren Entwicklungs- und Testartefakten.": "From product requirements to actionable development and test artifacts.",
     "Projekt": "Project",
     "Kein Projekt geöffnet": "No project open",
+    "Projekt schließen": "Close project",
+    "Projekt schließen?": "Close project?",
+    "Es gibt noch nicht gespeicherte Änderungen. Beim Schließen des Projekts gehen diese Änderungen verloren.": "There are unsaved changes. Closing the project will discard these changes.",
+    "Trotzdem schließen": "Close anyway",
     "Product Requirement Owner": "Product Requirement Owner",
     "PR Owner": "PR owner",
     "PR Owner wird geladen": "Loading PR owner",
@@ -191,11 +344,133 @@ const UI_TRANSLATIONS = {
     "Ungespeicherte Änderungen": "Unsaved changes",
     "Projektstatus": "Project status",
     "OpenAI Kosten": "OpenAI costs",
+    "Projektkosten": "Project costs",
     "0 Tokens": "0 tokens",
     "0 Tokens geschätzt (Preise nicht konfiguriert)": "0 tokens estimated (prices not configured)",
+    "AI-Operation läuft": "AI operation running",
+    "AI-Status anzeigen": "Show AI status",
+    "AI-Antwort wird verarbeitet": "Processing AI response",
+    "AI-Vorgang abgeschlossen": "AI operation complete",
+    "AI-Vorgang fehlgeschlagen": "AI operation failed",
+    "AI-Anfrage wird vorbereitet": "Preparing AI request",
+    "AI verarbeitet die Anfrage": "AI is processing the request",
+    "Antwort wird geprüft": "Checking response",
+    "Ansicht wird aktualisiert": "Updating view",
+    "Die Verarbeitung läuft im Hintergrund weiter. Bitte lade die Seite nicht neu, bis der Vorgang abgeschlossen ist.": "Processing continues in the background. Please do not reload the page until the operation is complete.",
+    "Dauer kann je nach Umfang, Modell und Serverauslastung variieren.": "Duration can vary depending on scope, model, and server load.",
+    "Geschätzter Zeitfortschritt": "Estimated time progress",
+    "Technischer Fortschritt": "Technical progress",
+    "Status minimieren": "Minimize status",
+    "Schließen": "Close",
+    "Abgeschlossen": "Complete",
+    "Fehlgeschlagen": "Failed",
+    "Restzeit wird berechnet": "Calculating remaining time",
+    "Laufzeit": "Elapsed",
+    "Verbleibend": "Remaining",
+    "Schätzung": "Estimate",
+    "üblicherweise": "usually",
+    "geschätzt": "estimated",
+    "weniger als 1s": "less than 1s",
+    "AI Suggestion wird verbessert": "Improving AI suggestion",
+    "AI-Vorschlag übernehmen": "Accept AI suggestion",
+    "AI-Vorschlag übernehmen?": "Accept AI suggestion?",
+    "Übernehmen": "Accept",
+    "Der gespeicherte AI-Vorschlag wird als aktueller Requirement-Inhalt übernommen und neu bewertet.": "The saved AI suggestion will be accepted as the current requirement content and reassessed.",
+    "Übernimmt den gespeicherten AI-Vorschlag als aktuellen Requirement-Inhalt und berechnet den Score neu.": "Accepts the saved AI suggestion as the current requirement content and recalculates the score.",
+    "Wird als aktueller Requirement-Inhalt übernommen": "Will be accepted as the current requirement content",
+    "Noch nicht übernommen": "Not accepted yet",
+    "Als Requirement übernommen": "Accepted as requirement",
+    "Qualitäts-Gate erfüllt": "Quality gate met",
+    "Nacharbeit erforderlich": "Rework required",
+    "Bereit für Approval": "Ready for approval",
+    "Analyse erneut starten": "Restart analysis",
+    "Speichern und zur Liste": "Save and back to list",
+    "Änderungen verwerfen": "Discard changes",
+    "Im Requirement bleiben": "Stay in requirement",
+    "AI-Vorschlag darf nicht leer sein.": "AI suggestion must not be empty.",
+    "Du hast keine Berechtigung, dieses Product Requirement final zu übernehmen.": "You do not have permission to accept this Product Requirement as final.",
+    "Bitte speichere oder verwirf die offenen Änderungen am AI-Vorschlag.": "Please save or discard the open AI suggestion changes.",
+    "Bitte warte, bis der Speichervorgang abgeschlossen ist.": "Please wait until saving is complete.",
+    "Bitte warte, bis die gespeicherte Version aktualisiert wurde.": "Please wait until the saved version has been updated.",
+    "Bitte übernimm oder verwerfe zuerst das offene Verbesserungsergebnis.": "Please accept or discard the open improvement result first.",
+    "Bitte warte, bis die AI-Verbesserung abgeschlossen ist.": "Please wait until the AI improvement is complete.",
+    "Bitte warte, bis die laufende Qualitätsprüfung abgeschlossen ist.": "Please wait until the current quality check is complete.",
+    "AI-Vorschlag übernommen": "AI suggestion accepted",
+    "Approve PR": "Approve PR",
+    "Für Approval freigeben": "Submit for approval",
+    "Für Approval freigegeben": "Submitted for approval",
+    "Das Product Requirement wurde für das Approval freigegeben.": "The Product Requirement has been submitted for approval.",
+    "Nur Product Requirement Owner oder Admins können Product Requirements für das Approval freigeben.": "Only Product Requirement Owners or admins can submit Product Requirements for approval.",
+    "Dieses Product Requirement wurde bereits für das Approval freigegeben.": "This Product Requirement has already been submitted for approval.",
+    "PR ausschließen": "Exclude PR",
+    "Product Requirement ausschließen?": "Exclude product requirement?",
+    "Das Requirement wird aus dem weiteren Bearbeitungs- und Generierungsprozess ausgeschlossen.": "The requirement will be excluded from further processing and generation.",
+    "Ausgeschlossene Requirements benötigen einen Ausschlussgrund.": "Excluded requirements require an exclusion reason.",
+    "Bitte gib einen Ausschlussgrund an.": "Please enter an exclusion reason.",
+    "Bitte übernimm zuerst einen AI-Vorschlag als aktuellen Requirement-Inhalt.": "Please accept an AI suggestion as the current requirement content first.",
+    "Der aktuelle Score beträgt {{score}} von 100. Für Approve PR sind mindestens {{minimumScore}} Punkte erforderlich.": "The current score is {{score}} out of 100. Approve PR requires at least {{minimumScore}} points.",
+    "Der aktuelle Score beträgt {{score}} von 100. Für die Freigabe zum Approval sind mindestens {{minimumScore}} Punkte erforderlich. Nacharbeit erforderlich.": "The current score is {{score}} out of 100. Submitting for approval requires at least {{minimumScore}} points. Rework required.",
+    "Das Product Requirement muss zuerst durch den PR Owner für Approval freigegeben werden.": "The Product Requirement must first be submitted for approval by the PR Owner.",
+    "Approve PR ist erst nach erfolgreicher Scoreberechnung möglich.": "Approve PR is only possible after the score has been recalculated successfully.",
+    "Submit for Approval ist erst nach erfolgreicher Scoreberechnung möglich.": "Submit for approval is only possible after the score has been recalculated successfully.",
+    "Du hast keine Berechtigung, dieses Product Requirement zu approven.": "You do not have permission to approve this Product Requirement.",
+    "Keine PR-Approver konfiguriert.": "No PR approvers are configured.",
+    "Dieses Product Requirement ist bereits approved.": "This Product Requirement is already approved.",
+    "Product Requirement wird verbessert": "Improving Product Requirement",
+    "Software Requirement wird verbessert": "Improving Software Requirement",
+    "E2E TestCase wird verbessert": "Improving E2E test case",
+    "Finaler Score wird neu berechnet": "Recalculating final score",
+    "Finaler Score": "Final score",
+    "Analyse-Score": "Analysis score",
+    "Score-Berechnung": "Score calculation",
+    "Verteilung des Analyse-Scores": "Analysis score distribution",
+    "Verteilung des finalen Scores": "Final score distribution",
+    "Für diese ältere Bewertung ist noch keine Qualitätsmerkmals-Verteilung verfügbar.": "No quality criteria distribution is available for this earlier assessment.",
+    "Gesamt": "Total",
+    "Score-Details anzeigen": "Show score details",
+    "Klarheit und Verständlichkeit": "Clarity and understandability",
+    "Vollständigkeit der fachlichen Produktanforderung": "Completeness of product-level intent",
+    "Testbarkeit und Verifizierbarkeit": "Testability and verifiability",
+    "Messbarkeit und Präzision": "Measurability and precision",
+    "Atomarität und Fokussierung": "Atomicity and focus",
+    "Konsistenz und Widerspruchsfreiheit": "Consistency and contradiction freedom",
+    "Lösungsneutralität": "Solution neutrality",
+    "Machbarkeit und Realitätsnähe": "Feasibility and realism",
+    "Lesbare semantische Struktur": "Readable semantic structure",
+    "Finale Neuberechnung erforderlich": "Final recalculation required",
+    "Für den finalen Inhalt wurde noch kein neuer Score berechnet.": "No new score has been calculated for the final content yet.",
+    "Für den finalen Requirement-Inhalt wurde noch kein neuer Score berechnet.": "No new score has been calculated for the final requirement content yet.",
+    "Noch kein Score verfügbar": "No score available yet",
+    "Finale Neuberechnung fehlgeschlagen. Der Analyse-Score bleibt informativ sichtbar.": "Final recalculation failed. The analysis score remains visible for information.",
+    "Analyse-Feedback wird übersetzt": "Translating analysis feedback",
+    "Software Requirements werden abgeleitet": "Deriving Software Requirements",
+    "E2E TestCases werden abgeleitet": "Deriving E2E test cases",
+    "Artefakte werden abgeleitet": "Deriving artifacts",
+    "Requirements werden analysiert": "Analyzing requirements",
+    "Analyse läuft": "Analysis running",
+    "Analyse abgeschlossen": "Analysis complete",
+    "Berechne voraussichtliche Bearbeitungszeit...": "Calculating estimated processing time...",
+    "Die Analyse wird vorbereitet.": "Preparing analysis.",
+    "Alle verfügbaren Ergebnisse wurden verarbeitet.": "All available results have been processed.",
+    "Requirements verarbeitet": "requirements processed",
+    "Requirements analysiert": "requirements analyzed",
+    "von": "of",
+    "verbleibend": "remaining",
+    "Warte auf externe AI-Antwort. Der Balken zeigt nur eine Zeitschätzung und bleibt bis zur echten Antwort unter 100 %.": "Waiting for external AI response. The bar only shows a time estimate and stays below 100% until the real response arrives.",
+    "AI-Antwort erhalten. Die Ansicht wird aktualisiert.": "AI response received. The view is being updated.",
+    "Die AI-Operation wurde erfolgreich abgeschlossen.": "The AI operation completed successfully.",
+    "Bitte prüfe die Fehlermeldung und starte den Vorgang bei Bedarf erneut.": "Please check the error message and restart the operation if needed.",
     niedrig: "low",
     mittel: "medium",
     hoch: "high",
+    "Atomarität": "Atomicity",
+    "Eindeutigkeit": "Uniqueness",
+    "Vollständigkeit": "Completeness",
+    "Klarheit": "Clarity",
+    "Konsistenz": "Consistency",
+    "Testbarkeit": "Testability",
+    "Messbarkeit": "Measurability",
+    "Machbarkeit": "Feasibility",
     "Bereit": "Ready",
     "Hauptmenü": "Main menu",
     "Neues Projekt": "New project",
@@ -204,6 +479,71 @@ const UI_TRANSLATIONS = {
     "Projekt löschen": "Delete project",
     "Import": "Import",
     "Datei": "File",
+    "Excel-Import": "Excel import",
+    "PDF-Import": "PDF import",
+    "PDF wird analysiert": "PDF is being analyzed",
+    "Excel wird validiert": "Excel is being validated",
+    "PDF-Datei auswählen": "Select PDF file",
+    "Excel-Datei auswählen": "Select Excel file",
+    "Importvorschau": "Import preview",
+    "Importformat": "Import format",
+    "Product Requirements erkannt": "Product Requirements detected",
+    "TechTypes erkannt": "TechTypes detected",
+    "Appliance-Gruppen erkannt": "Appliance groups detected",
+    "TechType-Zuordnung vollständig": "TechType mapping complete",
+    "Requirements ohne TechType-Zuordnung": "Requirements without TechType mapping",
+    "Requirements mit Warnungen": "Requirements with warnings",
+    "Requirements mit Fehlern": "Requirements with errors",
+    "Doppelte Requirement-IDs": "Duplicate Requirement IDs",
+    "Ignorierte Zeilen": "Ignored rows",
+    "Requirement bereit": "Requirement ready",
+    "Requirement enthält Warnungen": "Requirement contains warnings",
+    "Requirement enthält Fehler": "Requirement contains errors",
+    "Import mit Warnungen möglich": "Import possible with warnings",
+    "Import nicht möglich": "Import not possible",
+    "Ungültige Datei": "Invalid file",
+    "Nicht unterstützter Dateityp": "Unsupported file type",
+    "Datei kann nicht gelesen werden": "File cannot be read",
+    "Erwartetes Importformat nicht erkannt": "Expected import format not recognized",
+    "Fehlende Pflichtfelder": "Missing required fields",
+    "Ungültige oder doppelte Requirements": "Invalid or duplicate requirements",
+    "Nicht eindeutige Appliance-/TechType-Zuordnung": "Non-unique appliance/TechType mapping",
+    "Erwartetes Format": "Expected format",
+    "Andere Datei auswählen": "Choose another file",
+    "Weitere {{count}} Fehler wurden ausgeblendet.": "{{count}} more errors were hidden.",
+    "Dateiname fehlt.": "File name is missing.",
+    "Die Dateiendung muss .xlsx sein.": "The file extension must be .xlsx.",
+    "Bitte konvertiere die Importdatei in das XLSX-Format.": "Please convert the import file to XLSX format.",
+    "Der Dateityp passt nicht zu einer XLSX-Datei.": "The file type does not match an XLSX file.",
+    "Die Excel-Datei ist leer.": "The Excel file is empty.",
+    "Die Datei ist keine gültige XLSX-Datei.": "The file is not a valid XLSX file.",
+    "Die Excel-Datei ist beschädigt und konnte nicht geöffnet werden.": "The Excel file is damaged and could not be opened.",
+    "Die Arbeitsmappe enthält kein Tabellenblatt.": "The workbook does not contain a worksheet.",
+    "Das erforderliche Tabellenblatt wurde nicht gefunden.": "The required worksheet was not found.",
+    "Die Kopfzeile ist nicht eindeutig erkennbar.": "The header row cannot be identified unambiguously.",
+    "Die Excel-Anfrage konnte nicht gelesen werden.": "The Excel request could not be read.",
+    "Die Excel-Datei konnte nicht dekodiert werden.": "The Excel file could not be decoded.",
+    "Die Excel-Datei konnte nicht gelesen werden.": "The Excel file could not be read.",
+    "Die Bezeichnungen der Pflichtspalten müssen exakt mit dem Beispiel übereinstimmen.": "The required column labels must exactly match the example.",
+    "Die Tabelle \"TechType\" wurde nicht gefunden. Requirements können ohne automatische TechType-Zuordnung importiert werden.": "The \"TechType\" table was not found. Requirements can be imported without automatic TechType mapping.",
+    "Import starten": "Start import",
+    "Import abbrechen": "Cancel import",
+    "PDF-Import erfolgreich": "PDF import successful",
+    "PDF-Import teilweise erfolgreich": "PDF import partially successful",
+    "Keine passenden TechTypes gefunden": "No matching TechTypes found",
+    "Die PDF-Datei ist leer.": "The PDF file is empty.",
+    "Die Dateiendung muss .pdf sein.": "The file extension must be .pdf.",
+    "Der Dateityp muss application/pdf sein.": "The file type must be application/pdf.",
+    "Die PDF-Datei ist zu groß.": "The PDF file is too large.",
+    "Die PDF konnte nicht gelesen werden.": "The PDF could not be read.",
+    "Die Datei ist kein gültiges PDF.": "The file is not a valid PDF.",
+    "Das PDF ist beschädigt und konnte nicht geöffnet werden.": "The PDF is damaged and could not be opened.",
+    "Das PDF ist kennwortgeschützt.": "The PDF is password-protected.",
+    "Das PDF enthält keinen maschinenlesbaren Text. Bitte exportiere das Dokument erneut als textbasiertes PDF.": "The PDF contains no machine-readable text. Please export the document again as a text-based PDF.",
+    "Die Struktur des PDFs entspricht nicht dem erwarteten Confluence-Exportformat.": "The PDF structure does not match the expected Confluence export format.",
+    "Bitte exportiere die Product Requirements aus Confluence mit der erwarteten Feldstruktur als textbasiertes PDF.": "Please export the Product Requirements from Confluence with the expected field structure as a text-based PDF.",
+    "PDF-Import abbrechen?": "Cancel PDF import?",
+    "Importierbare Requirements": "Importable requirements",
     "Demo: Import aus Windchill": "Demo: Import from Windchill",
     "Windchill Import simulieren": "Simulate Windchill import",
     "Die Windchill-Schnittstelle ist in diesem MVP noch nicht verbunden. Der Import wird simuliert.": "The Windchill interface is not connected in this MVP yet. The import is simulated.",
@@ -222,6 +562,141 @@ const UI_TRANSLATIONS = {
     "Noch keine echte Windchill-Verbindung": "No real Windchill connection yet",
     "Hilfe": "Help",
     "OpenAI Nutzung": "OpenAI usage",
+    "Anhänge": "Attachments",
+    "Bearbeiten": "Edit",
+    "Speichern": "Save",
+    "Abbrechen": "Cancel",
+    "Fett": "Bold",
+    "Kursiv": "Italic",
+    "Unterstrichen": "Underline",
+    "Durchgestrichen": "Strikethrough",
+    "Absatz": "Paragraph",
+    "Überschrift": "Heading",
+    "Überschrift 1": "Heading 1",
+    "Überschrift 2": "Heading 2",
+    "Überschrift 3": "Heading 3",
+    "Aufzählung": "Bullet list",
+    "Nummerierte Liste": "Numbered list",
+    "Einzug vergrößern": "Increase indent",
+    "Einzug verkleinern": "Decrease indent",
+    "Link einfügen": "Insert link",
+    "Link entfernen": "Remove link",
+    "Rückgängig": "Undo",
+    "Wiederholen": "Redo",
+    "Formatierung entfernen": "Clear formatting",
+    "Inline-Code": "Inline code",
+    "Manuell bearbeitet": "Manually edited",
+    "Ungespeicherte Änderungen": "Unsaved changes",
+    "Änderungen verwerfen": "Discard changes",
+    "AI Suggestion – manuell bearbeitet": "AI suggestion - manually edited",
+    "AI Suggestion wurde gespeichert.": "AI suggestion has been saved.",
+    "AI-Vorschlag darf nicht leer sein.": "AI suggestion must not be empty.",
+    "AI-Vorschlag": "AI suggestion",
+    "Requirement Review": "Requirement review",
+    "Requirement prüfen": "Review requirement",
+    "Zurück zur Liste": "Back to list",
+    "Original Requirement": "Original requirement",
+    "Original-Analyse": "Original analysis",
+    "Finale Qualitätsprüfung": "Final quality check",
+    "Hinweise aus der Analyse": "Analysis notes",
+    "Kompakte Qualitätszusammenfassung und konkrete Hinweise.": "Compact quality summary and concrete notes.",
+    "Vorschlag prüfen, bearbeiten und übernehmen.": "Review, edit, and accept the suggestion.",
+    "Finaler Inhalt, Scorestatus und Freigabevoraussetzungen.": "Final content, score status, and approval prerequisites.",
+    "Original prüfen": "Review original",
+    "AI Suggestion verbessern": "Improve AI suggestion",
+    "Finales Requirement prüfen": "Review final requirement",
+    "1. Original prüfen": "1. Review original",
+    "2. AI Suggestion verbessern": "2. Improve AI suggestion",
+    "3. Finales Requirement prüfen": "3. Review final requirement",
+    "4. Entscheidung": "4. Decision",
+    "Requirement Review Prozess": "Requirement review process",
+    "Original Score": "Original score",
+    "Hinweis": "note",
+    "Hinweise": "notes",
+    "Keine relevanten Qualitätsprobleme erkannt.": "No relevant quality issues detected.",
+    "Nicht berechnet": "Not calculated",
+    "Wird berechnet ...": "Calculating ...",
+    "Qualitätskriterien, Score und konkrete Hinweise zum Requirement.": "Quality criteria, score, and concrete notes for the requirement.",
+    "Bearbeiten, formatieren, verbessern und anschließend als aktuellen Requirement-Inhalt übernehmen.": "Edit, format, improve, and then accept as current requirement content.",
+    "Aktueller Requirement-Inhalt": "Current requirement content",
+    "Übernommener Inhalt, Analysezustand, neuer Score und finale Hinweise.": "Accepted content, analysis status, new score, and final notes.",
+    "Status & Score": "Status & score",
+    "Metadaten": "Metadata",
+    "Kommentare & Historie": "Comments & history",
+    "Entscheidung": "Decision",
+    "Approve PR, Exclude oder später entscheiden.": "Approve PR, exclude, or decide later.",
+    "Gespeichert": "Saved",
+    "Requirement nicht gefunden": "Requirement not found",
+    "Der Review Workspace ist nur für ein geöffnetes und berechtigtes Projekt verfügbar.": "The review workspace is only available for an open and authorized project.",
+    "AI Suggestion bearbeiten": "Edit AI suggestion",
+    "AI-Vorschlag bearbeiten": "Edit AI suggestion",
+    "Formatierung": "Formatting",
+    "Bitte gib eine gültige http-, https- oder mailto-Adresse ein.": "Please enter a valid http, https, or mailto address.",
+    "Link-Adresse": "Link address",
+    "Die AI Suggestion enthält ungespeicherte Änderungen. Möchtest du sie verwerfen?": "The AI suggestion contains unsaved changes. Do you want to discard them?",
+    "Die AI Suggestion wurde manuell bearbeitet. Bei einer Neugenerierung werden diese Änderungen ersetzt. Möchtest du fortfahren?": "The AI suggestion was manually edited. Regenerating it will replace those changes. Do you want to continue?",
+    "Formatierter AI-Vorschlag": "Formatted AI suggestion",
+    "Datei hinzufügen": "Add file",
+    "Dateien hinzufügen": "Add files",
+    "Datei herunterladen": "Download file",
+    "Datei löschen": "Delete file",
+    "Keine Anhänge vorhanden": "No attachments available",
+    "Upload läuft": "Upload in progress",
+    "Upload erfolgreich": "Upload successful",
+    "Upload fehlgeschlagen": "Upload failed",
+    "Nicht unterstütztes Dateiformat": "Unsupported file format",
+    "Datei ist zu groß": "File is too large",
+    "maximale Dateigröße": "maximum file size",
+    "{{count}} Anhänge": "{{count}} attachments",
+    "Möchtest du den Anhang '{{fileName}}' wirklich löschen?": "Do you really want to delete the attachment '{{fileName}}'?",
+    "Maximal {{count}} Dateien pro Upload-Vorgang.": "A maximum of {{count}} files is allowed per upload.",
+    "Die Datei '{{fileName}}' wird nicht unterstützt. Erlaubt sind PNG, JPEG, PDF, Word und Excel.": "The file '{{fileName}}' is not supported. Allowed types are PNG, JPEG, PDF, Word, and Excel.",
+    "Die Datei '{{fileName}}' ist leer.": "The file '{{fileName}}' is empty.",
+    "Die Datei '{{fileName}}' ist größer als 25 MB.": "The file '{{fileName}}' is larger than 25 MB.",
+    "Der Anhang konnte nicht gespeichert werden. Bitte versuche es erneut.": "The attachment could not be saved. Please try again.",
+    "Du hast keine Berechtigung, diesen Anhang herunterzuladen.": "You do not have permission to download this attachment.",
+    "Der Anhang wurde nicht gefunden.": "The attachment was not found.",
+    "Der Anhang konnte nicht gelöscht werden.": "The attachment could not be deleted.",
+    "Projektkosten werden geladen...": "Loading project costs...",
+    "Projektkosten konnten nicht geladen werden.": "Project costs could not be loaded.",
+    "Gesamtkosten": "Total costs",
+    "Gesamttokens": "Total tokens",
+    "OpenAI-Aufrufe": "OpenAI calls",
+    "Kosten im aktuellen Monat": "Costs in the current month",
+    "Letzter API-Aufruf": "Last API call",
+    "Projektkostenfilter": "Project cost filters",
+    "Zeitraum von": "Period from",
+    "Zeitraum bis": "Period to",
+    "Aktion": "Action",
+    "Modell": "Model",
+    "Filter anwenden": "Apply filters",
+    "Nach Aktion": "By action",
+    "Nach Modell": "By model",
+    "Nach Zeitraum": "By period",
+    "Datum und Uhrzeit": "Date and time",
+    "Input Tokens": "Input tokens",
+    "Output Tokens": "Output tokens",
+    "Gesamttokens": "Total tokens",
+    "Keine OpenAI-Nutzung erfasst.": "No OpenAI usage recorded.",
+    "Die Kostenerfassung ist ab dem {{date}} verfügbar. Frühere API-Nutzungen sind nicht enthalten.": "Cost tracking is available from {{date}}. Earlier API usage is not included.",
+    "{{count}} Verbrauchsdatensätze sind unvollständig oder nicht berechenbar.": "{{count}} usage records are incomplete or not calculable.",
+    "Aufrufe": "calls",
+    "Tokens": "tokens",
+    "Zurück": "Previous",
+    "Weiter": "Next",
+    "Product-Requirement-Analyse": "Product requirement analysis",
+    "Verbesserungsvorschlag": "Improvement suggestion",
+    "Übersetzung": "Translation",
+    "Score-Neuberechnung": "Score recalculation",
+    "Software-Requirement-Generierung": "Software requirement generation",
+    "Use-Case-Generierung": "Use case generation",
+    "E2E-Testfall-Generierung": "E2E test case generation",
+    "User-Story-Generierung": "User story generation",
+    "App-Testfall-Generierung": "App test case generation",
+    "sonstige KI-Verarbeitung": "other AI processing",
+    "Erfasst": "Captured",
+    "Preis nicht verfügbar": "Price unavailable",
+    "Usage-Daten fehlen": "Usage data missing",
     "OpenAI-Kosten schließen": "Close OpenAI costs",
     "Hinweis": "Info",
     "Fehler": "Error",
@@ -328,12 +803,16 @@ const UI_TRANSLATIONS = {
     "1 geänderte PR muss erneut freigegeben werden.": "1 changed PR must be approved again.",
     "geänderte PR müssen erneut freigegeben werden.": "changed PRs must be approved again.",
     "Alle Product Requirements erfüllen das Gate. Der Approval-Prozess kann gestartet werden.": "All Product Requirements pass the gate. The approval process can be started.",
-    "Approval-Prozess kann erst gestartet werden, wenn alle nicht ausgeschlossenen Requirements Score >= 85 haben.": "Approval process cannot be started until all non-excluded Requirements have score >= 85.",
+    "Approval-Prozess kann erst gestartet werden, wenn alle nicht ausgeschlossenen Requirements Score >= 85 haben und durch den PR Owner freigegeben wurden.": "Approval process cannot be started until all non-excluded Requirements have score >= 85 and have been submitted by the PR Owner.",
     "Finale Scores fehlen oder sind für ein oder mehrere Requirements veraltet.": "Final scores are missing or stale for one or more Requirements.",
     "Nur Product Requirement Owner können den Approval-Prozess starten.": "Only Product Requirement Owners can start the approval process.",
     "Nur Product Requirement Owner können den PR-Approval-Prozess starten.": "Only Product Requirement Owners can start the PR approval process.",
-    "Finalization Gate blocked: mindestens ein Requirement benötigt Nacharbeit oder TechTypes.": "Finalization gate blocked: at least one requirement needs rework or TechTypes.",
+    "Finalization Gate blocked: mindestens ein Requirement benötigt Nacharbeit, TechTypes oder Owner-Freigabe.": "Finalization gate blocked: at least one requirement needs rework, TechTypes, or owner submission.",
     "Finalization Gate not complete: Scores fehlen oder sind veraltet.": "Finalization gate not complete: scores are missing or stale.",
+    "Nacharbeit erforderlich: Dieses Requirement blockiert den Approval-Start, weil der Score unter {{minimumScore}} liegt oder neu berechnet werden muss.": "Rework required: This requirement blocks the approval start because its score is below {{minimumScore}} or must be recalculated.",
+    "Analysehinweise werden übersetzt ...": "Translating analysis issues ...",
+    "Analyse wird für die gewählte Sprache vorbereitet ...": "Preparing analysis for the selected language ...",
+    "Die Analysehinweise konnten nicht in die gewählte Sprache übersetzt werden.": "The analysis issues could not be translated into the selected language.",
     "Finale Score-Bewertung läuft oder fehlt.": "Final score assessment is running or missing.",
     "Filter aktiv: Requirements mit Score < 85": "Filter active: Requirements with score < 85",
     "Filter aktiv: Requirements mit Score &lt; 85": "Filter active: Requirements with score < 85",
@@ -382,8 +861,19 @@ const UI_TRANSLATIONS = {
     "Nacharbeit erforderlich: Dieses Requirement blockiert den Approval-Start, weil der Score unter 85 liegt oder neu berechnet werden muss.": "Rework required: this requirement blocks approval start because the score is below 85 or must be recalculated.",
     "Score -": "Score -",
     "MISSING": "MISSING",
-    "STALE": "STALE",
+    "Score Status": "Score status",
+    "Finalization": "Finalization",
+    "Arbeitsstand": "Working state",
+    "FAILED": "Failed",
+    "PASSED": "Passed",
+    "STALE": "Recalculation required",
+    "MISSING": "Missing",
+    "CALCULATING": "Calculating",
+    "ANALYSIS_FAILED": "Analysis failed",
+    "EXCLUDED": "Excluded",
     "Score neu berechnen erforderlich.": "Score recalculation required.",
+    "Analyse fehlgeschlagen. Bitte starte die Analyse erneut.": "Analysis failed. Please start the analysis again.",
+    "Die AI Suggestion wurde übernommen, der neue Score konnte jedoch nicht berechnet werden. Bitte starte die Analyse erneut.": "The AI suggestion was accepted, but the new score could not be calculated. Please start the analysis again.",
     "Finales Requirement speichern": "Save final requirement",
     "Alle abwählen": "Clear all",
     "Auswahl zurücksetzen": "Reset selection",
@@ -434,7 +924,7 @@ const UI_TRANSLATIONS = {
     "Metadaten": "Metadata",
     "Requirement Detail": "Requirement detail",
     "Requirement Finalization": "Requirement finalization",
-    "Finales Requirement": "Final requirement",
+    "Aktueller Requirement-Inhalt": "Current requirement content",
     "Historie": "History",
     "Finales Product Requirement": "Final Product Requirement",
     "Finalen Requirement-Text auswählen": "Select final requirement text",
@@ -442,11 +932,32 @@ const UI_TRANSLATIONS = {
     "Originaltext": "Original text",
     "Original verwenden": "Use original",
     "AI-Vorschlag übernehmen": "Accept AI suggestion",
+    "Übernimmt den gespeicherten AI-Vorschlag als aktuellen Requirement-Inhalt und berechnet den Score neu.": "Accepts the saved AI suggestion as the current requirement content and recalculates the score.",
     "Verbesserung vorschlagen": "Suggest improvement",
     "Testbarer machen": "Make more testable",
     "Mehrdeutigkeiten entfernen": "Remove ambiguities",
     "Akzeptanzkriterien ergänzen": "Add acceptance criteria",
     "Kürzer formulieren": "Shorten wording",
+    "Allgemein verbessern": "Improve generally",
+    "Testbarkeit": "Testability",
+    "Eindeutigkeit": "Clarity",
+    "Akzeptanzkriterien": "Acceptance criteria",
+    "Verbesserung erzeugen": "Generate improvement",
+    "Verbesserung wird erzeugt ...": "Generating improvement ...",
+    "Verbesserung übernehmen": "Accept improvement",
+    "Erneut verbessern": "Improve again",
+    "Verwerfen": "Discard",
+    "Verbesserter Vorschlag": "Improved suggestion",
+    "Bisherige Fassung": "Previous version",
+    "Neuer Vorschlag": "New suggestion",
+    "Zurücksetzen": "Reset",
+    "Datei hinzufügen": "Add file",
+    "📎 Datei hinzufügen": "📎 Add file",
+    "1 Datei ausgewählt": "1 file selected",
+    "{{count}} Dateien ausgewählt": "{{count}} files selected",
+    "Anhang entfernen": "Remove attachment",
+    "Änderungsverlauf": "Change history",
+    "Formuliere das Requirement atomarer und ergänze eindeutig überprüfbare Akzeptanzkriterien, ohne technische Details zu erfinden.": "Make the requirement more atomic and add clearly verifiable acceptance criteria without inventing technical details.",
     "Was soll verbessert werden?": "What should be improved?",
     "Anhänge für die Verbesserung": "Attachments for improvement",
     "+ Anhang hinzufügen": "+ Add attachment",
@@ -461,6 +972,8 @@ const UI_TRANSLATIONS = {
     "Original-Requirement": "Original requirement",
     "Owner-Aktionen": "Owner actions",
     "Änderungen speichern": "Save changes",
+    "Änderungen speichern und erneut freigeben": "Save changes and resubmit",
+    "Speichert und berechnet Score...": "Saving and calculating score...",
     "Zur Freigabe bereitstellen": "Submit for approval",
     "Freigabeentscheidung": "Approval decision",
     "Approval-Details": "Approval details",
@@ -547,6 +1060,7 @@ const UI_TRANSLATIONS = {
     "Requirements bereit mit Score >=": "Requirements ready with score >=",
     "Requirements bereit für Freigabe": "Requirements ready for approval",
     "mit Nacharbeit": "with rework",
+    "ohne Owner-Freigabe": "without owner submission",
     "ohne TechTypes": "without TechTypes",
     "fehlende Scores": "missing scores",
     "veraltet oder in Berechnung": "stale or calculating",
@@ -572,6 +1086,34 @@ const UI_TRANSLATIONS = {
     "Prozessschritt": "Process step",
     "UseCase-Erstellung und Review werden als eigener Arbeitsbereich vorbereitet.": "UseCase creation and review are prepared as a separate workspace.",
     "UserStory-Erstellung und Qualitätsprüfung werden als eigener Arbeitsbereich vorbereitet.": "UserStory creation and quality review are prepared as a separate workspace.",
+    "UseCases": "UseCases",
+    "UseCases ableiten": "Derive UseCases",
+    "UseCases abgeleitet": "UseCases derived",
+    "UseCase Durchschnitt": "UseCase average",
+    "Kritische UseCases": "Critical UseCases",
+    "UseCase-ID": "UseCase ID",
+    "UseCase": "UseCase",
+    "Schließe Software Requirements ab, um UseCases abzuleiten.": "Complete Software Requirements to derive UseCases.",
+    "Noch keine UseCases abgeleitet.": "No UseCases derived yet.",
+    "UseCase noch nicht abgeleitet": "UseCase not derived yet",
+    "UseCase bereit": "UseCase ready",
+    "UseCase Score unter 85": "UseCase score below 85",
+    "UseCases konnten nicht abgeleitet werden": "UseCases could not be derived",
+    "UserStories": "UserStories",
+    "Aus UseCases ableiten": "Derive from UseCases",
+    "UserStories ableiten": "Derive UserStories",
+    "UserStories abgeleitet": "UserStories derived",
+    "UserStory Durchschnitt": "UserStory average",
+    "Kritische UserStories": "Critical UserStories",
+    "UserStory-ID": "UserStory ID",
+    "Verwendeter UseCase": "Used UseCase",
+    "UserStory": "UserStory",
+    "Leite zuerst UseCases ab, um UserStories zu erstellen.": "Derive UseCases first to create UserStories.",
+    "Noch keine UserStories abgeleitet.": "No UserStories derived yet.",
+    "UserStory noch nicht abgeleitet": "UserStory not derived yet",
+    "UserStory bereit": "UserStory ready",
+    "UserStory Score unter 85": "UserStory score below 85",
+    "UserStories konnten nicht abgeleitet werden": "UserStories could not be derived",
     "Aus Software Requirements ableiten": "Derive from Software Requirements",
     "E2E TestCases abgeleitet": "E2E TestCases derived",
     "E2E TestCase Durchschnitt": "E2E TestCase average",
@@ -584,6 +1126,21 @@ const UI_TRANSLATIONS = {
     "E2E TestCase freigegeben": "E2E TestCase approved",
     "Schließe Software Requirements ab, um E2E TestCases abzuleiten.": "Complete Software Requirements to derive E2E TestCases.",
     "App-TestCase-Erstellung und Prüfung werden als eigener Arbeitsbereich vorbereitet.": "App TestCase creation and review are prepared as a separate workspace.",
+    "App TestCases": "App TestCases",
+    "App TestCases ableiten": "Derive App TestCases",
+    "App TestCases abgeleitet": "App TestCases derived",
+    "App TestCase Durchschnitt": "App TestCase average",
+    "Kritische App TestCases": "Critical App TestCases",
+    "App-Test-ID": "App test ID",
+    "Leite zuerst UseCases ab, um App TestCases zu erstellen.": "Derive UseCases first to create App TestCases.",
+    "Noch keine App TestCases abgeleitet.": "No App TestCases derived yet.",
+    "App TestCase noch nicht abgeleitet": "App TestCase not derived yet",
+    "App TestCase bereit": "App TestCase ready",
+    "App TestCase Score unter 85": "App TestCase score below 85",
+    "App TestCases konnten nicht abgeleitet werden": "App TestCases could not be derived",
+    "Titel": "Title",
+    "Details": "Details",
+    "Noch nicht abgeleitet.": "Not derived yet.",
     "Import und Analyse konfigurieren": "Configure import and analysis",
     "Einstellungen schließen": "Close settings",
     "Requirement-Typ": "Requirement type",
@@ -615,11 +1172,25 @@ const UI_TRANSLATIONS = {
     "Score bestanden": "Score passed",
     "Nacharbeit erforderlich": "Rework required",
     "Score erfüllt die Voraussetzung für den späteren Approval-Prozess.": "Score meets the prerequisite for the later approval process.",
+    "Score wurde nach AI-Timeout mit lokaler Qualitätsprüfung berechnet.": "Score was calculated with the local quality check after an AI timeout.",
     "Nacharbeit erforderlich.": "Rework required.",
     "Score neu berechnen erforderlich.": "Score recalculation required.",
     "Score wird berechnet.": "Score is being calculated.",
     "Ausgeschlossene Requirements benötigen keinen Score.": "Excluded requirements do not need a score.",
     "Score wird berechnet...": "Calculating score...",
+    "Score-Neuberechnung läuft": "Score recalculation running",
+    "Der neue Score wird mit der AI berechnet. Du kannst den Fortschritt im Status-Dialog verfolgen.": "The new score is being calculated with AI. You can track progress in the status dialog.",
+    "Bitte warten. Die finale Qualitätsbewertung läuft.": "Please wait. The final quality assessment is running.",
+    "Finaler Inhalt wird gespeichert": "Saving final content",
+    "Score-Neuberechnung gestartet": "Score recalculation started",
+    "AI-Ergebnis wurde empfangen": "AI result received",
+    "Score und Issues werden gespeichert": "Saving score and issues",
+    "Anzeige wird aktualisiert": "Updating view",
+    "Score-Neuberechnung wird vorbereitet": "Preparing score recalculation",
+    "Übernommener Requirement-Inhalt wird analysiert": "Analyzing accepted requirement content",
+    "Neuer Score und Analysehinweise werden geprüft": "Checking new score and analysis issues",
+    "Score und Hinweise werden aktualisiert": "Updating score and issues",
+    "Die Score-Neuberechnung hat zu lange gedauert und wurde abgebrochen. Bitte erneut versuchen.": "Score recalculation took too long and was aborted. Please try again.",
     "Finales PR gespeichert": "Final PR saved",
     "Requirements werden analysiert": "Requirements are being analyzed",
     "Requirements verarbeitet": "requirements processed",
@@ -843,8 +1414,8 @@ const UI_TRANSLATIONS = {
     "UseCase-Erstellung und Review werden als eigener Arbeitsbereich vorbereitet.": "UseCase creation and review are prepared as a dedicated workspace.",
     "UserStory-Erstellung und Qualitätsprüfung werden als eigener Arbeitsbereich vorbereitet.": "UserStory creation and quality review are prepared as a dedicated workspace.",
     "App-TestCase-Erstellung und Prüfung werden als eigener Arbeitsbereich vorbereitet.": "App TestCase creation and review are prepared as a dedicated workspace.",
-    "Finales Product Requirement darf nicht leer sein.": "Final Product Requirement must not be empty.",
-    "Bitte lege zuerst ein finales Product Requirement fest.": "Please define a final Product Requirement first.",
+    "Aktueller Requirement-Inhalt darf nicht leer sein.": "Current requirement content must not be empty.",
+    "Bitte übernimm zuerst einen aktuellen Requirement-Inhalt.": "Please accept current requirement content first.",
     "Der Requirement-Text darf nicht leer sein.": "The requirement text must not be empty.",
     "Ausgeschlossene Requirements benötigen einen Ausschlussgrund.": "Excluded requirements require an exclusion reason.",
     "Keine TechTypes erkannt": "No TechTypes detected",
@@ -1019,9 +1590,11 @@ const els = {
   languageSelect: document.querySelector("#languageSelect"),
   newProjectButton: document.querySelector("#newProjectButton"),
   openFileButton: document.querySelector("#openFileButton"),
+  openPdfImportButton: document.querySelector("#openPdfImportButton"),
   openWindchillButton: document.querySelector("#openWindchillButton"),
   openProjectButton: document.querySelector("#openProjectButton"),
   projectHistoryButton: document.querySelector("#projectHistoryButton"),
+  closeProjectButton: document.querySelector("#closeProjectButton"),
   adminMenu: document.querySelector("#adminMenu"),
   openUserAdminButton: document.querySelector("#openUserAdminButton"),
   deleteProjectButton: document.querySelector("#deleteProjectButton"),
@@ -1041,6 +1614,24 @@ const els = {
   aboutRuntimePath: document.querySelector("#aboutRuntimePath"),
   openAiCostTotal: document.querySelector("#openAiCostTotal"),
   openAiCostDetail: document.querySelector("#openAiCostDetail"),
+  projectAiUsageHint: document.querySelector("#projectAiUsageHint"),
+  projectAiUsageCalls: document.querySelector("#projectAiUsageCalls"),
+  projectAiUsageMonthCost: document.querySelector("#projectAiUsageMonthCost"),
+  projectAiUsageLastCall: document.querySelector("#projectAiUsageLastCall"),
+  projectAiUsageWarning: document.querySelector("#projectAiUsageWarning"),
+  projectAiUsageFrom: document.querySelector("#projectAiUsageFrom"),
+  projectAiUsageTo: document.querySelector("#projectAiUsageTo"),
+  projectAiUsageActionFilter: document.querySelector("#projectAiUsageActionFilter"),
+  projectAiUsageModelFilter: document.querySelector("#projectAiUsageModelFilter"),
+  projectAiUsageStatusFilter: document.querySelector("#projectAiUsageStatusFilter"),
+  projectAiUsageApplyFilters: document.querySelector("#projectAiUsageApplyFilters"),
+  projectAiUsageByAction: document.querySelector("#projectAiUsageByAction"),
+  projectAiUsageByModel: document.querySelector("#projectAiUsageByModel"),
+  projectAiUsageByPeriod: document.querySelector("#projectAiUsageByPeriod"),
+  projectAiUsageBody: document.querySelector("#projectAiUsageBody"),
+  projectAiUsagePreviousPage: document.querySelector("#projectAiUsagePreviousPage"),
+  projectAiUsageNextPage: document.querySelector("#projectAiUsageNextPage"),
+  projectAiUsagePageInfo: document.querySelector("#projectAiUsagePageInfo"),
   openSettingsButton: document.querySelector("#openSettingsButton"),
   fileState: document.querySelector("#fileState"),
   requirementType: document.querySelector("#requirementType"),
@@ -1062,10 +1653,18 @@ const els = {
   generateSoftwareMenuButton: document.querySelector("#generateSoftwareMenuButton"),
   generateE2eButton: document.querySelector("#generateE2eButton"),
   generateE2eMenuButton: document.querySelector("#generateE2eMenuButton"),
+  generateUseCasesButton: document.querySelector("#generateUseCasesButton"),
+  generateUserStoriesButton: document.querySelector("#generateUserStoriesButton"),
+  generateAppTestsButton: document.querySelector("#generateAppTestsButton"),
   exportButton: document.querySelector("#exportButton"),
   settingsOverlay: document.querySelector("#settingsOverlay"),
   settingsCloseButton: document.querySelector("#settingsCloseButton"),
   settingsDoneButton: document.querySelector("#settingsDoneButton"),
+  pdfImportPreview: document.querySelector("#pdfImportPreview"),
+  pdfImportPreviewTitle: document.querySelector("#pdfImportPreviewTitle"),
+  pdfImportPreviewStatus: document.querySelector("#pdfImportPreviewStatus"),
+  pdfImportSummary: document.querySelector("#pdfImportSummary"),
+  pdfImportList: document.querySelector("#pdfImportList"),
   projectOverlay: document.querySelector("#projectOverlay"),
   projectCloseButton: document.querySelector("#projectCloseButton"),
   projectCancelButton: document.querySelector("#projectCancelButton"),
@@ -1115,6 +1714,23 @@ const els = {
   productReviewAnalysisTab: document.querySelector("#productReviewAnalysisTab"),
   productReviewHistoryTab: document.querySelector("#productReviewHistoryTab"),
   productReviewFinalChoiceHost: document.querySelector("#productReviewFinalChoiceHost"),
+  requirementReviewWorkspace: document.querySelector("#requirementReviewWorkspace"),
+  reviewBackButton: document.querySelector("#reviewBackButton"),
+  reviewWorkspaceKicker: document.querySelector("#reviewWorkspaceKicker"),
+  reviewWorkspaceTitle: document.querySelector("#reviewWorkspaceTitle"),
+  reviewWorkspaceSubtitle: document.querySelector("#reviewWorkspaceSubtitle"),
+  reviewWorkspaceWorkflowStatus: document.querySelector("#reviewWorkspaceWorkflowStatus"),
+  reviewWorkspaceSaveStatus: document.querySelector("#reviewWorkspaceSaveStatus"),
+  reviewOriginalMeta: document.querySelector("#reviewOriginalMeta"),
+  reviewOriginalHost: document.querySelector("#reviewOriginalHost"),
+  reviewAnalysisHost: document.querySelector("#reviewAnalysisHost"),
+  reviewAiHost: document.querySelector("#reviewAiHost"),
+  reviewScoreHost: document.querySelector("#reviewScoreHost"),
+  reviewMetadataList: document.querySelector("#reviewMetadataList"),
+  reviewTechTypesHost: document.querySelector("#reviewTechTypesHost"),
+  reviewAttachmentsHost: document.querySelector("#reviewAttachmentsHost"),
+  reviewHistoryHost: document.querySelector("#reviewHistoryHost"),
+  reviewDecisionStatus: document.querySelector("#reviewDecisionStatus"),
   productReviewFinalText: document.querySelector("#productReviewFinalText"),
   productReviewFinalScore: document.querySelector("#productReviewFinalScore"),
   productReviewFinalScoreStatus: document.querySelector("#productReviewFinalScoreStatus"),
@@ -1156,6 +1772,10 @@ const els = {
   productApprovalAiAttachments: document.querySelector("#productApprovalAiAttachments"),
   productApprovalAiAttachmentList: document.querySelector("#productApprovalAiAttachmentList"),
   productApprovalAiButton: document.querySelector("#productApprovalAiButton"),
+  requirementAttachmentsSection: document.querySelector("#requirementAttachmentsSection"),
+  requirementAttachmentInput: document.querySelector("#requirementAttachmentInput"),
+  requirementAttachmentStatus: document.querySelector("#requirementAttachmentStatus"),
+  requirementAttachmentList: document.querySelector("#requirementAttachmentList"),
   productApprovalTechTypesTabButton: document.querySelector("#productApprovalTechTypesTabButton"),
   productApprovalDecision: document.querySelector("#productApprovalDecision"),
   productApprovalApproveButton: document.querySelector("#productApprovalApproveButton"),
@@ -1202,6 +1822,18 @@ const els = {
   criticalE2eIssuesButton: document.querySelector("#criticalE2eIssuesButton"),
   e2eScoreFilterBar: document.querySelector("#e2eScoreFilterBar"),
   clearE2eScoreFilterButton: document.querySelector("#clearE2eScoreFilterButton"),
+  useCasesBody: document.querySelector("#useCasesBody"),
+  useCaseDerivedMetric: document.querySelector("#useCaseDerivedMetric"),
+  useCaseScoreMetric: document.querySelector("#useCaseScoreMetric"),
+  useCaseIssueMetric: document.querySelector("#useCaseIssueMetric"),
+  userStoriesBody: document.querySelector("#userStoriesBody"),
+  userStoryDerivedMetric: document.querySelector("#userStoryDerivedMetric"),
+  userStoryScoreMetric: document.querySelector("#userStoryScoreMetric"),
+  userStoryIssueMetric: document.querySelector("#userStoryIssueMetric"),
+  appTestsBody: document.querySelector("#appTestsBody"),
+  appTestDerivedMetric: document.querySelector("#appTestDerivedMetric"),
+  appTestScoreMetric: document.querySelector("#appTestScoreMetric"),
+  appTestIssueMetric: document.querySelector("#appTestIssueMetric"),
   e2eSelectionOverlay: document.querySelector("#e2eSelectionOverlay"),
   e2eSelectionCloseButton: document.querySelector("#e2eSelectionCloseButton"),
   e2eSelectionDeferButton: document.querySelector("#e2eSelectionDeferButton"),
@@ -1227,12 +1859,22 @@ const els = {
   approveRequirementButton: document.querySelector("#approveRequirementButton"),
   selectOriginalButton: document.querySelector("#selectOriginalButton"),
   selectAiButton: document.querySelector("#selectAiButton"),
+  selectAiHint: document.querySelector("#selectAiHint"),
   selectionId: document.querySelector("#selectionId"),
   selectionName: document.querySelector("#selectionName"),
   selectionGroup: document.querySelector("#selectionGroup"),
   selectionScore: document.querySelector("#selectionScore"),
   selectionOriginalText: document.querySelector("#selectionOriginalText"),
+  selectionAiTitle: document.querySelector("#selectionAiTitle"),
   selectionAiText: document.querySelector("#selectionAiText"),
+  selectionAiEditMeta: document.querySelector("#selectionAiEditMeta"),
+  aiSuggestionEditButton: document.querySelector("#aiSuggestionEditButton"),
+  aiSuggestionSaveButton: document.querySelector("#aiSuggestionSaveButton"),
+  aiSuggestionCancelButton: document.querySelector("#aiSuggestionCancelButton"),
+  aiSuggestionEditorPanel: document.querySelector("#aiSuggestionEditorPanel"),
+  aiSuggestionToolbar: document.querySelector("#aiSuggestionToolbar"),
+  aiSuggestionEditor: document.querySelector("#aiSuggestionEditor"),
+  aiSuggestionEditorStatus: document.querySelector("#aiSuggestionEditorStatus"),
   techTypeSelectionPanel: document.querySelector("#techTypeSelectionPanel"),
   techTypeSelectionSummary: document.querySelector("#techTypeSelectionSummary"),
   techTypeSelectionList: document.querySelector("#techTypeSelectionList"),
@@ -1240,6 +1882,8 @@ const els = {
   prImprovementInstruction: document.querySelector("#prImprovementInstruction"),
   prImprovementAttachments: document.querySelector("#prImprovementAttachments"),
   prImprovementAttachmentList: document.querySelector("#prImprovementAttachmentList"),
+  prImprovementResetButton: document.querySelector("#prImprovementResetButton"),
+  prImprovementResult: document.querySelector("#prImprovementResult"),
   prImproveButton: document.querySelector("#prImproveButton"),
   selectionIssues: document.querySelector("#selectionIssues"),
   projectHeaderName: document.querySelector("#projectHeaderName"),
@@ -1297,12 +1941,20 @@ const els = {
   workflowSteps: document.querySelectorAll(".workflow-step"),
   productWorkflowOwner: document.querySelector("#productWorkflowOwner"),
   progressOverlay: document.querySelector("#progressOverlay"),
+  progressDialog: document.querySelector("#progressOverlay .progress-dialog"),
+  progressEyebrow: document.querySelector("#progressEyebrow"),
   progressTitle: document.querySelector("#progressTitle"),
   progressText: document.querySelector("#progressText"),
   progressBar: document.querySelector("#progressBar"),
   progressTimeBar: document.querySelector("#progressTimeBar"),
+  progressTimeLabel: document.querySelector("#progressTimeLabel"),
   progressTimeText: document.querySelector("#progressTimeText"),
   progressDetail: document.querySelector("#progressDetail"),
+  progressSteps: document.querySelector("#progressSteps"),
+  progressResult: document.querySelector("#progressResult"),
+  progressMinimizeButton: document.querySelector("#progressMinimizeButton"),
+  progressCloseButton: document.querySelector("#progressCloseButton"),
+  progressMiniStatus: document.querySelector("#progressMiniStatus"),
   loginOverlay: document.querySelector("#loginOverlay"),
   loginForm: document.querySelector("#loginForm"),
   loginIdentifier: document.querySelector("#loginIdentifier"),
@@ -1351,6 +2003,7 @@ els.workflowSteps.forEach((step) => {
   [els.e2eImprovementAttachments, els.e2eImprovementAttachmentList],
 ].forEach(([input, list]) => {
   input?.addEventListener("change", () => renderImprovementAttachmentList(input, list));
+  list?.addEventListener("click", (event) => handleImprovementAttachmentListClick(event, input, list));
 });
 els.menuDropdowns.forEach((menu) => {
   menu.addEventListener("toggle", () => {
@@ -1368,8 +2021,95 @@ els.menuDropdowns.forEach((menu) => {
     });
   });
 });
+document.addEventListener("click", (event) => {
+  const trigger = event.target.closest("[data-score-breakdown-trigger]");
+  if (trigger) {
+    const isOpen = state.scoreBreakdownOpenTrigger === trigger;
+    if (isOpen && state.scoreBreakdownOpenedByClick) {
+      closeScoreBreakdownPopovers();
+      trigger.blur();
+    } else {
+      openScoreBreakdownPopover(trigger, { openedByClick: true });
+    }
+    event.preventDefault();
+    return;
+  }
+
+  if (!event.target.closest("[data-score-breakdown-popover]")) {
+    closeScoreBreakdownPopovers();
+  }
+});
+document.addEventListener("focusin", (event) => {
+  const trigger = event.target.closest?.("[data-score-breakdown-trigger]");
+  if (trigger) openScoreBreakdownPopover(trigger, { openedByClick: false });
+});
+document.addEventListener("pointerover", (event) => {
+  const trigger = event.target.closest?.("[data-score-breakdown-trigger]");
+  if (trigger) {
+    openScoreBreakdownPopover(trigger, { openedByClick: false });
+    return;
+  }
+
+  if (event.target.closest?.("[data-score-breakdown-popover]")) {
+    cancelScoreBreakdownClose();
+  }
+});
+document.addEventListener("pointerout", (event) => {
+  const trigger = event.target.closest?.("[data-score-breakdown-trigger]");
+  const popover = event.target.closest?.("[data-score-breakdown-popover]");
+  if (!trigger && !popover) return;
+  const next = event.relatedTarget;
+  if (next?.closest?.("[data-score-breakdown-trigger]") || next?.closest?.("[data-score-breakdown-popover]")) return;
+  scheduleScoreBreakdownClose();
+});
+document.addEventListener("focusout", (event) => {
+  const trigger = event.target.closest?.("[data-score-breakdown-trigger]");
+  if (!trigger) return;
+  window.setTimeout(() => {
+    if (document.activeElement?.closest?.("[data-score-breakdown-popover]")) return;
+    closeScoreBreakdownPopovers();
+  }, 80);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  closeScoreBreakdownPopovers();
+  if (document.activeElement?.matches?.("[data-score-breakdown-trigger]")) {
+    document.activeElement.blur();
+  }
+});
+window.addEventListener("resize", () => {
+  const popover = document.querySelector("#scoreBreakdownPortal [data-score-breakdown-popover]");
+  if (state.scoreBreakdownOpenTrigger && popover) {
+    positionScoreBreakdownPopover(state.scoreBreakdownOpenTrigger, popover);
+  }
+});
+window.addEventListener("scroll", () => {
+  const popover = document.querySelector("#scoreBreakdownPortal [data-score-breakdown-popover]");
+  if (state.scoreBreakdownOpenTrigger && popover) {
+    positionScoreBreakdownPopover(state.scoreBreakdownOpenTrigger, popover);
+  }
+}, true);
 els.languageSelect.addEventListener("change", () => {
   void changeLanguage(els.languageSelect.value);
+});
+els.progressMinimizeButton?.addEventListener("click", () => {
+  if (!state.progressStartedAt || state.progressStatus !== "running") return;
+  els.progressOverlay.hidden = true;
+  els.progressMiniStatus.hidden = false;
+});
+els.progressMiniStatus?.addEventListener("click", () => {
+  els.progressOverlay.hidden = false;
+  els.progressMiniStatus.hidden = true;
+  els.progressDialog?.focus();
+});
+els.progressCloseButton?.addEventListener("click", () => {
+  if (state.progressStatus === "running") return;
+  hideProgress();
+});
+window.addEventListener("beforeunload", (event) => {
+  if (state.progressStatus !== "running") return;
+  event.preventDefault();
+  event.returnValue = "";
 });
 els.loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1453,6 +2193,18 @@ els.openFileButton.addEventListener("click", () => {
   closeMenus();
   if (!ensureMenuButtonAvailable(els.openFileButton)) return;
 
+  state.pendingImportFormat = "excel";
+  els.fileInput.accept = ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  els.fileInput.setAttribute("aria-label", translateUiText("Excel-Datei auswählen"));
+  els.fileInput.click();
+});
+els.openPdfImportButton.addEventListener("click", () => {
+  closeMenus();
+  if (!ensureMenuButtonAvailable(els.openPdfImportButton)) return;
+
+  state.pendingImportFormat = "pdf";
+  els.fileInput.accept = ".pdf,application/pdf";
+  els.fileInput.setAttribute("aria-label", translateUiText("PDF-Datei auswählen"));
   els.fileInput.click();
 });
 els.openWindchillButton.addEventListener("click", () => {
@@ -1471,6 +2223,12 @@ els.projectHistoryButton.addEventListener("click", async () => {
 
   await openProjectHistoryDialog();
 });
+els.closeProjectButton.addEventListener("click", async () => {
+  closeMenus();
+  if (!ensureMenuButtonAvailable(els.closeProjectButton)) return;
+
+  await closeActiveProject();
+});
 els.deleteProjectButton.addEventListener("click", async () => {
   closeMenus();
   await deleteProjectFromAdmin();
@@ -1484,6 +2242,20 @@ els.openAiCostButton.addEventListener("click", () => {
   openOpenAiCostDialog();
 });
 els.openAiCostCloseButton.addEventListener("click", closeOpenAiCostDialog);
+els.projectAiUsageApplyFilters.addEventListener("click", () => {
+  state.projectAiUsageFilters = readProjectAiUsageFilters();
+  state.projectAiUsagePage = 1;
+  void loadProjectAiUsage();
+});
+els.projectAiUsagePreviousPage.addEventListener("click", () => {
+  state.projectAiUsagePage = Math.max(state.projectAiUsagePage - 1, 1);
+  void loadProjectAiUsage();
+});
+els.projectAiUsageNextPage.addEventListener("click", () => {
+  const totalPages = Number(state.projectAiUsage?.pagination?.totalPages) || 1;
+  state.projectAiUsagePage = Math.min(state.projectAiUsagePage + 1, totalPages);
+  void loadProjectAiUsage();
+});
 els.openAiCostOverlay.addEventListener("click", (event) => {
   if (event.target === els.openAiCostOverlay) {
     closeOpenAiCostDialog();
@@ -1603,6 +2375,9 @@ els.generateE2eMenuButton.addEventListener("click", async () => {
 
   await generateE2eTests();
 });
+els.generateUseCasesButton.addEventListener("click", () => generateWorkflowArtifacts("usecase"));
+els.generateUserStoriesButton.addEventListener("click", () => generateWorkflowArtifacts("userstory"));
+els.generateAppTestsButton.addEventListener("click", () => generateWorkflowArtifacts("app-test"));
 els.exportButton.addEventListener("click", () => {
   closeMenus();
   if (!ensureMenuButtonAvailable(els.exportButton)) return;
@@ -1652,12 +2427,27 @@ els.clearE2eScoreFilterButton.addEventListener("click", clearE2eScoreFilter);
 els.resultsBody.addEventListener("click", handleResultRowClick);
 els.productApprovalSearch.addEventListener("input", handleProductApprovalSearch);
 els.productApprovalStatusFilter.addEventListener("change", handleProductApprovalStatusFilter);
+els.reviewBackButton.addEventListener("click", () => returnToRequirementList({ focusRow: state.activeSelectionRow }));
 els.productReviewTabs.addEventListener("click", handleProductReviewTabClick);
 els.productReviewSaveFinalTextButton.addEventListener("click", saveProductReviewFinalText);
 els.productReviewRecalculateScoreButton.addEventListener("click", recalculateProductReviewFinalScore);
 els.productReviewFinalText.addEventListener("input", markProductReviewFinalTextStale);
 els.productApprovalFinalText.addEventListener("input", updateProductApprovalDraftScoreState);
 els.productReviewFinalChoiceHost.addEventListener("click", handleProductReviewFinalTabClick);
+els.reviewAiHost.addEventListener("click", handleProductReviewFinalTabClick);
+els.aiSuggestionEditButton.addEventListener("click", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  startAiSuggestionEdit();
+});
+els.aiSuggestionSaveButton.addEventListener("click", saveAiSuggestionEdit);
+els.aiSuggestionCancelButton.addEventListener("click", cancelAiSuggestionEdit);
+els.aiSuggestionToolbar.addEventListener("click", handleAiSuggestionToolbarClick);
+els.aiSuggestionEditor.addEventListener("input", markAiSuggestionEditorDirty);
+els.aiSuggestionEditor.addEventListener("keyup", updateAiSuggestionToolbarState);
+els.aiSuggestionEditor.addEventListener("mouseup", updateAiSuggestionToolbarState);
+els.aiSuggestionEditor.addEventListener("keydown", handleAiSuggestionEditorKeydown);
+els.aiSuggestionEditor.addEventListener("paste", handleAiSuggestionEditorPaste);
 els.productReviewTechTypeSearch.addEventListener("input", handleProductReviewTechTypeFilterChange);
 els.productReviewTechTypeFilter.addEventListener("change", handleProductReviewTechTypeFilterChange);
 els.productReviewSelectAllTechTypesButton.addEventListener("click", selectAllTechTypesForActiveRequirement);
@@ -1697,6 +2487,8 @@ els.productApprovalShowDisapproveButton.addEventListener("click", showProductDis
 els.productApprovalDisapproveComment.addEventListener("input", updateProductDisapprovalSubmitState);
 els.productApprovalDisapproveButton.addEventListener("click", disapproveProductRequirement);
 els.productApprovalTabs.addEventListener("click", handleProductApprovalTabClick);
+els.requirementAttachmentInput.addEventListener("change", handleRequirementAttachmentInputChange);
+els.requirementAttachmentList.addEventListener("click", handleRequirementAttachmentListClick);
 els.productApprovalTabContent.addEventListener("click", handleProductApprovalCommentClick);
 els.productApprovalTabContent.addEventListener("input", handleProductApprovalCommentInput);
 els.productApprovalDetailCloseButton.addEventListener("click", closeProductRequirementDetailDialog);
@@ -1710,6 +2502,7 @@ els.softwareRequirementsBody.addEventListener("keydown", (event) => {
   openSoftwareSelectionDialog(row.dataset.softwareId);
 });
 els.e2eTestsBody.addEventListener("click", handleE2eRowClick);
+window.addEventListener("hashchange", handleReviewRouteFromHash);
 els.e2eTestsBody.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" && event.key !== " ") return;
   const row = event.target.closest(".e2e-derived-row");
@@ -1725,7 +2518,7 @@ els.resultsBody.addEventListener("keydown", (event) => {
   if (!row) return;
 
   event.preventDefault();
-  selectProductRequirement(Number(row.dataset.rowNumber));
+  openRequirementReviewWorkspace(Number(row.dataset.rowNumber));
 });
 els.selectionCloseButton.addEventListener("click", closeSelectionDialog);
 els.selectionDeferButton.addEventListener("click", closeActiveProductEditDialog);
@@ -1734,6 +2527,9 @@ els.approveRequirementButton.addEventListener("click", handleProductReviewPrimar
 els.selectOriginalButton.addEventListener("click", () => selectFinalText("original"));
 els.selectAiButton.addEventListener("click", () => selectFinalText("ai"));
 els.prImproveButton.addEventListener("click", improveProductRequirementWithAi);
+els.prImprovementResetButton.addEventListener("click", resetProductImprovementControls);
+els.prImprovementInstruction.addEventListener("keydown", handleProductImprovementInstructionKeydown);
+els.prImprovementResult.addEventListener("click", handlePendingProductImprovementAction);
 els.selectAllTechTypesButton.addEventListener("click", selectAllTechTypesForActiveRequirement);
 els.techTypeSelectionList.addEventListener("click", handleTechTypeSelectionClick);
 els.techTypeSelectionList.addEventListener("change", handleTechTypeSelectionChange);
@@ -2525,12 +3321,39 @@ function updateWorkflowState() {
 
 function renderProcessPages() {
   els.processPages.forEach((page) => {
-    const isActive = !state.aboutOpen && !state.adminOpen && hasProject() && page.dataset.processPage === state.activeProcessStep;
+    const isActive = !state.requirementReviewOpen && !state.aboutOpen && !state.adminOpen && hasProject() && page.dataset.processPage === state.activeProcessStep;
     page.hidden = !isActive;
     page.classList.toggle("is-active", isActive);
   });
+  if (els.requirementReviewWorkspace) {
+    const isReviewActive = state.requirementReviewOpen && !state.aboutOpen && !state.adminOpen && hasProject();
+    els.requirementReviewWorkspace.hidden = !isReviewActive;
+    els.requirementReviewWorkspace.classList.toggle("is-active", isReviewActive);
+    if (isReviewActive) {
+      ensureRequirementReviewWorkspaceRendered();
+    }
+  }
   renderSoftwarePage();
   renderE2ePage();
+  renderWorkflowArtifactPages();
+}
+
+function ensureRequirementReviewWorkspaceRendered() {
+  const rowNumber = Number(state.activeSelectionRow) || requirementRowNumberFromReviewHash();
+  if (!rowNumber) return;
+  const requirement = state.requirements.find((item) => Number(item.rowNumber) === rowNumber);
+  if (!requirement) return;
+
+  state.activeSelectionRow = rowNumber;
+  renderProductReviewPanel();
+}
+
+function requirementRowNumberFromReviewHash() {
+  const match = window.location.hash.match(/^#\/projects\/[^/]+\/requirements\/([^/]+)\/review$/);
+  if (!match) return 0;
+  const requirementId = decodeURIComponent(match[1] || "");
+  const requirement = state.requirements.find((item) => requirementAttachmentId(item) === requirementId || String(item.rowNumber) === requirementId);
+  return Number(requirement?.rowNumber) || 0;
 }
 
 function hasProject() {
@@ -2688,6 +3511,9 @@ function canAccessProcessStep(processStep) {
   if (processStep === "product") return canEditProductRequirements() || canApproveProductRequirements();
   if (processStep === "software") return canEditSoftwareRequirements() || canApproveSoftwareRequirements();
   if (processStep === "e2e") return canEditE2eTests() || canApproveE2eTests();
+  if (processStep === "usecase" || processStep === "userstory" || processStep === "app-test") {
+    return canEditSoftwareRequirements() || canEditE2eTests();
+  }
   return false;
 }
 
@@ -2695,6 +3521,9 @@ function isProcessStepComplete(processStep) {
   if (processStep === "product") return isProductStepComplete();
   if (processStep === "software") return isSoftwareStepComplete();
   if (processStep === "e2e") return isE2eQualityReady();
+  if (processStep === "usecase") return state.useCases.length > 0;
+  if (processStep === "userstory") return state.userStories.length > 0;
+  if (processStep === "app-test") return state.appTests.length > 0;
   return false;
 }
 
@@ -2796,6 +3625,7 @@ function getProductQualityGate(requirements = state.requirements) {
   let staleScoreRequirements = 0;
   let failedScoreRequirements = 0;
   let missingTechTypeRequirements = 0;
+  let pendingSubmissionRequirements = 0;
 
   requirements.forEach((requirement) => {
     const rowNumber = Number(requirement.rowNumber);
@@ -2824,13 +3654,23 @@ function getProductQualityGate(requirements = state.requirements) {
       return;
     }
 
-    if (scoreStatus === "FAILED") {
+    if (scoreStatus === "FAILED" || scoreStatus === "ANALYSIS_FAILED") {
       failedScoreRequirements += 1;
+      return;
+    }
+
+    if (scoreStatus !== "PASSED") {
+      missingScoreRequirements += 1;
       return;
     }
 
     if (!techTypes.length) {
       missingTechTypeRequirements += 1;
+      return;
+    }
+
+    if (!selection.submittedForApprovalAt) {
+      pendingSubmissionRequirements += 1;
       return;
     }
 
@@ -2841,7 +3681,7 @@ function getProductQualityGate(requirements = state.requirements) {
   const status =
     !state.analysisComplete || totalRequirements === 0 || missingScoreRequirements > 0 || staleScoreRequirements > 0
       ? "NOT_CHECKED"
-      : failedScoreRequirements > 0 || missingTechTypeRequirements > 0 || readyRequirements < includedRequirements
+      : failedScoreRequirements > 0 || missingTechTypeRequirements > 0 || pendingSubmissionRequirements > 0 || readyRequirements < includedRequirements
         ? "BLOCKED"
         : "PASSED";
 
@@ -2852,11 +3692,12 @@ function getProductQualityGate(requirements = state.requirements) {
     finalizedRequirements,
     readyRequirements,
     passedRequirements: readyRequirements,
-    blockedRequirements: failedScoreRequirements + missingTechTypeRequirements,
+    blockedRequirements: failedScoreRequirements + missingTechTypeRequirements + pendingSubmissionRequirements + staleScoreRequirements + missingScoreRequirements,
     missingScoreRequirements,
     staleScoreRequirements,
     failedScoreRequirements,
     missingTechTypeRequirements,
+    pendingSubmissionRequirements,
   };
 }
 
@@ -2864,11 +3705,9 @@ function productQualityGateScore(requirement, resultByRow = new Map(state.result
   const rowNumber = Number(requirement?.rowNumber);
   const result = resultByRow.get(rowNumber);
   const selection = state.finalSelections.get(rowNumber);
-  if (!result || !selection || selection.needsFinalAssessment) return null;
+  if (!result || !selection || selection.needsFinalAssessment || selection.finalRequirementAnalysisStatus === "PENDING" || selection.finalRequirementAnalysisStatus === "FAILED") return null;
 
-  const score = Number(displayProductScore(result, selection, {
-    usePreviousScore: state.finalScoreUpdates.has(rowNumber),
-  }));
+  const score = Number(displayProductScore(result, selection));
   return Number.isFinite(score) ? score : null;
 }
 
@@ -3038,8 +3877,26 @@ function getIncludedScores(excludedRows = getExcludedRows()) {
 async function handleFile(event) {
   const file = event.target.files?.[0];
   if (!file) return;
+  const importFormat = state.pendingImportFormat === "pdf" || file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "excel";
+
+  if (importFormat === "pdf") {
+    try {
+      await handlePdfFile(file);
+    } finally {
+      event.target.value = "";
+    }
+    return;
+  }
 
   const shouldCreateProjectFromFile = !hasProject();
+  const buffer = await file.arrayBuffer();
+  els.fileState.textContent = translateUiText("Excel wird validiert");
+  const validation = await validateExcelImportOnServer(file, buffer);
+  if (!validation?.ok) {
+    event.target.value = "";
+    return;
+  }
+
   if (shouldCreateProjectFromFile) {
     resetProjectState({
       projectName: projectNameFromSourceFile(file.name),
@@ -3050,7 +3907,8 @@ async function handleFile(event) {
   els.fileState.textContent = file.name;
   state.sourceFileName = file.name;
   state.sourceFilePath = file.webkitRelativePath || file.name;
-  const buffer = await file.arrayBuffer();
+  state.pdfImportPreview = null;
+
   state.sourceWorkbookData = arrayBufferToBase64(buffer);
   state.sourceWorkbookEncoding = "base64";
   state.workbook = XLSX.read(buffer, { type: "array", cellDates: true });
@@ -3067,9 +3925,13 @@ async function handleFile(event) {
 
   els.sheetSelect.disabled = false;
   els.headerRow.disabled = false;
-  const requirementSheetName = selectableSheetNames[0];
+  const requirementSheetName = validation.sheetName && selectableSheetNames.includes(validation.sheetName)
+    ? validation.sheetName
+    : selectableSheetNames[0];
   els.sheetSelect.value = requirementSheetName;
+  els.headerRow.value = String(validation.headerRow || 1);
   loadSheet(requirementSheetName);
+  applyValidatedExcelColumns(validation);
   if (shouldCreateProjectFromFile) {
     setProjectRevisionAction(`Datei importiert: ${file.name}`);
     await createProjectInDatabase();
@@ -3079,6 +3941,383 @@ async function handleFile(event) {
   }
   event.target.value = "";
   openSettingsDialog();
+}
+
+async function handlePdfFile(file) {
+  const validationErrors = validatePdfFile(file);
+  if (validationErrors.length) {
+    alert(validationErrors.map(translateUiText).join("\n"));
+    return;
+  }
+
+  const shouldCreateProjectFromFile = !hasProject();
+  if (shouldCreateProjectFromFile) {
+    resetProjectState({
+      projectName: projectNameFromSourceFile(file.name),
+      projectDescription: "",
+    });
+  }
+
+  els.fileState.textContent = translateUiText("PDF wird analysiert");
+  const buffer = await file.arrayBuffer();
+  const result = await parsePdfImportOnServer(file, buffer);
+  if (!result || !Array.isArray(result.requirements)) return;
+
+  state.pdfImportPreview = result;
+  renderPdfImportPreview(result);
+  const importableCount = result.requirements.filter((item) => !Array.isArray(item.errors) || !item.errors.length).length;
+  const confirmText = [
+    `${translateUiText("Importvorschau")}: ${file.name}`,
+    `${translateUiText("Product Requirements erkannt")}: ${result.summary?.requirementCount || result.requirements.length}`,
+    `${translateUiText("TechTypes erkannt")}: ${result.summary?.techTypeCount || 0}`,
+    `${translateUiText("Requirements mit Warnungen")}: ${result.summary?.warningRequirementCount || 0}`,
+    `${translateUiText("Requirements mit Fehlern")}: ${result.summary?.errorRequirementCount || 0}`,
+    `${translateUiText("Importierbare Requirements")}: ${importableCount}`,
+    "",
+    translateUiText(importableCount ? "Import starten" : "Import nicht möglich"),
+  ].join("\n");
+  if (!importableCount || !window.confirm(confirmText)) {
+    openSettingsDialog();
+    return;
+  }
+
+  applyPdfImportResult(file, result);
+  if (shouldCreateProjectFromFile) {
+    setProjectRevisionAction(`PDF importiert: ${file.name}`);
+    await createProjectInDatabase();
+  } else {
+    setProjectRevisionAction(`PDF importiert: ${file.name}`);
+    updateProjectActions();
+  }
+  openSettingsDialog();
+  alert(translateUiText(result.summary?.errorRequirementCount ? "PDF-Import teilweise erfolgreich" : "PDF-Import erfolgreich"));
+}
+
+function validatePdfFile(file) {
+  const errors = [];
+  const fileName = String(file?.name || "");
+  const mimeType = String(file?.type || "");
+  const size = Number(file?.size) || 0;
+  if (!fileName.toLowerCase().endsWith(".pdf")) errors.push("Die Dateiendung muss .pdf sein.");
+  if (mimeType && mimeType !== "application/pdf") errors.push("Der Dateityp muss application/pdf sein.");
+  if (!size) errors.push("Die PDF-Datei ist leer.");
+  if (size > PDF_IMPORT_MAX_BYTES) errors.push("Die PDF-Datei ist zu groß.");
+  return errors;
+}
+
+async function validateExcelImportOnServer(file, buffer) {
+  try {
+    const response = await fetch(getExcelImportEndpoint(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileName: file.name,
+        mimeType: file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        data: arrayBufferToBase64(buffer),
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      await showImportValidationDialog(data, "xlsx");
+      return null;
+    }
+    return data;
+  } catch (error) {
+    console.warn("Excel-Importvalidierung fehlgeschlagen.", error);
+    await showImportValidationDialog({
+      category: "Datei kann nicht gelesen werden",
+      errors: ["Die Excel-Datei konnte nicht gelesen werden."],
+      example: excelImportFormatExample(),
+    }, "xlsx");
+    return null;
+  }
+}
+
+async function parsePdfImportOnServer(file, buffer) {
+  try {
+    const response = await fetch(getPdfImportEndpoint(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileName: file.name,
+        mimeType: file.type || "application/pdf",
+        data: arrayBufferToBase64(buffer),
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      await showImportValidationDialog(data, "pdf");
+      return null;
+    }
+    return data;
+  } catch (error) {
+    console.warn("PDF-Import fehlgeschlagen.", error);
+    await showImportValidationDialog({
+      category: "Datei kann nicht gelesen werden",
+      errors: ["Die PDF konnte nicht gelesen werden."],
+      example: pdfImportFormatExample(),
+    }, "pdf");
+    return null;
+  }
+}
+
+function applyValidatedExcelColumns(validation) {
+  const columns = validation?.columns || {};
+  if (Number.isInteger(columns.category)) els.categoryColumn.value = String(columns.category);
+  if (Number.isInteger(columns.subcategory)) els.subcategoryColumn.value = String(columns.subcategory);
+  if (Number.isInteger(columns.description)) els.requirementColumn.value = String(columns.description);
+  if (Number.isInteger(columns.prId)) els.idColumn.value = String(columns.prId);
+  setAutoIdVisible(false);
+  refreshRequirements();
+}
+
+async function showImportValidationDialog(result = {}, fallbackFormat = "") {
+  const lines = [];
+  lines.push(translateUiText(result.category || "Ungültige Datei"));
+  lines.push("");
+  lines.push(translateUiText("Import nicht möglich"));
+  const errors = Array.isArray(result.errors) ? result.errors : [result.error].filter(Boolean);
+  if (errors.length) {
+    lines.push("");
+    lines.push(translateUiText("Fehler"));
+    errors.slice(0, 25).forEach((error) => lines.push(`- ${translateImportFinding(error)}`));
+    if (errors.length > 25) {
+      lines.push(translateUiTemplate("Weitere {{count}} Fehler wurden ausgeblendet.", { count: errors.length - 25 }));
+    }
+  }
+
+  const example = result.example || (fallbackFormat === "pdf" ? pdfImportFormatExample() : excelImportFormatExample());
+  lines.push("");
+  lines.push(translateUiText("Erwartetes Format"));
+  lines.push(formatImportExample(example));
+  if (example.hint) {
+    lines.push("");
+    lines.push(translateUiText(example.hint));
+  }
+  await openAppDialog({
+    type: "error",
+    title: "Import nicht möglich",
+    message: lines.join("\n"),
+    confirmLabel: "Andere Datei auswählen",
+  });
+}
+
+function translateImportFinding(value) {
+  const text = String(value || "");
+  if (currentLanguage() !== "en") return translateUiText(text);
+  const replacements = [
+    [/^Tabellenblatt "(.+)": Die Pflichtspalte '(.+)' fehlt\.$/, 'Sheet "$1": Required column "$2" is missing.'],
+    [/^Tabellenblatt "(.+)": Die Spalte '(.+)' ist mehrfach vorhanden\.$/, 'Sheet "$1": Column "$2" appears more than once.'],
+    [/^Tabellenblatt "(.+)", Zeile (\d+), Spalte (.+): (.+) fehlt\.$/, 'Sheet "$1", row $2, column $3: $4 is missing.'],
+    [/^Tabellenblatt "(.+)", Zeile (\d+): PR_ID '(.+)' ist innerhalb der Datei doppelt vorhanden\.$/, 'Sheet "$1", row $2: PR_ID "$3" appears more than once in the file.'],
+    [/^Zeile (\d+): Für Appliance '(.+)' wurde keine eindeutige Zuordnung gefunden\.$/, 'Row $1: No unique mapping was found for appliance "$2".'],
+    [/^Requirement (.+) enthält keine Category\.$/, 'Requirement $1 has no category.'],
+    [/^Requirement (.+) enthält keine Sub-Category\.$/, 'Requirement $1 has no sub-category.'],
+    [/^Requirement (.+) enthält keine Description\.$/, 'Requirement $1 has no description.'],
+    [/^PR ID (.+) ist mehrfach vorhanden\.$/, 'PR ID $1 appears more than once.'],
+  ];
+  for (const [pattern, replacement] of replacements) {
+    if (pattern.test(text)) return text.replace(pattern, replacement);
+  }
+  return translateUiText(text);
+}
+
+function formatImportExample(example) {
+  if (example?.type === "table") {
+    const rows = [example.columns, ...(example.rows || [])];
+    return rows.map((row) => row.map((cell) => String(cell || "")).join(" | ")).join("\n");
+  }
+  return String(example?.text || "");
+}
+
+function excelImportFormatExample() {
+  return {
+    type: "table",
+    columns: ["PR_ID", "Category", "Sub-Category", "Description"],
+    rows: [
+      ["PR-001", "Bedienung", "Anzeige", "Das Gerät muss den aktuellen Betriebsstatus anzeigen."],
+      ["PR-002", "Sicherheit", "Kinderschutz", "Das Gerät muss eine unbeabsichtigte Bedienung verhindern."],
+    ],
+    hint: "Die Bezeichnungen der Pflichtspalten müssen exakt mit dem Beispiel übereinstimmen.",
+  };
+}
+
+function pdfImportFormatExample() {
+  return {
+    type: "text",
+    text: [
+      "Product Requirement",
+      "",
+      "PR_ID: PR-001",
+      "Category: Bedienung",
+      "Sub-Category: Anzeige",
+      "Description:",
+      "Das Gerät muss den aktuellen Betriebsstatus anzeigen.",
+    ].join("\n"),
+    hint: "Bitte exportiere die Product Requirements aus Confluence mit der erwarteten Feldstruktur als textbasiertes PDF.",
+  };
+}
+
+function applyPdfImportResult(file, result) {
+  const importableRequirements = result.requirements
+    .filter((item) => !Array.isArray(item.errors) || !item.errors.length)
+    .map((item, index) => ({
+      rowNumber: index + 2,
+      category: String(item.category || "").trim(),
+      subcategory: String(item.subcategory || "").trim(),
+      name: String(item.name || "").trim(),
+      id: String(item.id || item.sourcePrId || "").trim(),
+      sourceId: String(item.sourcePrId || item.id || "").trim(),
+      text: String(item.text || "").trim(),
+      appliances: Array.isArray(item.appliances) ? item.appliances : [],
+      importWarnings: Array.isArray(item.warnings) ? item.warnings : [],
+      techTypes: Array.isArray(item.techTypes) ? item.techTypes : [],
+      resolvedTechTypes: Array.isArray(item.resolvedTechTypes) ? item.resolvedTechTypes : [],
+    }));
+
+  state.workbook = null;
+  state.sheetName = "PDF Import";
+  state.headers = ["PR ID", "Category", "Sub-Category", "Name", "Description", "Appliance"];
+  state.rows = [
+    state.headers,
+    ...importableRequirements.map((item) => [
+      item.id,
+      item.category,
+      item.subcategory,
+      item.name,
+      item.text,
+      item.appliances.join("\n"),
+    ]),
+  ];
+  state.techTypes = Array.isArray(result.techTypes)
+    ? result.techTypes.map((item) => ({
+      valueClass: item.valueClass || item.appliance || "Ohne Gruppe",
+      designation: item.designation || item.techType || "",
+      materialNumber: item.materialNumber || "",
+      region: item.region || "",
+      explanation: item.explanation || "",
+    })).filter((item) => item.designation)
+    : [];
+  state.requirements = importableRequirements;
+  state.generatedIds = false;
+  state.results = [];
+  state.softwareRequirements = [];
+  state.softwareSelections = new Map();
+  state.e2eTests = [];
+  state.e2eSelections = new Map();
+  resetWorkflowArtifacts();
+  state.finalSelections = new Map();
+  state.finalScoreUpdates = new Set();
+  state.requirementAttachments = new Map();
+  state.requirementAttachmentCounts = new Map();
+  resetProjectApprovalState();
+  state.analysisComplete = false;
+  state.sourceFileName = file.name;
+  state.sourceFilePath = file.webkitRelativePath || file.name;
+  state.sourceWorkbookData = "";
+  state.sourceWorkbookEncoding = "";
+  state.pdfImportPreview = result;
+  els.fileState.textContent = file.name;
+  els.sheetSelect.innerHTML = "";
+  els.sheetSelect.append(new Option(state.sheetName, state.sheetName));
+  els.sheetSelect.value = state.sheetName;
+  els.sheetSelect.disabled = true;
+  els.headerRow.value = "1";
+  els.headerRow.disabled = true;
+  fillColumnSelects();
+  fillTechTypeColumnSelects();
+  setAutoIdVisible(false);
+  setMenuButtonAvailability(
+    els.analyzeButton,
+    state.requirements.length > 0 && canEditProductRequirements(),
+    state.requirements.length > 0 ? "" : "Importiere zuerst Product Requirements",
+  );
+  els.analyzeProductButton.disabled = state.requirements.length === 0;
+  state.projectDirty = true;
+  updateProjectActions();
+  updateExportAvailability();
+  renderWorkspaceState();
+  renderProcessPages();
+  renderTable();
+  renderProductApprovalPanel();
+  renderProductApprovalState();
+  renderMetrics();
+}
+
+function renderPdfImportPreview(result = state.pdfImportPreview) {
+  if (!els.pdfImportPreview) return;
+  if (!result) {
+    els.pdfImportPreview.hidden = true;
+    return;
+  }
+  const summary = result.summary || {};
+  els.pdfImportPreview.hidden = false;
+  els.pdfImportPreviewTitle.textContent = result.fileName || translateUiText("PDF-Import");
+  const hasErrors = Number(summary.errorRequirementCount) > 0 || Number(summary.errorCount) > 0;
+  const hasWarnings = Number(summary.warningRequirementCount) > 0 || Number(summary.warningCount) > 0;
+  els.pdfImportPreviewStatus.textContent = translateUiText(hasErrors ? "Import nicht möglich" : hasWarnings ? "Import mit Warnungen möglich" : "Bereit");
+  els.pdfImportPreviewStatus.className = `status-badge ${hasErrors ? "critical" : hasWarnings ? "pending" : "selected"}`;
+  const metricItems = [
+    ["Importformat", "PDF"],
+    ["Product Requirements erkannt", summary.requirementCount],
+    ["TechTypes erkannt", summary.techTypeCount],
+    ["Appliance-Gruppen erkannt", summary.applianceGroupCount],
+    ["TechType-Zuordnung vollständig", summary.mappedRequirementCount],
+    ["Requirements ohne TechType-Zuordnung", summary.unmappedRequirementCount],
+    ["Requirements mit Warnungen", summary.warningRequirementCount],
+    ["Requirements mit Fehlern", summary.errorRequirementCount],
+    ["Doppelte Requirement-IDs", summary.duplicateRequirementIdCount],
+    ["Ignorierte Zeilen", summary.ignoredRowCount],
+  ];
+  els.pdfImportSummary.innerHTML = metricItems
+    .map(([label, value]) => `
+      <div>
+        <span>${escapeHtml(translateUiText(label))}</span>
+        <strong>${escapeHtml(String(value ?? 0))}</strong>
+      </div>
+    `)
+    .join("");
+  els.pdfImportList.innerHTML = (result.requirements || [])
+    .slice(0, 80)
+    .map((item) => renderPdfImportPreviewItem(item))
+    .join("");
+}
+
+function renderPdfImportPreviewItem(item) {
+  const errors = Array.isArray(item.errors) ? item.errors : [];
+  const warnings = Array.isArray(item.warnings) ? item.warnings : [];
+  const status = errors.length ? "error" : warnings.length ? "warning" : "ready";
+  const statusLabel = status === "error"
+    ? "Requirement enthält Fehler"
+    : status === "warning"
+      ? "Requirement enthält Warnungen"
+      : "Requirement bereit";
+  return `
+    <details class="pdf-import-item ${status}">
+      <summary>
+        <span>
+          <strong>${escapeHtml(item.id || "-")}</strong>
+          <small>${escapeHtml([item.category, item.subcategory, item.name].filter(Boolean).join(" / "))}</small>
+        </span>
+        <span class="status-badge ${status === "error" ? "critical" : status === "warning" ? "pending" : "selected"}">${escapeHtml(translateUiText(statusLabel))}</span>
+      </summary>
+      <p>${escapeHtml(truncatePdfPreviewText(item.text || "", 420))}</p>
+      <dl>
+        <dt>${escapeHtml(translateUiText("Appliance-Gruppen erkannt"))}</dt>
+        <dd>${escapeHtml((item.appliances || []).join(", ") || "-")}</dd>
+        <dt>${escapeHtml(translateUiText("TechTypes erkannt"))}</dt>
+        <dd>${escapeHtml(String((item.techTypes || []).length))}</dd>
+      </dl>
+      ${warnings.length ? `<ul>${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}
+      ${errors.length ? `<ul>${errors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>` : ""}
+    </details>
+  `;
+}
+
+function truncatePdfPreviewText(value, maxLength) {
+  const text = String(value || "").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 3)).trim()}...`;
 }
 
 async function openProjectFile() {
@@ -3358,9 +4597,38 @@ function projectRevisionActionFor(action, item, fallback = "Requirement") {
   return `${action}: ${projectRevisionTargetLabel(item, fallback)}`;
 }
 
+async function closeActiveProject() {
+  if (!hasProject()) return false;
+
+  updateProjectDirtyState();
+  if (state.projectDirty) {
+    const confirmed = await showQuestionDialog(
+      "Es gibt noch nicht gespeicherte Änderungen. Beim Schließen des Projekts gehen diese Änderungen verloren.",
+      {
+        title: "Projekt schließen?",
+        confirmLabel: "Trotzdem schließen",
+        cancelLabel: "Abbrechen",
+      },
+    );
+    if (!confirmed) return false;
+  }
+
+  clearOpenProject();
+  if (window.history?.replaceState) {
+    window.history.replaceState(null, document.title, window.location.pathname + window.location.search);
+  }
+  return true;
+}
+
 function clearOpenProject() {
   clearTimeout(state.projectSaveTimerId);
   state.projectSavePaused = true;
+  closeMenus();
+  closeSettingsDialog();
+  closeProjectDialog();
+  closeProjectSelectionDialog();
+  closeProjectHistoryDialog();
+  closeOpenAiCostDialog();
   state.workbook = null;
   state.sheetName = "Projekt";
   state.rows = [];
@@ -3372,8 +4640,11 @@ function clearOpenProject() {
   state.softwareSelections = new Map();
   state.e2eTests = [];
   state.e2eSelections = new Map();
+  resetWorkflowArtifacts();
   state.finalSelections = new Map();
   state.finalScoreUpdates = new Set();
+  state.requirementAttachments = new Map();
+  state.requirementAttachmentCounts = new Map();
   state.generatedIds = false;
   state.projectId = "";
   state.projectName = "";
@@ -3390,14 +4661,31 @@ function clearOpenProject() {
   state.sourceFilePath = "";
   state.sourceWorkbookData = "";
   state.sourceWorkbookEncoding = "";
+  state.pdfImportPreview = null;
   state.analysisComplete = false;
   state.activeProcessStep = "product";
   state.activeSelectionRow = null;
+  state.scoreFilterActive = false;
+  state.softwareScoreFilterActive = false;
+  state.e2eScoreFilterActive = false;
+  state.productWindchillTransferComplete = false;
+  state.productWindchillTransferredAt = "";
+  state.softwareWindchillTransferComplete = false;
+  state.softwareWindchillTransferredAt = "";
+  state.changedProductRequirementRows = new Set();
+  state.changedSoftwareRequirementIds = new Set();
+  state.productTransferChangeRows = new Set();
+  state.softwareTransferChangeIds = new Set();
+  window.localStorage.removeItem("activeProjectId");
   resetProjectApprovalState();
   els.fileState.textContent = projectStatusText("");
   renderWorkspaceState();
+  renderProcessPages();
+  renderTable();
   renderProductApprovalPanel();
   renderProductApprovalState();
+  renderMetrics();
+  updateExportAvailability();
   updateProjectActions();
   state.projectSavePaused = false;
 }
@@ -3410,9 +4698,11 @@ function resetProjectApprovalState() {
   state.productApprovalStartedById = "";
   state.productApprovalListSearch = "";
   state.productApprovalStatusFilter = "all";
+  state.productApprovalStatusFilterManual = false;
   state.productApprovalActiveTab = "comments";
   state.productApprovalDecisionMode = "";
   state.productApprovalReplyDrafts = {};
+  state.productApprovalSaveBusy = false;
   state.productReviewActiveTab = "final";
   state.productReviewTechTypeSearch = "";
   state.productReviewTechTypeFilter = "all";
@@ -3424,6 +4714,7 @@ function resetProjectApprovalState() {
 }
 
 function openSettingsDialog() {
+  renderPdfImportPreview();
   els.settingsOverlay.hidden = false;
 }
 
@@ -3446,13 +4737,146 @@ function closeProjectDialog() {
   els.projectOverlay.hidden = true;
 }
 
-function openOpenAiCostDialog() {
-  renderOpenAiCostSummary();
+async function openOpenAiCostDialog() {
+  if (!state.projectId || !hasProject()) return;
+  state.projectAiUsagePage = 1;
+  renderProjectAiUsageLoading();
   els.openAiCostOverlay.hidden = false;
+  await loadProjectAiUsage();
 }
 
 function closeOpenAiCostDialog() {
   els.openAiCostOverlay.hidden = true;
+}
+
+function renderProjectAiUsageLoading() {
+  els.openAiCostTotal.textContent = "$0.00000000";
+  els.openAiCostDetail.textContent = translateUiText("Projektkosten werden geladen...");
+  els.projectAiUsageCalls.textContent = "-";
+  els.projectAiUsageMonthCost.textContent = "$0.00000000";
+  els.projectAiUsageLastCall.textContent = "-";
+  els.projectAiUsageBody.innerHTML = `<tr><td colspan="8">${escapeHtml(translateUiText("Projektkosten werden geladen..."))}</td></tr>`;
+}
+
+async function loadProjectAiUsage() {
+  if (!state.projectId) return;
+
+  const endpoint = getProjectAiUsageEndpoint(state.projectId, {
+    ...state.projectAiUsageFilters,
+    page: state.projectAiUsagePage,
+    pageSize: 25,
+  });
+  if (!endpoint) return;
+
+  try {
+    const response = await fetch(endpoint);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Projektkosten konnten nicht geladen werden.");
+    state.projectAiUsage = data;
+    renderProjectAiUsage(data);
+  } catch (error) {
+    console.warn("Projektkosten konnten nicht geladen werden.", error);
+    els.projectAiUsageBody.innerHTML = `<tr><td colspan="8">${escapeHtml(translateUiText("Projektkosten konnten nicht geladen werden."))}</td></tr>`;
+  }
+}
+
+function renderProjectAiUsage(data) {
+  const summary = data?.summary || {};
+  const totalTokens = Number(summary.totalTokens) || 0;
+  const inputTokens = Number(summary.inputTokens) || 0;
+  const outputTokens = Number(summary.outputTokens) || 0;
+
+  els.openAiCostTotal.textContent = formatUsdPrecise(summary.totalCost);
+  els.openAiCostDetail.textContent = `${formatInteger(totalTokens)} ${translateUiText("Gesamttokens")} · ${formatInteger(inputTokens)} ${translateUiText("Input Tokens")} · ${formatInteger(outputTokens)} ${translateUiText("Output Tokens")}`;
+  els.projectAiUsageCalls.textContent = formatInteger(summary.requestCount);
+  els.projectAiUsageMonthCost.textContent = formatUsdPrecise(summary.currentMonthCost);
+  els.projectAiUsageLastCall.textContent = summary.lastCallAt ? formatProjectDate(summary.lastCallAt) : "-";
+  els.projectAiUsageHint.textContent = translateUiTemplate("Die Kostenerfassung ist ab dem {{date}} verfügbar. Frühere API-Nutzungen sind nicht enthalten.", {
+    date: data.captureStartedAt || "2026-07-16",
+  });
+
+  const incompleteCount = Number(summary.incompleteCount) || 0;
+  els.projectAiUsageWarning.hidden = incompleteCount === 0;
+  els.projectAiUsageWarning.textContent = incompleteCount
+    ? translateUiTemplate("{{count}} Verbrauchsdatensätze sind unvollständig oder nicht berechenbar.", { count: formatInteger(incompleteCount) })
+    : "";
+
+  renderProjectAiUsageFilterOptions(data.filters || {});
+  renderProjectAiUsageBreakdown(els.projectAiUsageByAction, data.breakdowns?.byAction || [], translateAiUsageAction);
+  renderProjectAiUsageBreakdown(els.projectAiUsageByModel, data.breakdowns?.byModel || [], (value) => value || "-");
+  renderProjectAiUsageBreakdown(els.projectAiUsageByPeriod, data.breakdowns?.byPeriod || [], (value) => value || "-");
+  renderProjectAiUsageRecords(data.records || []);
+  renderProjectAiUsagePagination(data.pagination || {});
+}
+
+function renderProjectAiUsageFilterOptions(filters) {
+  renderFilterOptions(els.projectAiUsageActionFilter, filters.actions || [], state.projectAiUsageFilters.action, translateAiUsageAction);
+  renderFilterOptions(els.projectAiUsageModelFilter, filters.models || [], state.projectAiUsageFilters.model, (value) => value);
+  renderFilterOptions(els.projectAiUsageStatusFilter, filters.statuses || [], state.projectAiUsageFilters.status, translateAiUsageStatus);
+  els.projectAiUsageFrom.value = state.projectAiUsageFilters.from;
+  els.projectAiUsageTo.value = state.projectAiUsageFilters.to;
+}
+
+function renderFilterOptions(select, values, selectedValue, labelForValue) {
+  const options = [`<option value="">${escapeHtml(translateUiText("Alle"))}</option>`]
+    .concat(values.map((value) => {
+      const selected = value === selectedValue ? " selected" : "";
+      return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(labelForValue(value))}</option>`;
+    }));
+  select.innerHTML = options.join("");
+}
+
+function renderProjectAiUsageBreakdown(host, rows, labelForKey) {
+  if (!rows.length) {
+    host.innerHTML = `<p class="muted-cell">${escapeHtml(translateUiText("Keine OpenAI-Nutzung erfasst."))}</p>`;
+    return;
+  }
+
+  host.innerHTML = rows.map((row) => `
+    <div class="project-cost-breakdown-row">
+      <span>${escapeHtml(labelForKey(row.key))}</span>
+      <strong>${escapeHtml(formatUsdPrecise(row.totalCost))}</strong>
+      <small>${escapeHtml(formatInteger(row.requestCount))} ${escapeHtml(translateUiText("Aufrufe"))} · ${escapeHtml(formatInteger(row.totalTokens))} ${escapeHtml(translateUiText("Tokens"))}</small>
+    </div>
+  `).join("");
+}
+
+function renderProjectAiUsageRecords(records) {
+  if (!records.length) {
+    els.projectAiUsageBody.innerHTML = `<tr><td colspan="8">${escapeHtml(translateUiText("Keine OpenAI-Nutzung erfasst."))}</td></tr>`;
+    return;
+  }
+
+  els.projectAiUsageBody.innerHTML = records.map((record) => `
+    <tr>
+      <td>${escapeHtml(formatProjectDate(record.createdAt))}</td>
+      <td>${escapeHtml(translateAiUsageAction(record.action))}</td>
+      <td>${escapeHtml(record.model || "-")}</td>
+      <td>${escapeHtml(formatInteger(record.inputTokens))}</td>
+      <td>${escapeHtml(formatInteger(record.outputTokens))}</td>
+      <td>${escapeHtml(formatInteger(record.totalTokens))}</td>
+      <td>${escapeHtml(record.status === "captured" ? formatUsdPrecise(record.totalCost) : translateAiUsageStatus(record.status))}</td>
+      <td>${escapeHtml(translateAiUsageStatus(record.status))}</td>
+    </tr>
+  `).join("");
+}
+
+function renderProjectAiUsagePagination(pagination) {
+  const page = Number(pagination.page) || 1;
+  const totalPages = Number(pagination.totalPages) || 1;
+  els.projectAiUsagePageInfo.textContent = `${page} / ${totalPages}`;
+  els.projectAiUsagePreviousPage.disabled = page <= 1;
+  els.projectAiUsageNextPage.disabled = page >= totalPages;
+}
+
+function readProjectAiUsageFilters() {
+  return {
+    from: els.projectAiUsageFrom.value || "",
+    to: els.projectAiUsageTo.value || "",
+    action: els.projectAiUsageActionFilter.value || "",
+    model: els.projectAiUsageModelFilter.value || "",
+    status: els.projectAiUsageStatusFilter.value || "",
+  };
 }
 
 async function createProject() {
@@ -3495,6 +4919,7 @@ function resetProjectState({ projectName, projectDescription, productRequirement
   state.softwareSelections = new Map();
   state.e2eTests = [];
   state.e2eSelections = new Map();
+  resetWorkflowArtifacts();
   state.finalSelections = new Map();
   state.finalScoreUpdates = new Set();
   state.activeSelectionRow = null;
@@ -3518,6 +4943,7 @@ function resetProjectState({ projectName, projectDescription, productRequirement
   state.sourceFilePath = "";
   state.sourceWorkbookData = "";
   state.sourceWorkbookEncoding = "";
+  state.pdfImportPreview = null;
   state.projectName = projectName;
   state.projectDescription = projectDescription;
   state.productRequirementOwnerId = productRequirementOwner?.id || "";
@@ -3807,6 +5233,7 @@ function refreshRequirements() {
   state.softwareSelections = new Map();
   state.e2eTests = [];
   state.e2eSelections = new Map();
+  resetWorkflowArtifacts();
   state.finalSelections = new Map();
   state.finalScoreUpdates = new Set();
   resetProjectApprovalState();
@@ -3872,7 +5299,14 @@ async function analyzeRequirements() {
   state.scoreFilterActive = false;
   state.analysisComplete = false;
   updateExportAvailability();
-  await showProgress(state.requirements.length, { requirements: state.requirements, mode: "pr-analysis", batchSize: ANALYSIS_BATCH_SIZE });
+  await showProgress(state.requirements.length, {
+    requirements: state.requirements,
+    mode: "pr-analysis",
+    operationType: "pr-analysis",
+    title: "Requirements werden analysiert",
+    eyebrow: "Analyse läuft",
+    batchSize: ANALYSIS_BATCH_SIZE,
+  });
 
   try {
     const results = [];
@@ -3891,7 +5325,7 @@ async function analyzeRequirements() {
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requirementType: state.requirementType, uiLanguage: selectedUiLanguage(), requirements: batch }),
+        body: JSON.stringify({ projectId: state.projectId, requirementType: state.requirementType, uiLanguage: selectedUiLanguage(), requirements: batch }),
       });
 
       const data = await response.json();
@@ -3919,7 +5353,7 @@ async function analyzeRequirements() {
     updateProjectActions();
     updateExportAvailability();
   } catch (error) {
-    hideProgress();
+    failProgress(error);
     alert(error.message);
   } finally {
     updateProjectActions();
@@ -3929,6 +5363,7 @@ async function analyzeRequirements() {
 }
 
 function renderTable() {
+  syncProductApprovalDefaultStatusFilter();
   els.resultsTable.classList.toggle("analysis-complete", state.analysisComplete);
   const resultByRow = new Map(state.results.map((result) => [Number(result.rowNumber), result]));
   const criticalRows = getCriticalScoreRows();
@@ -3982,20 +5417,48 @@ function renderTable() {
       const processState = productRequirementProcessState(item, result, selection, isUpdatingFinalScore);
       return `
           <tr class="requirement-row approval-list-row ${state.activeSelectionRow === rowNumber ? "is-active-row" : ""} ${isExcluded ? "excluded-row" : ""} ${isUpdatingFinalScore ? "updating-row" : ""} process-${processState} quality-${gateState}" data-row-number="${item.rowNumber}" tabindex="0">
-          <td class="approval-index-cell">${rowIndex}/${state.requirements.length}</td>
-          <td>${escapeHtml(item.id || "-")}</td>
-          <td>
+          <td class="approval-index-cell" data-label="${escapeHtml(translateUiText("#"))}">${rowIndex}/${state.requirements.length}</td>
+          <td data-label="${escapeHtml(translateUiText("ID"))}">${escapeHtml(item.id || "-")}</td>
+          <td data-label="${escapeHtml(translateUiText("Titel"))}">
             <span class="approval-list-title">${escapeHtml(item.name || item.id || `Zeile ${rowNumber}`)}</span>
+            ${renderRequirementAttachmentBadge(item)}
           </td>
-          <td>${renderProductQualityScoreCell(result, score, isExcluded, isUpdatingFinalScore)}</td>
-          <td>${escapeHtml(productReviewSourceLabel(selection))}</td>
-          <td>${renderProductProcessCell(processState, selection)}</td>
-          <td>${escapeHtml(productTechTypeSummary(item, selection))}</td>
-          <td>${renderProductFindingSummary(issues, openComments)}</td>
+          <td data-label="${escapeHtml(translateUiText("Score"))}">${renderProductQualityScoreCell(result, score, isExcluded, isUpdatingFinalScore)}</td>
+          <td data-label="${escapeHtml(translateUiText("Quelle"))}">${escapeHtml(productReviewSourceLabel(selection))}</td>
+          <td data-label="${escapeHtml(translateUiText("Status"))}">${renderProductProcessCell(processState, selection)}</td>
+          <td data-label="${escapeHtml(translateUiText("TechTypes"))}">${escapeHtml(productTechTypeSummary(item, selection))}</td>
+          <td data-label="${escapeHtml(translateUiText("Hinweise"))}">${renderProductFindingSummary(issues, openComments)}</td>
         </tr>
       `;
     })
     .join("");
+}
+
+function syncProductApprovalDefaultStatusFilter() {
+  if (!hasProject()) return;
+
+  const approvalStarted = isProductApprovalStarted();
+  const approvalComplete = hasApprovedFinalProductSelections();
+  let nextFilter = state.productApprovalStatusFilter || "all";
+
+  if (approvalComplete) {
+    nextFilter = "all";
+    state.productApprovalStatusFilterManual = false;
+  } else if (approvalStarted && !state.productApprovalStatusFilterManual) {
+    nextFilter = productPersonalWorkFilterValue() || "all";
+  }
+
+  if (nextFilter === state.productApprovalStatusFilter) {
+    if (els.productApprovalStatusFilter && els.productApprovalStatusFilter.value !== nextFilter) {
+      els.productApprovalStatusFilter.value = nextFilter;
+    }
+    return;
+  }
+
+  state.productApprovalStatusFilter = nextFilter;
+  if (els.productApprovalStatusFilter) {
+    els.productApprovalStatusFilter.value = nextFilter;
+  }
 }
 
 function filteredProductApprovalRows(rows, resultByRow) {
@@ -4065,27 +5528,320 @@ function productStatusShortLabel(status) {
 function productInitialScore(result) {
   if (!result) return null;
   const score = Number(result.originalScore);
-  return Number.isFinite(score) ? score : Number(result.score);
+  if (Number.isFinite(score)) return score;
+  const fallbackScore = Number(result.score);
+  return Number.isFinite(fallbackScore) ? fallbackScore : null;
 }
 
 function productVisibleScore(result, selection, isUpdatingFinalScore = false) {
-  if (!result) return null;
-  const score = Number(displayProductScore(result, selection, {
-    usePreviousScore: isUpdatingFinalScore || Boolean(selection?.needsFinalAssessment),
-  }));
+  if (!result || isUpdatingFinalScore || selection?.needsFinalAssessment || selection?.finalRequirementAnalysisStatus === "PENDING" || selection?.finalRequirementAnalysisStatus === "FAILED") return null;
+  const score = Number(displayProductScore(result, selection));
   return Number.isFinite(score) ? score : null;
 }
 
+function hasCurrentFinalScore(result, selection, isUpdatingFinalScore = false) {
+  if (!result || !selection || selection.choice === "excluded" || isUpdatingFinalScore) return false;
+  if (selection.needsFinalAssessment || selection.finalRequirementAnalysisStatus !== "COMPLETED") return false;
+  const score = Number(selection.finalRequirementAnalysisScore);
+  if (!Number.isFinite(score)) return false;
+  const contentHash = selection.finalRequirementContentHash || semanticContentHash(selection.finalRequirementPlainText || selection.text || "");
+  const analysisHash = selection.finalRequirementAnalysisHash || "";
+  return !analysisHash || !contentHash || analysisHash === contentHash;
+}
+
 function productFinalScore(result, selection) {
-  if (!result || !selection || selection.choice === "excluded" || selection.needsFinalAssessment) return null;
-  const score = Number(displayProductScore(result, selection));
+  if (!hasCurrentFinalScore(result, selection, false)) return null;
+  const score = Number(selection.finalRequirementAnalysisScore);
   return Number.isFinite(score) ? score : null;
+}
+
+function scoreDisplayText(score, status = "") {
+  if (status === "CALCULATING") return translateUiText("Wird berechnet ...");
+  return Number.isFinite(Number(score)) ? String(score) : translateUiText("Nicht berechnet");
+}
+
+function renderCompactAnalysisSummary(result) {
+  if (!result) return translateUiText("Noch keine Analysehinweise vorhanden.");
+
+  const originalScore = productInitialScore(result);
+  const issues = displayProductIssues(result, null);
+  const issueCount = issues.length;
+  const issueLabel = issueCount === 1 ? translateUiText("Hinweis") : translateUiText("Hinweise");
+  const scoreText = scoreDisplayText(originalScore);
+  const qualityText = Number.isFinite(Number(originalScore)) && Number(originalScore) > PRODUCT_STEP_MIN_SCORE
+    ? translateUiText("Score bestanden")
+    : translateUiText("Nacharbeit erforderlich");
+
+  return `
+    <div class="analysis-compact-summary">
+      <strong>${escapeHtml(translateUiText("Original Score"))}: ${escapeHtml(scoreText)}${Number.isFinite(Number(originalScore)) ? " / 100" : ""}</strong>
+      <span>${escapeHtml(qualityText)} · ${issueCount} ${escapeHtml(issueLabel)}</span>
+    </div>
+    ${issueCount ? renderAnalysisTranslationNotice(issues) + renderIssues(issues) : `<p class="empty-state-inline">${escapeHtml(translateUiText("Keine relevanten Qualitätsprobleme erkannt."))}</p>`}
+  `;
+}
+
+function productReviewScoreDisplayState(result, selection, finalScoreStatus = "", isUpdatingFinalScore = false) {
+  if (hasCurrentFinalScore(result, selection, isUpdatingFinalScore)) {
+    return {
+      type: "final",
+      label: "Finaler Score",
+      score: Number(selection.finalRequirementAnalysisScore),
+      breakdown: normalizeScoreBreakdown(selection.finalRequirementAnalysisScoreBreakdown),
+      issues: Array.isArray(selection.finalRequirementAnalysisIssues) ? selection.finalRequirementAnalysisIssues : [],
+      status: finalScoreStatus,
+      hint: "",
+    };
+  }
+
+  const analysisScore = productInitialScore(result);
+  const analysisIssues = displayProductIssues(result, null);
+  if (Number.isFinite(Number(analysisScore))) {
+    const failedHint = finalScoreStatus === "ANALYSIS_FAILED"
+      ? "Finale Neuberechnung fehlgeschlagen. Der Analyse-Score bleibt informativ sichtbar."
+      : selection?.finalizedAt
+        ? "Für den finalen Requirement-Inhalt wurde noch kein neuer Score berechnet."
+        : "";
+    return {
+      type: "analysis",
+      label: "Analyse-Score",
+      score: analysisScore,
+      breakdown: normalizeScoreBreakdown(result?.originalScoreBreakdown),
+      issues: analysisIssues,
+      status: "ANALYSIS_SCORE",
+      hint: failedHint || (selection?.text ? "Für den finalen Inhalt wurde noch kein neuer Score berechnet." : ""),
+    };
+  }
+
+  return {
+    type: "none",
+    label: "Score",
+    score: null,
+    breakdown: null,
+    issues: [],
+    status: "MISSING",
+    hint: "Noch kein Score verfügbar",
+  };
+}
+
+function normalizeScoreBreakdown(scoreBreakdown) {
+  if (!scoreBreakdown || typeof scoreBreakdown !== "object" || Array.isArray(scoreBreakdown)) return null;
+
+  const normalized = {};
+  for (const id of QUALITY_SCORE_CRITERION_IDS) {
+    const entry = scoreBreakdown[id];
+    const points = Number(entry?.points);
+    const maxPoints = Number(entry?.maxPoints);
+    if (!Number.isFinite(points) || !Number.isFinite(maxPoints)) return null;
+    normalized[id] = { points, maxPoints };
+  }
+  return normalized;
+}
+
+function scoreBreakdownTotal(scoreBreakdown) {
+  const normalized = normalizeScoreBreakdown(scoreBreakdown);
+  if (!normalized) return null;
+  return QUALITY_SCORE_CRITERION_IDS.reduce((sum, id) => sum + Number(normalized[id].points), 0);
+}
+
+function renderScoreBreakdownTrigger(displayState, options = {}) {
+  const scoreIsNumeric = Number.isFinite(Number(displayState?.score));
+  const scoreText = scoreDisplayText(displayState?.score, options.status || "");
+  const popoverId = `scoreBreakdownPopover-${String(options.id || "detail").replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  return `
+    <div class="score-breakdown-trigger-wrap">
+      <button
+        type="button"
+        class="score-breakdown-trigger"
+        aria-label="${escapeHtml(translateUiText("Score-Details anzeigen"))}"
+        aria-controls="${escapeHtml(popoverId)}"
+        aria-expanded="false"
+        data-score-breakdown-popover-id="${escapeHtml(popoverId)}"
+        data-score-breakdown-trigger
+      >
+        <strong>${escapeHtml(scoreText)}${scoreIsNumeric ? " / 100" : ""}</strong>
+        ${scoreIsNumeric ? '<span class="score-breakdown-info" aria-hidden="true">i</span>' : ""}
+      </button>
+      <template data-score-breakdown-template>${renderScoreBreakdownPopover(displayState, popoverId)}</template>
+    </div>
+  `;
+}
+
+function renderScoreBreakdownPopover(displayState, popoverId) {
+  const breakdown = normalizeScoreBreakdown(displayState?.breakdown);
+  const displayedScore = Number(displayState?.score);
+  const subtitle = displayState?.type === "final" ? "Verteilung des finalen Scores" : "Verteilung des Analyse-Scores";
+
+  if (!breakdown || !Number.isFinite(displayedScore) || scoreBreakdownTotal(breakdown) !== displayedScore) {
+    return `
+      <div id="${popoverId}" class="score-breakdown-popover" role="tooltip" data-score-breakdown-popover>
+        <div class="score-breakdown-header">
+          <h4>${escapeHtml(translateUiText("Score-Berechnung"))}</h4>
+          <p>${escapeHtml(translateUiText("Für diese ältere Bewertung ist noch keine Qualitätsmerkmals-Verteilung verfügbar."))}</p>
+        </div>
+      </div>
+    `;
+  }
+
+  const rows = QUALITY_SCORE_CRITERION_IDS.map((id) => {
+    const entry = breakdown[id];
+    const percentage = entry.maxPoints > 0 ? Math.max(0, Math.min(100, (entry.points / entry.maxPoints) * 100)) : 0;
+    return `
+      <div class="score-breakdown-row">
+        <div class="score-breakdown-row-head">
+          <span>${escapeHtml(translateUiText(QUALITY_SCORE_CRITERION_LABELS[id] || id))}</span>
+          <strong>${escapeHtml(formatScorePoint(entry.points))} / ${escapeHtml(formatScorePoint(entry.maxPoints))}</strong>
+        </div>
+        <div class="score-breakdown-track" aria-hidden="true"><span style="width: ${percentage}%"></span></div>
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <div id="${popoverId}" class="score-breakdown-popover" role="tooltip" data-score-breakdown-popover>
+      <div class="score-breakdown-header">
+        <h4>${escapeHtml(translateUiText("Score-Berechnung"))}</h4>
+        <p>${escapeHtml(translateUiText(subtitle))}</p>
+      </div>
+      <div class="score-breakdown-list">${rows}</div>
+      <div class="score-breakdown-total">
+        <span>${escapeHtml(translateUiText("Gesamt"))}</span>
+        <strong>${escapeHtml(formatScorePoint(displayedScore))} / 100</strong>
+      </div>
+    </div>
+  `;
+}
+
+function formatScorePoint(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return Number.isInteger(number) ? String(number) : number.toFixed(1);
+}
+
+function openScoreBreakdownPopover(trigger, options = {}) {
+  if (!trigger) return;
+  cancelScoreBreakdownClose();
+
+  const wrapper = trigger.closest(".score-breakdown-trigger-wrap");
+  const template = wrapper?.querySelector("[data-score-breakdown-template]");
+  if (!template) return;
+
+  const popoverId = trigger.dataset.scoreBreakdownPopoverId || "scoreBreakdownPopover";
+  let portal = document.querySelector("#scoreBreakdownPortal");
+  if (!portal) {
+    portal = document.createElement("div");
+    portal.id = "scoreBreakdownPortal";
+    portal.className = "score-breakdown-portal";
+    document.body.append(portal);
+  }
+
+  portal.innerHTML = template.innerHTML;
+  const popover = portal.querySelector("[data-score-breakdown-popover]");
+  if (!popover) return;
+  popover.id = popoverId;
+  if (state.scoreBreakdownOpenTrigger && state.scoreBreakdownOpenTrigger !== trigger) {
+    state.scoreBreakdownOpenTrigger.setAttribute("aria-expanded", "false");
+  }
+  trigger.setAttribute("aria-controls", popoverId);
+  trigger.setAttribute("aria-expanded", "true");
+  state.scoreBreakdownOpenTrigger = trigger;
+  state.scoreBreakdownOpenedByClick = Boolean(options.openedByClick);
+
+  positionScoreBreakdownPopover(trigger, popover);
+  popover.classList.add("is-open");
+}
+
+function closeScoreBreakdownPopovers() {
+  cancelScoreBreakdownClose();
+  state.scoreBreakdownOpenTrigger?.setAttribute("aria-expanded", "false");
+  state.scoreBreakdownOpenTrigger = null;
+  state.scoreBreakdownOpenedByClick = false;
+  document.querySelector("#scoreBreakdownPortal")?.remove();
+}
+
+function cancelScoreBreakdownClose() {
+  if (!state.scoreBreakdownCloseTimer) return;
+  window.clearTimeout(state.scoreBreakdownCloseTimer);
+  state.scoreBreakdownCloseTimer = null;
+}
+
+function scheduleScoreBreakdownClose() {
+  cancelScoreBreakdownClose();
+  state.scoreBreakdownCloseTimer = window.setTimeout(() => {
+    closeScoreBreakdownPopovers();
+  }, 200);
+}
+
+function positionScoreBreakdownPopover(trigger, popover) {
+  const triggerRect = trigger.getBoundingClientRect();
+  const padding = window.innerWidth <= 700 ? 12 : 16;
+  const gap = 12;
+  const preferredWidth = window.innerWidth <= 700
+    ? window.innerWidth - padding * 2
+    : Math.min(480, window.innerWidth - padding * 2);
+  const maxHeight = window.innerHeight - padding * 2;
+
+  popover.style.width = `${Math.max(280, preferredWidth)}px`;
+  popover.style.maxWidth = `${window.innerWidth - padding * 2}px`;
+  popover.style.maxHeight = `${maxHeight}px`;
+  popover.style.left = "0px";
+  popover.style.top = "0px";
+
+  const popoverRect = popover.getBoundingClientRect();
+  let left = triggerRect.left - popoverRect.width - gap;
+  let top = triggerRect.top;
+
+  if (left < padding) {
+    left = triggerRect.right + gap;
+  }
+  if (left + popoverRect.width > window.innerWidth - padding) {
+    left = triggerRect.left;
+    top = triggerRect.bottom + gap;
+  }
+  if (left + popoverRect.width > window.innerWidth - padding) {
+    left = window.innerWidth - padding - popoverRect.width;
+  }
+  if (left < padding) {
+    left = padding;
+  }
+  if (top + popoverRect.height > window.innerHeight - padding) {
+    top = window.innerHeight - padding - popoverRect.height;
+  }
+  if (top < padding) {
+    top = padding;
+  }
+
+  popover.style.left = `${Math.round(left)}px`;
+  popover.style.top = `${Math.round(top)}px`;
+}
+
+function renderRequirementReviewAnalysis(result, selection, finalScoreStatus, finalizationStatus, visibleScore) {
+  if (!result) return translateUiText("Noch keine Analysehinweise vorhanden.");
+
+  const displayState = productReviewScoreDisplayState(result, selection, finalScoreStatus, state.finalScoreUpdates.has(Number(state.activeSelectionRow)));
+  const issues = displayState.issues;
+
+  return `
+    <section class="analysis-review-block">
+      <h3>${escapeHtml(translateUiText(displayState.type === "final" ? "Finale Qualitätsprüfung" : "Original-Analyse"))}</h3>
+      <div class="analysis-summary-grid">
+        <div><span>${escapeHtml(translateUiText(displayState.label))}</span><strong>${escapeHtml(scoreDisplayText(displayState.score, displayState.status))}${Number.isFinite(Number(displayState.score)) ? " / 100" : ""}</strong></div>
+        <div><span>${escapeHtml(translateUiText("Score Status"))}</span><strong>${escapeHtml(productFinalScoreStatusLabel(finalScoreStatus))}</strong></div>
+        <div><span>${escapeHtml(translateUiText("Arbeitsstand"))}</span><strong>${escapeHtml(productFinalizationStatusLabel(finalizationStatus))}</strong></div>
+      </div>
+      ${displayState.hint ? `<p class="empty-state-inline">${escapeHtml(translateUiText(displayState.hint))}</p>` : ""}
+      ${renderAnalysisTranslationNotice(issues)}
+      ${issues.length ? renderIssues(issues) : `<p class="empty-state-inline">${escapeHtml(translateUiText("Keine relevanten Qualitätsprobleme erkannt."))}</p>`}
+    </section>
+  `;
 }
 
 function productFinalScoreStatus(result, selection, isUpdatingFinalScore = false) {
   if (selection?.choice === "excluded") return "EXCLUDED";
   if (isUpdatingFinalScore) return "CALCULATING";
   if (!selection?.text) return "MISSING";
+  if (selection.finalRequirementAnalysisStatus === "PENDING") return "CALCULATING";
+  if (selection.finalRequirementAnalysisStatus === "FAILED") return "ANALYSIS_FAILED";
   if (selection.needsFinalAssessment) return "STALE";
 
   const score = productFinalScore(result, selection);
@@ -4101,8 +5857,10 @@ function productFinalizationState(requirement, result, selection, isUpdatingFina
   const scoreStatus = productFinalScoreStatus(result, selection, isUpdatingFinalScore);
   if (scoreStatus === "CALCULATING") return "FINAL_SCORE_PENDING";
   if (scoreStatus === "STALE" || scoreStatus === "MISSING") return "FINAL_SCORE_PENDING";
+  if (scoreStatus === "ANALYSIS_FAILED") return "FINAL_ANALYSIS_FAILED";
   if (scoreStatus === "FAILED") return "FINAL_SCORE_FAILED";
   if (!selectedTechTypesForRequirement(requirement, selection).length) return "FINAL_REQUIREMENT_SELECTED";
+  if (selection.submittedForApprovalAt) return "SUBMITTED_FOR_APPROVAL";
   if (selection.finalizedAt) return "READY_FOR_APPROVAL";
   return "FINAL_SCORE_PASSED";
 }
@@ -4149,6 +5907,7 @@ function productRequirementProcessState(requirement, result, selection, isUpdati
 
   const finalizationStatus = productFinalizationState(requirement, result, selection, isUpdatingFinalScore);
   if (finalizationStatus === "READY_FOR_APPROVAL" || finalizationStatus === "FINAL_SCORE_PASSED") return "ready";
+  if (finalizationStatus === "SUBMITTED_FOR_APPROVAL") return isProductApprovalStarted() ? "in-approval" : "ready";
   return "editing";
 }
 
@@ -4197,6 +5956,14 @@ function renderProductFindingSummary(issues, openComments) {
     <span class="finding-summary" title="${escapeHtml(issueText)}">${escapeHtml(issueText)}</span>
     ${commentBadge}
   `;
+}
+
+function renderRequirementAttachmentBadge(requirement) {
+  const requirementId = requirementAttachmentId(requirement);
+  const count = Number(state.requirementAttachmentCounts.get(requirementId)) || 0;
+  if (!count) return "";
+  const title = translateUiTemplate("{{count}} Anhänge", { count });
+  return `<button class="attachment-count-badge" type="button" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">📎 ${escapeHtml(String(count))}</button>`;
 }
 
 function productRequirementQualityGateState(requirement, resultByRow) {
@@ -4249,10 +6016,15 @@ function seedProductApprovalSelectionsFromAi() {
     const text = requirement?.text || "";
     if (!requirement || !text || state.finalSelections.has(rowNumber)) return;
 
+    const content = richTextFromPlainText(text);
     state.finalSelections.set(rowNumber, {
       choice: "original",
       selectedSource: "ORIGINAL",
       text,
+      finalRequirementContent: content,
+      finalRequirementHtml: richTextToHtml(content),
+      finalRequirementPlainText: text,
+      finalRequirementFormatVersion: RICH_TEXT_FORMAT_VERSION,
       techTypes: selectedTechTypesForRequirement(requirement, null),
       approvedAt: "",
       approvedBy: "",
@@ -4288,7 +6060,7 @@ function migrateProductApprovalSelections() {
     ) {
       selection.choice = "original";
       selection.selectedSource = "ORIGINAL";
-      selection.text = requirement.text;
+      applyRichTextToFinalSelection(selection, richTextFromPlainText(requirement.text), "original");
       delete selection.previousScore;
       selection.needsFinalAssessment = false;
       selection.versions = [
@@ -4351,18 +6123,117 @@ function handleResultRowClick(event) {
   const row = event.target.closest(".requirement-row");
   if (!row) return;
 
-  selectProductRequirement(Number(row.dataset.rowNumber));
+  openRequirementReviewWorkspace(Number(row.dataset.rowNumber));
 }
 
-function selectProductRequirement(rowNumber) {
+function openRequirementReviewWorkspace(rowNumber, options = {}) {
+  const requirement = state.requirements.find((item) => Number(item.rowNumber) === Number(rowNumber));
+  if (!requirement || !canAccessProductRequirementReview()) {
+    showRequirementReviewError(rowNumber);
+    return;
+  }
+
+  state.requirementReviewReturnContext = options.returnContext || captureRequirementListReturnContext(rowNumber);
+  persistRequirementReviewReturnContext(state.requirementReviewReturnContext);
+  selectProductRequirement(rowNumber, { openWorkspace: true });
+  window.scrollTo({ top: 0, behavior: "auto" });
+  const requirementId = encodeURIComponent(requirementAttachmentId(requirement) || String(rowNumber));
+  const projectId = encodeURIComponent(state.projectId || "local");
+  const hash = `#/projects/${projectId}/requirements/${requirementId}/review`;
+  if (window.location.hash !== hash) {
+    history.pushState({ reviewRowNumber: rowNumber }, "", hash);
+  }
+}
+
+function canAccessProductRequirementReview() {
+  return hasProject() && state.analysisComplete;
+}
+
+function captureRequirementListReturnContext(rowNumber) {
+  return {
+    hash: "#ergebnisse",
+    scrollY: window.scrollY,
+    listScrollTop: els.resultsTable.closest(".table-wrap")?.scrollTop || 0,
+    search: state.productApprovalListSearch || "",
+    statusFilter: state.productApprovalStatusFilter || "all",
+    scoreFilterActive: state.scoreFilterActive,
+    activeProcessStep: state.activeProcessStep,
+    rowNumber: Number(rowNumber),
+    requirementId: requirementAttachmentId(state.requirements.find((item) => Number(item.rowNumber) === Number(rowNumber))),
+  };
+}
+
+function persistRequirementReviewReturnContext(context) {
+  try {
+    sessionStorage.setItem(requirementReviewReturnContextKey(), JSON.stringify(context || {}));
+  } catch {
+    // Session storage is optional; direct links still return to the product list.
+  }
+}
+
+function storedRequirementReviewReturnContext() {
+  try {
+    return JSON.parse(sessionStorage.getItem(requirementReviewReturnContextKey()) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function requirementReviewReturnContextKey() {
+  return `mieleDevPilot.reviewReturn.${state.projectId || "local"}`;
+}
+
+function handleReviewRouteFromHash() {
+  const match = window.location.hash.match(/^#\/projects\/([^/]+)\/requirements\/([^/]+)\/review$/);
+  if (!match) {
+    if (state.requirementReviewOpen) void closeRequirementReviewWorkspace();
+    return false;
+  }
+  const requirementId = decodeURIComponent(match[2] || "");
+  const requirement = state.requirements.find((item) => requirementAttachmentId(item) === requirementId || String(item.rowNumber) === requirementId);
+  if (!requirement || !canAccessProductRequirementReview()) {
+    showRequirementReviewError(requirementId);
+    return true;
+  }
+  state.requirementReviewReturnContext = storedRequirementReviewReturnContext() || {
+    hash: "#ergebnisse",
+    rowNumber: Number(requirement.rowNumber),
+    requirementId,
+    activeProcessStep: "product",
+  };
+  selectProductRequirement(Number(requirement.rowNumber), { openWorkspace: true });
+  renderProductReviewPanel();
+  return true;
+}
+
+function showRequirementReviewError(identifier) {
+  state.requirementReviewOpen = true;
+  state.activeProcessStep = "product";
+  renderProcessPages();
+  els.requirementReviewWorkspace.hidden = false;
+  els.reviewWorkspaceTitle.textContent = translateUiText("Requirement nicht gefunden");
+  els.reviewWorkspaceSubtitle.textContent = String(identifier || "");
+  els.reviewOriginalHost.innerHTML = `<p class="muted-cell">${escapeHtml(translateUiText("Der Review Workspace ist nur für ein geöffnetes und berechtigtes Projekt verfügbar."))}</p>`;
+  els.reviewAnalysisHost.innerHTML = "";
+  els.reviewAiHost.innerHTML = "";
+}
+
+function selectProductRequirement(rowNumber, options = {}) {
   if (Number(state.activeSelectionRow) !== Number(rowNumber)) {
     resetProductDisapprovalDraft();
     state.productApprovalActiveTab = "comments";
+    state.pendingProductImprovement = null;
   }
   state.activeSelectionRow = Number(rowNumber);
   state.productApprovalDecisionMode = "";
+  state.requirementReviewOpen = options.openWorkspace === true || state.requirementReviewOpen;
+  state.activeProcessStep = "product";
+  renderProcessPages();
   renderTable();
   renderProductApprovalPanel();
+  if (state.requirementReviewOpen) {
+    renderProductReviewPanel();
+  }
 }
 
 function handleProductApprovalSearch(event) {
@@ -4372,6 +6243,7 @@ function handleProductApprovalSearch(event) {
 
 function handleProductApprovalStatusFilter(event) {
   state.productApprovalStatusFilter = event.target.value || "all";
+  state.productApprovalStatusFilterManual = true;
   renderTable();
 }
 
@@ -4396,36 +6268,58 @@ function openSelectionDialog(rowNumber) {
   els.selectionGroup.textContent = `${item.category || translateUiText("Ohne Kategorie")} / ${item.subcategory || translateUiText("Ohne Subkategorie")}`;
   els.selectionScore.textContent = Number.isFinite(Number(score)) ? String(score) : "-";
   els.selectionOriginalText.textContent = item.text;
-  els.selectionAiText.textContent =
-    result?.rewrittenRequirement || translateUiText("Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen.");
+  renderAiSuggestionPreview(result);
   els.prImprovementInstruction.value = "";
   els.prImprovementAttachments.value = "";
   renderImprovementAttachmentList(els.prImprovementAttachments, els.prImprovementAttachmentList);
+  clearPendingProductImprovement();
   mountTechTypeSelectionPanel(document.querySelector("#selectionOverlay .selection-content"));
   renderTechTypeSelection(item, state.finalSelections.get(rowNumber));
   const canEditProduct = canModifyProductRequirements();
   els.selectOriginalButton.disabled = !canEditProduct;
   els.selectOriginalButton.hidden = true;
-  els.selectAiButton.disabled = !canEditProduct || !result?.rewrittenRequirement;
+  els.selectAiButton.disabled = !canEditProduct || !richTextToPlainText(aiSuggestionContentForResult(result)).trim();
+  els.selectAiButton.textContent = translateUiText("AI-Vorschlag übernehmen");
+  if (els.selectAiHint) {
+    els.selectAiHint.textContent = translateUiText("Übernimmt den gespeicherten AI-Vorschlag als aktuellen Requirement-Inhalt und berechnet den Score neu.");
+  }
+  renderAiSuggestionEditorState(result, canEditProduct);
   els.selectAiButton.title = isProductQualityGateBlockingScore(score)
     ? "Dieser Vorschlag kann vorbereitet werden, blockiert den Approval-Start aber weiter, solange der Score 85 oder niedriger ist."
     : "";
   els.excludeRequirementButton.disabled = !canEditProduct;
+  els.excludeRequirementButton.textContent = translateUiText("PR ausschließen");
   els.prImproveButton.disabled = !canEditProduct;
-  els.approveRequirementButton.disabled = !canApproveProductRequirement(rowNumber);
-  els.approveRequirementButton.textContent = translateUiText(productApprovalButtonText(rowNumber));
+  const submissionBlockReason = productApprovalSubmissionBlockReason(rowNumber);
+  els.approveRequirementButton.disabled = Boolean(submissionBlockReason);
+  els.approveRequirementButton.textContent = translateUiText("Für Approval freigeben");
+  els.approveRequirementButton.title = submissionBlockReason ? translateUiText(submissionBlockReason) : "";
+  els.selectionDeferButton.textContent = translateUiText("Später entscheiden");
   els.selectionIssues.innerHTML = result
     ? renderIssues(displayProductIssues(result, state.finalSelections.get(rowNumber)))
-    : "Noch keine Analysehinweise vorhanden.";
+    : translateUiText("Noch keine Analysehinweise vorhanden.");
   els.selectionOverlay.hidden = false;
 }
 
-function closeSelectionDialog() {
+async function closeSelectionDialog() {
+  if (Number(state.aiSuggestionEditingRow) === Number(state.activeSelectionRow) && state.aiSuggestionEditorDirty) {
+    const canClose = await cancelAiSuggestionEdit();
+    if (!canClose) return false;
+  }
   els.selectionOverlay.hidden = true;
+  state.aiSuggestionEditingRow = null;
+  state.aiSuggestionEditorInitialHtml = "";
+  state.aiSuggestionEditorDirty = false;
+  return true;
 }
 
-function closeActiveProductEditDialog() {
-  closeSelectionDialog();
+async function closeActiveProductEditDialog() {
+  if (state.requirementReviewOpen) {
+    await returnToRequirementList({ focusRow: state.activeSelectionRow });
+    return;
+  }
+  const closed = await closeSelectionDialog();
+  if (closed === false) return;
   closeProductRequirementDetailDialog();
 }
 
@@ -4433,10 +6327,86 @@ function closeProductRequirementDetailDialog() {
   if (!els.productApprovalDetailPanel) return;
 
   els.productApprovalDetailPanel.hidden = true;
+  state.requirementReviewOpen = false;
   state.activeSelectionRow = null;
   state.productApprovalDecisionMode = "";
   resetProductDisapprovalDraft();
+  renderProcessPages();
   renderTable();
+}
+
+async function closeRequirementReviewWorkspace(options = {}) {
+  const closed = await closeSelectionDialog();
+  if (closed === false) return false;
+  const focusRow = options.focusRow || state.activeSelectionRow;
+  state.requirementReviewOpen = false;
+  state.productApprovalDecisionMode = "";
+  state.activeSelectionRow = null;
+  resetProductDisapprovalDraft();
+  if (els.productApprovalDetailPanel) els.productApprovalDetailPanel.hidden = true;
+  renderProcessPages();
+  if (options.restoreList !== false) {
+    restoreRequirementListContext(focusRow);
+  }
+  return true;
+}
+
+async function returnToRequirementList(options = {}) {
+  const focusRow = Number(options.focusRow || state.activeSelectionRow);
+  if (Number(state.aiSuggestionEditingRow) === Number(state.activeSelectionRow) && state.aiSuggestionEditorDirty) {
+    const shouldSave = await showQuestionDialog("Die AI Suggestion enthält ungespeicherte Änderungen.", {
+      title: "Ungespeicherte Änderungen",
+      confirmLabel: "Speichern und zur Liste",
+      cancelLabel: "Änderungen verwerfen",
+    });
+    if (shouldSave) {
+      await saveAiSuggestionEdit();
+    } else {
+      const shouldDiscard = await showQuestionDialog("Ungespeicherte Änderungen verwerfen und zur Liste zurückkehren?", {
+        title: "Ungespeicherte Änderungen",
+        confirmLabel: "Änderungen verwerfen",
+        cancelLabel: "Im Requirement bleiben",
+      });
+      if (!shouldDiscard) return;
+      state.aiSuggestionEditingRow = null;
+      state.aiSuggestionEditorInitialHtml = "";
+      state.aiSuggestionEditorDirty = false;
+    }
+  }
+  await closeRequirementReviewWorkspace({ focusRow });
+  const targetHash = state.requirementReviewReturnContext?.hash || "#ergebnisse";
+  if (window.location.hash !== targetHash) {
+    history.pushState({}, "", targetHash);
+  }
+}
+
+function restoreRequirementListContext(focusRow = null) {
+  const context = state.requirementReviewReturnContext || storedRequirementReviewReturnContext() || {};
+  state.activeProcessStep = context.activeProcessStep || "product";
+  state.productApprovalListSearch = context.search || "";
+  state.productApprovalStatusFilter = context.statusFilter || "all";
+  state.productApprovalStatusFilterManual = true;
+  state.scoreFilterActive = Boolean(context.scoreFilterActive);
+  if (els.productApprovalSearch) els.productApprovalSearch.value = state.productApprovalListSearch;
+  if (els.productApprovalStatusFilter) els.productApprovalStatusFilter.value = state.productApprovalStatusFilter;
+  renderProcessPages();
+  renderTable();
+  window.setTimeout(() => {
+    const tableWrap = els.resultsTable.closest(".table-wrap");
+    if (tableWrap) tableWrap.scrollTop = Number(context.listScrollTop) || 0;
+    window.scrollTo({ top: Number(context.scrollY) || 0, behavior: "auto" });
+    focusRequirementRow(focusRow || context.rowNumber);
+  }, 0);
+}
+
+function focusRequirementRow(rowNumber) {
+  const row = els.resultsBody.querySelector(`[data-row-number="${Number(rowNumber)}"]`);
+  if (!row) return;
+  state.requirementReviewHighlightRow = Number(rowNumber);
+  row.classList.add("return-highlight");
+  row.scrollIntoView({ block: "center", behavior: "smooth" });
+  row.focus({ preventScroll: true });
+  window.setTimeout(() => row.classList.remove("return-highlight"), 1800);
 }
 
 function openProductEditDialog() {
@@ -4445,7 +6415,7 @@ function openProductEditDialog() {
   const currentRow = state.requirements.some((item) => Number(item.rowNumber) === Number(state.activeSelectionRow))
     ? Number(state.activeSelectionRow)
     : Number(state.requirements[0].rowNumber);
-  selectProductRequirement(currentRow);
+  openRequirementReviewWorkspace(currentRow);
 }
 
 function renderProductApprovalPanel() {
@@ -4455,7 +6425,7 @@ function renderProductApprovalPanel() {
   els.productApprovalDetailPanel.hidden = !hasActiveRequirement;
   if (els.productApprovalDetailPanel.hidden) return;
 
-  if (!isProductApprovalStarted()) {
+  if (state.requirementReviewOpen || !isProductApprovalStarted()) {
     renderProductReviewPanel();
     return;
   }
@@ -4515,8 +6485,16 @@ function renderProductApprovalPanel() {
   });
   els.productApprovalOriginalText.textContent = requirement.text || "-";
   els.productApprovalOwnerActions.hidden = !canEdit;
-  els.productApprovalSaveTextButton.disabled = !canEdit;
-  els.productApprovalSubmitButton.disabled = !canEdit;
+  els.productApprovalSaveTextButton.disabled = !canEdit || state.productApprovalSaveBusy;
+  els.productApprovalSaveTextButton.textContent = translateUiText(
+    state.productApprovalSaveBusy
+      ? "Speichert und berechnet Score..."
+      : openDisapprovals > 0
+        ? "Änderungen speichern und erneut freigeben"
+        : "Änderungen speichern",
+  );
+  els.productApprovalSubmitButton.hidden = true;
+  els.productApprovalSubmitButton.disabled = true;
   els.productApprovalAiAssist.hidden = !canEdit;
   els.productApprovalAiInstruction.disabled = !canEdit;
   els.productApprovalAiAttachments.disabled = !canEdit;
@@ -4533,6 +6511,7 @@ function renderProductApprovalPanel() {
   restoreProductDisapprovalDraft(rowNumber);
   updateProductDisapprovalSubmitState();
   renderProductApprovalTabs(selection);
+  renderRequirementAttachmentsSection(requirement);
 }
 
 function renderProductApprovalScoreState({ visible, score, status }) {
@@ -4544,7 +6523,7 @@ function renderProductApprovalScoreState({ visible, score, status }) {
   els.productApprovalScore.textContent = Number.isFinite(Number(score)) ? `Score ${score}` : "Score -";
   els.productApprovalScoreStatus.textContent = translateUiText(status);
   els.productApprovalScoreStatus.className = `quality-badge ${productFinalScoreStatusClass(status)}`;
-  els.productApprovalScoreHint.textContent = productFinalScoreHint(status);
+  els.productApprovalScoreHint.textContent = productFinalScoreHint(status, selection);
 }
 
 function updateProductApprovalDraftScoreState() {
@@ -4569,7 +6548,7 @@ function updateProductApprovalDraftScoreState() {
 }
 
 function renderProductReviewPanel() {
-  ensureProductReviewToolsInSidebar();
+  mountProductReviewWorkspaceControls();
   const rowNumber = Number(state.activeSelectionRow);
   const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === rowNumber);
   if (!item) {
@@ -4590,70 +6569,965 @@ function renderProductReviewPanel() {
   const visibleScore = productVisibleScore(result, selection, isUpdatingFinalScore);
   const finalScore = productFinalScore(result, selection);
   const finalScoreStatus = productFinalScoreStatus(result, selection, isUpdatingFinalScore);
+  const scoreDisplayState = productReviewScoreDisplayState(result, selection, finalScoreStatus, isUpdatingFinalScore);
   const finalizationStatus = productFinalizationState(item, result, selection, isUpdatingFinalScore);
   els.productReviewDetailStatus.textContent = productFinalizationStatusLabel(finalizationStatus);
   els.productReviewDetailStatus.className = `status-badge ${productFinalizationStatusClass(finalizationStatus)}`;
-  els.productReviewDetailScore.textContent = Number.isFinite(visibleScore) ? `Score ${visibleScore}` : "Score -";
+  els.productReviewDetailScore.textContent = Number.isFinite(Number(scoreDisplayState.score))
+    ? `${translateUiText(scoreDisplayState.label)} ${scoreDisplayState.score}`
+    : translateUiText("Noch kein Score verfügbar");
   els.productReviewDetailScore.classList.toggle("is-blocking-score", finalScoreStatus === "FAILED");
   els.productReviewQualityWarning.hidden = finalScoreStatus !== "FAILED" && finalScoreStatus !== "STALE" && finalScoreStatus !== "MISSING";
+  els.productReviewQualityWarning.textContent = productApprovalBlockedWarningText();
 
   els.selectionId.textContent = item.id || "-";
   els.selectionName.textContent = item.name || item.id || "-";
   els.selectionGroup.textContent = `${item.category || translateUiText("Ohne Kategorie")} / ${item.subcategory || translateUiText("Ohne Subkategorie")}`;
   els.selectionScore.textContent = Number.isFinite(visibleScore) ? String(visibleScore) : "-";
   els.selectionOriginalText.textContent = item.text;
-  els.selectionAiText.textContent =
-    result?.rewrittenRequirement || translateUiText("Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen.");
+  renderAiSuggestionPreview(result);
+  renderPendingProductImprovement();
   els.productReviewFinalText.value = selection?.text || result?.rewrittenRequirement || "";
-  els.productReviewFinalText.disabled = true;
-  els.productReviewFinalScore.textContent = Number.isFinite(visibleScore) ? `Score ${visibleScore}` : "Score -";
-  els.productReviewFinalScoreStatus.textContent = finalScoreStatus;
-  els.productReviewFinalScoreStatus.className = `quality-badge ${productFinalScoreStatusClass(finalScoreStatus)}`;
-  els.productReviewFinalScoreHint.textContent = productFinalScoreHint(finalScoreStatus);
-  els.productReviewSaveFinalTextButton.disabled = true;
-  els.productReviewRecalculateScoreButton.disabled = true;
-  renderTechTypeSummaryCard(item, selection, els.productReviewTechTypesHost);
   const canEditProduct = canModifyProductRequirements();
+  els.productReviewFinalText.disabled = state.requirementReviewOpen ? !canEditProduct : true;
+  els.productReviewFinalScore.textContent = `${translateUiText(scoreDisplayState.label)} ${scoreDisplayText(scoreDisplayState.score, scoreDisplayState.type === "final" ? finalScoreStatus : "")}`;
+  els.productReviewFinalScoreStatus.textContent = translateUiText(scoreDisplayState.label);
+  els.productReviewFinalScoreStatus.className = `quality-badge ${productFinalScoreStatusClass(finalScoreStatus)}`;
+  els.productReviewFinalScoreHint.textContent = scoreDisplayState.hint
+    ? translateUiText(scoreDisplayState.hint)
+    : productFinalScoreHint(finalScoreStatus, selection);
+  els.productReviewSaveFinalTextButton.disabled = !state.requirementReviewOpen || !canEditProduct || !selection?.text?.trim();
+  els.productReviewRecalculateScoreButton.disabled = !state.requirementReviewOpen || !canEditProduct || !selection?.text?.trim() || state.finalScoreUpdates.has(rowNumber);
+  renderTechTypeSummaryCard(item, selection, els.productReviewTechTypesHost);
   els.selectOriginalButton.disabled = true;
   els.selectOriginalButton.hidden = true;
-  els.selectAiButton.disabled = !canEditProduct || !result?.rewrittenRequirement;
+  const finalAcceptBlockReason = productFinalAcceptBlockReason(item, result);
+  els.selectAiButton.disabled = Boolean(finalAcceptBlockReason);
+  els.selectAiButton.title = finalAcceptBlockReason ? translateUiText(finalAcceptBlockReason) : "";
+  els.selectAiButton.textContent = translateUiText("AI-Vorschlag übernehmen");
+  if (els.selectAiHint) {
+    els.selectAiHint.textContent = finalAcceptBlockReason
+      ? translateUiText(finalAcceptBlockReason)
+      : translateUiText("Übernimmt den gespeicherten AI-Vorschlag als aktuellen Requirement-Inhalt und berechnet den Score neu.");
+  }
+  renderAiSuggestionEditorState(result, canEditProduct);
   els.excludeRequirementButton.disabled = !canEditProduct;
   els.prImproveButton.disabled = !canEditProduct;
+  const approveBlockReason = productApprovalSubmissionBlockReason(rowNumber);
+  const canRecalculateBeforeSubmit = productApprovalCanRecalculateBeforeSubmit(rowNumber);
   els.approveRequirementButton.hidden = false;
-  els.approveRequirementButton.textContent = translateUiText("PR freigeben");
-  els.approveRequirementButton.disabled =
-    !canEditProduct ||
-    isUpdatingFinalScore ||
-    !selection?.text?.trim() ||
-    !selectedTechTypesForRequirement(item, selection).length;
   els.selectionDeferButton.hidden = false;
+  els.approveRequirementButton.disabled = Boolean(approveBlockReason && !canRecalculateBeforeSubmit);
+  els.approveRequirementButton.textContent = translateUiText(canRecalculateBeforeSubmit ? "Score neu berechnen" : "Für Approval freigeben");
+  els.approveRequirementButton.title = approveBlockReason ? translateUiText(approveBlockReason) : "";
+  els.excludeRequirementButton.textContent = translateUiText("PR ausschließen");
   els.selectionDeferButton.textContent = translateUiText("Später entscheiden");
-  const initialScore = productInitialScore(result);
+  els.reviewDecisionStatus.textContent = approveBlockReason
+    ? translateUiText(approveBlockReason)
+    : `${translateUiText("Bereit für Approval")} · ${translateUiText("Finaler Score")} ${scoreDisplayText(finalScore, finalScoreStatus)}`;
   els.selectionIssues.innerHTML = result
-    ? `
-      <div class="analysis-summary-grid">
-        <div><span>Score</span><strong>${Number.isFinite(visibleScore) ? visibleScore : Number.isFinite(initialScore) ? initialScore : "-"}</strong></div>
-        <div><span>Score Status</span><strong>${escapeHtml(finalScoreStatus)}</strong></div>
-        <div><span>Finalization</span><strong>${escapeHtml(productFinalizationStatusLabel(finalizationStatus))}</strong></div>
-      </div>
-      ${renderIssues(displayProductIssues(result, selection))}
-    `
-    : "Noch keine Analysehinweise vorhanden.";
+    ? renderRequirementReviewAnalysis(result, selection, finalScoreStatus, finalizationStatus, visibleScore)
+    : translateUiText("Noch keine Analysehinweise vorhanden.");
   renderProductReviewHistory(selection);
+  renderRequirementReviewWorkspaceMeta(item, result, selection, finalScoreStatus, finalizationStatus, visibleScore, scoreDisplayState);
+  renderRequirementAttachmentsSection(item);
 }
 
-function ensureProductReviewToolsInSidebar() {
-  if (els.productReviewFinalChoiceHost?.dataset.mounted === "true") return;
+function mountProductReviewWorkspaceControls() {
+  if (!state.requirementReviewOpen) {
+    if (els.productReviewFinalChoiceHost?.dataset.mounted === "true") return;
+    const nodes = [
+      els.selectionId.closest(".selection-meta"),
+      els.selectionOriginalText.closest(".selection-grid"),
+    ].filter(Boolean);
+    nodes.forEach((node) => els.productReviewFinalChoiceHost.append(node));
+    const originalCard = els.selectionOriginalText.closest(".choice-card");
+    if (originalCard) originalCard.append(els.selectionIssues.closest(".selection-issues"));
+    const selectionActions = els.excludeRequirementButton.closest(".selection-actions");
+    const selectionDialog = document.querySelector("#selectionOverlay .selection-dialog");
+    if (selectionActions && selectionDialog && !selectionDialog.contains(selectionActions)) selectionDialog.append(selectionActions);
+    els.productReviewFinalChoiceHost.dataset.mounted = "true";
+    return;
+  }
 
-  const nodes = [
-    els.selectionId.closest(".selection-meta"),
-    els.selectionOriginalText.closest(".selection-grid"),
-  ].filter(Boolean);
-  nodes.forEach((node) => els.productReviewFinalChoiceHost.append(node));
   const originalCard = els.selectionOriginalText.closest(".choice-card");
-  if (originalCard) originalCard.append(els.selectionIssues.closest(".selection-issues"));
-  els.productReviewFinalActionsHost.append(els.excludeRequirementButton.closest(".selection-actions"));
-  els.productReviewFinalChoiceHost.dataset.mounted = "true";
+  const aiCard = els.selectionAiText.closest(".choice-card");
+  const issues = els.selectionIssues.closest(".selection-issues");
+  if (originalCard && !els.reviewOriginalHost.contains(originalCard)) els.reviewOriginalHost.append(originalCard);
+  if (issues && !els.reviewAnalysisHost.contains(issues)) els.reviewAnalysisHost.append(issues);
+  if (aiCard && !els.reviewAiHost.contains(aiCard)) els.reviewAiHost.append(aiCard);
+  if (els.productReviewTechTypesHost && !els.reviewTechTypesHost.contains(els.productReviewTechTypesHost)) els.reviewTechTypesHost.append(els.productReviewTechTypesHost);
+  if (els.productReviewHistory && !els.reviewHistoryHost.contains(els.productReviewHistory)) els.reviewHistoryHost.append(els.productReviewHistory);
+  const decisionActions = els.excludeRequirementButton.closest(".selection-actions");
+  if (decisionActions && !els.productReviewFinalActionsHost.contains(decisionActions)) els.productReviewFinalActionsHost.append(decisionActions);
+  els.productReviewFinalChoiceHost.dataset.mounted = "workspace";
+}
+
+function renderRequirementReviewWorkspaceMeta(requirement, result, selection, finalScoreStatus, finalizationStatus, visibleScore, scoreDisplayState = null) {
+  if (!els.requirementReviewWorkspace || !els.reviewScoreHost) return;
+  const rowNumber = Number(requirement?.rowNumber);
+  const displayState = scoreDisplayState || productReviewScoreDisplayState(result, selection, finalScoreStatus, state.finalScoreUpdates.has(rowNumber));
+  els.reviewWorkspaceKicker.textContent = translateUiText("Requirement Review");
+  els.reviewWorkspaceTitle.textContent = requirement.name || requirement.id || `${translateUiText("Zeile")} ${rowNumber}`;
+  els.reviewWorkspaceSubtitle.textContent = `${requirement.id || "-"} · ${requirement.category || translateUiText("Ohne Kategorie")} / ${requirement.subcategory || translateUiText("Ohne Subkategorie")}`;
+  els.reviewWorkspaceWorkflowStatus.textContent = productFinalizationStatusLabel(finalizationStatus);
+  els.reviewWorkspaceWorkflowStatus.className = `status-badge ${productFinalizationStatusClass(finalizationStatus)}`;
+  els.reviewWorkspaceSaveStatus.textContent = state.finalScoreUpdates.has(rowNumber)
+    ? translateUiText("Score wird berechnet...")
+    : selection?.needsFinalAssessment
+      ? translateUiText("Score neu berechnen erforderlich.")
+      : translateUiText("Gespeichert");
+  els.reviewOriginalMeta.textContent = `${requirement.id || "-"} · ${requirement.category || "-"} · ${requirement.subcategory || "-"}`;
+  const scoreIsNumeric = Number.isFinite(Number(displayState.score));
+  const scoreIsUpdating = state.finalScoreUpdates.has(rowNumber) || finalScoreStatus === "CALCULATING";
+  els.reviewScoreHost.innerHTML = `
+    <div class="review-score-card ${scoreIsUpdating ? "is-updating" : ""}">
+      ${scoreIsUpdating ? `
+        <div class="review-score-progress" role="status" aria-live="polite">
+          <span class="inline-spinner" aria-hidden="true"></span>
+          <div>
+            <strong>${escapeHtml(translateUiText("Score-Neuberechnung läuft"))}</strong>
+            <p>${escapeHtml(translateUiText("Der neue Score wird mit der AI berechnet. Du kannst den Fortschritt im Status-Dialog verfolgen."))}</p>
+          </div>
+        </div>
+      ` : ""}
+      <div class="review-score-value">
+        <span>${escapeHtml(translateUiText(displayState.label))}</span>
+        ${renderScoreBreakdownTrigger(displayState, {
+          id: `review-${rowNumber}`,
+          status: displayState.type === "final" ? finalScoreStatus : "",
+        })}
+      </div>
+      <dl class="review-score-details">
+        <div>
+          <dt>${escapeHtml(translateUiText("Status"))}</dt>
+          <dd>${escapeHtml(productFinalizationStatusLabel(finalizationStatus))}</dd>
+        </div>
+        <div>
+          <dt>${escapeHtml(translateUiText("Score Status"))}</dt>
+          <dd><span class="quality-badge ${productFinalScoreStatusClass(finalScoreStatus)}">${escapeHtml(productFinalScoreStatusLabel(finalScoreStatus))}</span></dd>
+        </div>
+      </dl>
+      <p>${escapeHtml(displayState.hint ? translateUiText(displayState.hint) : productFinalScoreHint(finalScoreStatus, selection))}</p>
+    </div>
+  `;
+  els.reviewMetadataList.innerHTML = `
+    <div><dt>${escapeHtml(translateUiText("ID"))}</dt><dd>${escapeHtml(requirement.id || "-")}</dd></div>
+    <div><dt>${escapeHtml(translateUiText("Kategorie"))}</dt><dd>${escapeHtml(requirement.category || "-")}</dd></div>
+    <div><dt>${escapeHtml(translateUiText("Subkategorie"))}</dt><dd>${escapeHtml(requirement.subcategory || "-")}</dd></div>
+    <div><dt>${escapeHtml(translateUiText("Quelle"))}</dt><dd>${escapeHtml(productReviewSourceLabel(selection))}</dd></div>
+  `;
+  els.requirementReviewWorkspace.querySelectorAll("[data-review-step]").forEach((step) => {
+    const key = step.dataset.reviewStep;
+    const done = (
+      key === "suggestion" && Boolean(richTextToPlainText(aiSuggestionContentForResult(result)).trim()) ||
+      key === "final-accept" && Boolean(selection?.finalizedAt) ||
+      key === "decision" && isProductSelectionApproved(selection)
+    );
+    const active = (
+      key === "suggestion" && (!result || !richTextToPlainText(aiSuggestionContentForResult(result)).trim() || !selection?.finalizedAt) ||
+      key === "final-accept" && Boolean(richTextToPlainText(aiSuggestionContentForResult(result)).trim()) && !selection?.finalizedAt ||
+      key === "decision" && Boolean(selection?.finalizedAt) && !isProductSelectionApproved(selection)
+    );
+    step.classList.toggle("is-done", done);
+    step.classList.toggle("is-active", active);
+  });
+}
+
+function renderReviewScorePendingIndicator(rowNumber) {
+  if (!els.reviewScoreHost || Number(state.activeSelectionRow) !== Number(rowNumber)) return;
+
+  els.reviewScoreHost.innerHTML = `
+    <div class="review-score-card is-updating">
+      <div class="review-score-progress" role="status" aria-live="polite">
+        <span class="inline-spinner" aria-hidden="true"></span>
+        <div>
+          <strong>${escapeHtml(translateUiText("Score-Neuberechnung läuft"))}</strong>
+          <p>${escapeHtml(translateUiText("Der neue Score wird mit der AI berechnet. Du kannst den Fortschritt im Status-Dialog verfolgen."))}</p>
+        </div>
+      </div>
+      <div class="review-score-value">
+        <span>${escapeHtml(translateUiText("Score"))}</span>
+        <strong>${escapeHtml(translateUiText("Wird berechnet ..."))}</strong>
+      </div>
+      <dl class="review-score-details">
+        <div>
+          <dt>${escapeHtml(translateUiText("Score Status"))}</dt>
+          <dd><span class="quality-badge missing">${escapeHtml(productFinalScoreStatusLabel("CALCULATING"))}</span></dd>
+        </div>
+      </dl>
+    </div>
+  `;
+}
+
+function showFinalScoreDialog(phase = "saving", percent = 10) {
+  let overlay = document.querySelector("#finalScoreProgressOverlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "finalScoreProgressOverlay";
+    overlay.className = "final-score-progress-overlay";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-live", "polite");
+    document.body.append(overlay);
+  }
+
+  overlay.innerHTML = `
+    <div class="final-score-progress-dialog">
+      <div class="progress-heading">
+        <div class="activity-icon" aria-hidden="true"><span></span></div>
+      <div>
+        <p class="eyebrow">${escapeHtml(translateUiText("AI-Operation läuft"))}</p>
+        <h2>${escapeHtml(translateUiText("Finaler Score wird neu berechnet"))}</h2>
+      </div>
+      </div>
+      <p id="finalScoreProgressText">${escapeHtml(translateUiText(finalScoreProgressPhaseText(phase)))}</p>
+      <div class="progress-track" aria-hidden="true">
+        <div class="progress-bar final-score-progress-bar" id="finalScoreProgressBar" style="width: ${Math.max(0, Math.min(100, Number(percent) || 0))}%"></div>
+      </div>
+      <ol class="progress-steps" id="finalScoreProgressSteps">
+        ${renderFinalScoreProgressSteps(phase)}
+      </ol>
+    </div>
+  `;
+  overlay.hidden = false;
+  overlay.style.display = "grid";
+  overlay.querySelector(".final-score-progress-dialog")?.focus?.();
+}
+
+function finalScoreProgressPhaseText(phase) {
+  const labels = {
+    saving: "Finaler Inhalt wird gespeichert",
+    started: "Score-Neuberechnung gestartet",
+    analyzing: "Übernommener Requirement-Inhalt wird analysiert",
+    received: "AI-Ergebnis wurde empfangen",
+    persisting: "Score und Issues werden gespeichert",
+    refreshing: "Anzeige wird aktualisiert",
+    completed: "Abgeschlossen",
+  };
+  return labels[phase] || "Bitte warten. Die finale Qualitätsbewertung läuft.";
+}
+
+function finalScoreProgressPercent(phase) {
+  const values = {
+    saving: 10,
+    started: 25,
+    analyzing: 35,
+    received: 70,
+    persisting: 90,
+    refreshing: 96,
+    completed: 100,
+  };
+  return values[phase] || 10;
+}
+
+function renderFinalScoreProgressSteps(activePhase = "saving") {
+  const phases = ["saving", "started", "analyzing", "received", "persisting", "refreshing"];
+  const activeIndex = phases.indexOf(activePhase);
+  return phases.map((phase, index) => {
+    const className = activeIndex < 0 || index < activeIndex ? "done" : index === activeIndex ? "active" : "";
+    return `<li class="${className}">${escapeHtml(translateUiText(finalScoreProgressPhaseText(phase)))}</li>`;
+  }).join("");
+}
+
+function updateFinalScoreDialogPhase(phase) {
+  const overlay = document.querySelector("#finalScoreProgressOverlay");
+  if (!overlay || overlay.hidden) {
+    showFinalScoreDialog(phase, finalScoreProgressPercent(phase));
+    return;
+  }
+
+  const percent = finalScoreProgressPercent(phase);
+  const text = overlay.querySelector("#finalScoreProgressText");
+  const bar = overlay.querySelector("#finalScoreProgressBar");
+  const steps = overlay.querySelector("#finalScoreProgressSteps");
+  if (text) text.textContent = translateUiText(finalScoreProgressPhaseText(phase));
+  if (bar) {
+    const currentPercent = Number(String(bar.style.width || "0").replace("%", "")) || 0;
+    bar.style.width = `${Math.max(currentPercent, percent)}%`;
+  }
+  if (steps) steps.innerHTML = renderFinalScoreProgressSteps(phase);
+}
+
+function hideFinalScoreDialog() {
+  const overlay = document.querySelector("#finalScoreProgressOverlay");
+  if (!overlay) return;
+  overlay.hidden = true;
+  overlay.style.display = "none";
+}
+
+async function persistCurrentProjectNow(action) {
+  if (action) setProjectRevisionAction(action);
+  updateProjectDirtyState();
+  if (!state.projectId || !state.projectDirty) return true;
+  return saveCurrentProjectToDatabase({ force: true });
+}
+
+function aiSuggestionContentForResult(result) {
+  if (!result) return richTextFromPlainText("");
+  return normalizeRichTextContent(result.aiSuggestionContent, result.aiSuggestionPlainText || result.rewrittenRequirement || "");
+}
+
+function renderAiSuggestionPreview(result) {
+  if (!els.selectionAiText) return;
+  const content = aiSuggestionContentForResult(result);
+  const html = richTextToHtml(content);
+  const plainText = richTextToPlainText(content);
+  els.selectionAiText.classList.toggle("is-empty", !plainText);
+  els.selectionAiText.innerHTML = plainText
+    ? html
+    : escapeHtml(translateUiText("Noch kein AI-Vorschlag vorhanden. Bitte zuerst die Analyse ausführen."));
+  if (els.selectionAiTitle) {
+    els.selectionAiTitle.textContent = result?.aiSuggestionEdited
+      ? translateUiText("AI Suggestion – manuell bearbeitet")
+      : translateUiText("AI-Vorschlag");
+  }
+  if (els.selectionAiEditMeta) {
+    const editedAt = result?.aiSuggestionEditedAt ? formatProjectDate(result.aiSuggestionEditedAt) : "";
+    const editMeta = result?.aiSuggestionEdited
+      ? `${translateUiText("Manuell bearbeitet")}${editedAt ? ` · ${editedAt}` : ""}`
+      : "";
+    els.selectionAiEditMeta.textContent = editMeta;
+    els.selectionAiEditMeta.hidden = !editMeta;
+  }
+}
+
+function renderAiSuggestionEditorState(result, canEditProduct = canModifyProductRequirements()) {
+  const editing = Number(state.aiSuggestionEditingRow) === Number(state.activeSelectionRow);
+  if (!els.aiSuggestionEditorPanel) return;
+  applyAiSuggestionEditorVisibility(editing);
+  els.aiSuggestionEditButton.hidden = editing || !richTextToPlainText(aiSuggestionContentForResult(result)).trim();
+  els.aiSuggestionEditButton.disabled = !canEditProduct;
+  els.aiSuggestionEditButton.title = canEditProduct ? "" : translateUiText(productApprovalLockedMessage());
+  els.aiSuggestionSaveButton.disabled = !canEditProduct || !state.aiSuggestionEditorDirty;
+  els.aiSuggestionCancelButton.disabled = !canEditProduct;
+  els.selectAiButton.hidden = editing;
+  els.selectAiButton.toggleAttribute("hidden", editing);
+  if (els.selectAiHint) {
+    els.selectAiHint.hidden = editing;
+    els.selectAiHint.toggleAttribute("hidden", editing);
+  }
+  if (editing) {
+    translateRichTextToolbar();
+    updateAiSuggestionToolbarState();
+  }
+}
+
+function applyAiSuggestionEditorVisibility(editing) {
+  els.aiSuggestionEditorPanel.hidden = !editing;
+  els.aiSuggestionEditorPanel.toggleAttribute("hidden", !editing);
+  els.aiSuggestionEditorPanel.style.display = editing ? "grid" : "";
+  els.selectionAiText.hidden = editing;
+  els.selectionAiText.toggleAttribute("hidden", editing);
+  els.selectAiButton.hidden = editing;
+  els.selectAiButton.toggleAttribute("hidden", editing);
+  if (els.selectAiHint) {
+    els.selectAiHint.hidden = editing;
+    els.selectAiHint.toggleAttribute("hidden", editing);
+  }
+  els.aiSuggestionSaveButton.hidden = !editing;
+  els.aiSuggestionSaveButton.toggleAttribute("hidden", !editing);
+  els.aiSuggestionCancelButton.hidden = !editing;
+  els.aiSuggestionCancelButton.toggleAttribute("hidden", !editing);
+  if (editing) {
+    els.aiSuggestionEditButton.hidden = true;
+    els.aiSuggestionEditButton.toggleAttribute("hidden", true);
+  }
+}
+
+function startAiSuggestionEdit() {
+  if (!canModifyProductRequirements()) {
+    void showAlertDialog(productApprovalLockedMessage());
+    return;
+  }
+  const result = state.results.find((entry) => Number(entry.rowNumber) === Number(state.activeSelectionRow));
+  if (!result) return;
+  state.aiSuggestionEditingRow = Number(state.activeSelectionRow);
+  state.aiSuggestionEditorInitialHtml = richTextToHtml(aiSuggestionContentForResult(result));
+  state.aiSuggestionEditorDirty = false;
+  els.aiSuggestionEditor.innerHTML = state.aiSuggestionEditorInitialHtml;
+  if (els.aiSuggestionEditorStatus) {
+    els.aiSuggestionEditorStatus.textContent = "";
+  }
+  applyAiSuggestionEditorVisibility(true);
+  els.aiSuggestionSaveButton.disabled = true;
+  els.aiSuggestionCancelButton.disabled = false;
+  translateRichTextToolbar();
+  updateAiSuggestionToolbarState();
+  window.setTimeout(() => {
+    els.aiSuggestionEditorPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    els.aiSuggestionEditor.focus();
+  }, 0);
+}
+
+async function saveAiSuggestionEdit() {
+  const rowNumber = Number(state.aiSuggestionEditingRow);
+  const result = state.results.find((entry) => Number(entry.rowNumber) === rowNumber);
+  if (!result || !canModifyProductRequirements()) return;
+
+  const content = richTextFromEditorElement(els.aiSuggestionEditor);
+  const plainText = richTextToPlainText(content);
+  if (!plainText.trim()) {
+    await showAlertDialog("AI-Vorschlag darf nicht leer sein.");
+    return;
+  }
+
+  const now = new Date().toISOString();
+  result.aiSuggestionContent = content;
+  result.aiSuggestionHtml = richTextToHtml(content);
+  result.aiSuggestionPlainText = plainText;
+  result.aiSuggestionFormatVersion = RICH_TEXT_FORMAT_VERSION;
+  result.aiSuggestionEdited = true;
+  result.aiSuggestionEditedAt = now;
+  result.aiSuggestionEditedByUserId = state.currentUser?.id || "";
+  result.rewrittenRequirement = plainText;
+
+  const selection = state.finalSelections.get(rowNumber);
+  if (selection?.choice === "ai" || selection?.selectedSource === "AI_PROPOSAL") {
+    applyRichTextToFinalSelection(selection, content, "ai");
+    selection.needsFinalAssessment = true;
+    selection.finalizedAt = "";
+    addProductReviewHistory(selection, "AI Suggestion manuell bearbeitet", plainText);
+    invalidateProductRequirementAfterChange(rowNumber);
+  }
+
+  state.aiSuggestionEditingRow = null;
+  state.aiSuggestionEditorInitialHtml = "";
+  state.aiSuggestionEditorDirty = false;
+  finishAiSuggestionEditMode(result);
+  setProjectRevisionAction("AI Suggestion gespeichert");
+  renderTable();
+  renderProductReviewPanel();
+  finishAiSuggestionEditMode(result);
+  updateProjectActions();
+  await showAlertDialog("AI Suggestion wurde gespeichert.");
+}
+
+async function cancelAiSuggestionEdit() {
+  if (state.aiSuggestionEditorDirty) {
+    const confirmed = await showQuestionDialog("Die AI Suggestion enthält ungespeicherte Änderungen. Möchtest du sie verwerfen?", {
+      confirmLabel: "Änderungen verwerfen",
+    });
+    if (!confirmed) return false;
+  }
+  state.aiSuggestionEditingRow = null;
+  state.aiSuggestionEditorInitialHtml = "";
+  state.aiSuggestionEditorDirty = false;
+  const result = state.results.find((entry) => Number(entry.rowNumber) === Number(state.activeSelectionRow));
+  finishAiSuggestionEditMode(result);
+  renderProductReviewPanel();
+  finishAiSuggestionEditMode(result);
+  return true;
+}
+
+function finishAiSuggestionEditMode(result = null) {
+  const activeResult = result || state.results.find((entry) => Number(entry.rowNumber) === Number(state.activeSelectionRow));
+  renderAiSuggestionPreview(activeResult);
+  applyAiSuggestionEditorVisibility(false);
+  const hasSuggestion = Boolean(richTextToPlainText(aiSuggestionContentForResult(activeResult)).trim());
+  els.aiSuggestionEditButton.hidden = !hasSuggestion;
+  els.aiSuggestionEditButton.toggleAttribute("hidden", !hasSuggestion);
+  els.aiSuggestionEditButton.disabled = !canModifyProductRequirements();
+  els.aiSuggestionSaveButton.disabled = true;
+  els.aiSuggestionCancelButton.disabled = !canModifyProductRequirements();
+  els.selectAiButton.hidden = false;
+  els.selectAiButton.toggleAttribute("hidden", false);
+  if (els.selectAiHint) {
+    els.selectAiHint.hidden = false;
+    els.selectAiHint.toggleAttribute("hidden", false);
+  }
+  if (els.aiSuggestionEditorStatus) {
+    els.aiSuggestionEditorStatus.textContent = "";
+  }
+}
+
+function markAiSuggestionEditorDirty() {
+  state.aiSuggestionEditorDirty = els.aiSuggestionEditor.innerHTML !== state.aiSuggestionEditorInitialHtml;
+  els.aiSuggestionSaveButton.disabled = !state.aiSuggestionEditorDirty || !canModifyProductRequirements();
+  if (els.aiSuggestionEditorStatus) {
+    els.aiSuggestionEditorStatus.textContent = state.aiSuggestionEditorDirty ? translateUiText("Ungespeicherte Änderungen") : "";
+  }
+}
+
+function handleAiSuggestionToolbarClick(event) {
+  const button = event.target.closest("button");
+  if (!button) return;
+  event.preventDefault();
+  els.aiSuggestionEditor.focus();
+  const block = button.dataset.richBlock;
+  const command = button.dataset.richCommand;
+  if (block) {
+    document.execCommand("formatBlock", false, block === "paragraph" ? "p" : block);
+  } else if (command === "createLink") {
+    const url = prompt(translateUiText("Link-Adresse"), "https://");
+    if (!url) return;
+    if (!isSafeRichTextUrl(url)) {
+      void showAlertDialog("Bitte gib eine gültige http-, https- oder mailto-Adresse ein.");
+      return;
+    }
+    document.execCommand("createLink", false, url.trim());
+  } else if (command === "formatBlock" && button.dataset.richValue === "code") {
+    document.execCommand("formatBlock", false, "code");
+  } else if (command) {
+    document.execCommand(command, false, null);
+  }
+  sanitizeEditorHtmlInPlace();
+  markAiSuggestionEditorDirty();
+  updateAiSuggestionToolbarState();
+}
+
+function handleAiSuggestionEditorKeydown(event) {
+  if (!event.metaKey && !event.ctrlKey) return;
+  const key = event.key.toLowerCase();
+  if (["b", "i", "u"].includes(key)) {
+    event.preventDefault();
+    document.execCommand(key === "b" ? "bold" : key === "i" ? "italic" : "underline", false, null);
+    markAiSuggestionEditorDirty();
+  } else if (key === "z" && event.shiftKey) {
+    event.preventDefault();
+    document.execCommand("redo", false, null);
+  } else if (key === "y") {
+    event.preventDefault();
+    document.execCommand("redo", false, null);
+  }
+}
+
+function handleAiSuggestionEditorPaste(event) {
+  event.preventDefault();
+  const html = event.clipboardData?.getData("text/html") || "";
+  const text = event.clipboardData?.getData("text/plain") || "";
+  document.execCommand("insertHTML", false, html ? sanitizeRichTextHtml(html) : escapeHtml(text).replace(/\n/g, "<br>"));
+  sanitizeEditorHtmlInPlace();
+  markAiSuggestionEditorDirty();
+}
+
+function sanitizeEditorHtmlInPlace() {
+  els.aiSuggestionEditor.innerHTML = sanitizeRichTextHtml(els.aiSuggestionEditor.innerHTML);
+}
+
+function updateAiSuggestionToolbarState() {
+  if (!els.aiSuggestionToolbar || els.aiSuggestionEditorPanel.hidden) return;
+  const commands = {
+    bold: "bold",
+    italic: "italic",
+    underline: "underline",
+    strikeThrough: "strikeThrough",
+    insertUnorderedList: "insertUnorderedList",
+    insertOrderedList: "insertOrderedList",
+  };
+  Object.entries(commands).forEach(([name, command]) => {
+    const button = els.aiSuggestionToolbar.querySelector(`[data-rich-command="${name}"]`);
+    if (!button) return;
+    const active = document.queryCommandState(command);
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function translateRichTextToolbar() {
+  if (!els.aiSuggestionToolbar) return;
+  els.aiSuggestionToolbar.setAttribute("aria-label", translateUiText("Formatierung"));
+  els.aiSuggestionToolbar.querySelectorAll("button[title]").forEach((button) => {
+    const label = translateUiText(button.getAttribute("title"));
+    button.setAttribute("title", label);
+    button.setAttribute("aria-label", label);
+  });
+  els.aiSuggestionEditor.setAttribute("aria-label", translateUiText("AI-Vorschlag bearbeiten"));
+}
+
+function richTextFromPlainText(value = "") {
+  const content = String(value || "")
+    .replace(/\r\n?/g, "\n")
+    .split(/\n{2,}/)
+    .map((paragraph) => ({
+      type: "paragraph",
+      children: paragraph.split("\n").flatMap((line, index) => [
+        ...(index ? [{ type: "break" }] : []),
+        { text: line },
+      ]),
+    }))
+    .filter((block) => block.children.some((node) => node.text));
+  return { type: "doc", version: RICH_TEXT_FORMAT_VERSION, content: content.length ? content : [{ type: "paragraph", children: [{ text: "" }] }] };
+}
+
+function normalizeRichTextContent(value, fallbackText = "") {
+  const source = value && typeof value === "object" ? value : richTextFromPlainText(fallbackText);
+  const blocks = Array.isArray(source.content) ? source.content : [];
+  const content = blocks.map(normalizeRichTextBlock).filter(Boolean);
+  return { type: "doc", version: RICH_TEXT_FORMAT_VERSION, content: content.length ? content : richTextFromPlainText(fallbackText).content };
+}
+
+function normalizeRichTextBlock(block) {
+  if (!block || typeof block !== "object") return null;
+  if (block.type === "heading") {
+    return { type: "heading", level: Math.min(Math.max(Number(block.level) || 1, 1), 3), children: normalizeRichTextInline(block.children) };
+  }
+  if (block.type === "bulletList" || block.type === "orderedList") {
+    const items = (Array.isArray(block.items) ? block.items : []).map((item) => ({
+      type: "listItem",
+      children: normalizeRichTextInline(item?.children),
+    })).filter((item) => item.children.length);
+    return items.length ? { type: block.type, items } : null;
+  }
+  return { type: "paragraph", children: normalizeRichTextInline(block.children) };
+}
+
+function normalizeRichTextInline(children) {
+  return (Array.isArray(children) ? children : []).map((node) => {
+    if (node?.type === "break") return { type: "break" };
+    const text = String(node?.text || "");
+    const marks = (Array.isArray(node?.marks) ? node.marks : []).filter((mark) =>
+      ["bold", "italic", "underline", "strike", "code"].includes(mark));
+    const link = isSafeRichTextUrl(node?.link) ? String(node.link).trim() : "";
+    return { text, ...(marks.length ? { marks } : {}), ...(link ? { link } : {}) };
+  }).filter((node) => node.type === "break" || node.text);
+}
+
+function richTextToHtml(content) {
+  return normalizeRichTextContent(content).content.map((block) => {
+    if (block.type === "heading") return `<h${block.level}>${richTextInlineToHtml(block.children)}</h${block.level}>`;
+    if (block.type === "bulletList" || block.type === "orderedList") {
+      const tag = block.type === "bulletList" ? "ul" : "ol";
+      return `<${tag}>${block.items.map((item) => `<li>${richTextInlineToHtml(item.children)}</li>`).join("")}</${tag}>`;
+    }
+    return `<p>${richTextInlineToHtml(block.children)}</p>`;
+  }).join("");
+}
+
+function richTextInlineToHtml(children = []) {
+  return children.map((node) => {
+    if (node.type === "break") return "<br>";
+    let html = escapeHtml(node.text || "");
+    for (const mark of node.marks || []) {
+      if (mark === "bold") html = `<strong>${html}</strong>`;
+      if (mark === "italic") html = `<em>${html}</em>`;
+      if (mark === "underline") html = `<u>${html}</u>`;
+      if (mark === "strike") html = `<s>${html}</s>`;
+      if (mark === "code") html = `<code>${html}</code>`;
+    }
+    if (node.link) html = `<a href="${escapeHtml(node.link)}" rel="noopener">${html}</a>`;
+    return html;
+  }).join("");
+}
+
+function richTextToPlainText(content) {
+  return normalizeRichTextContent(content).content.map((block) => {
+    if (block.type === "bulletList") return block.items.map((item) => `• ${richTextInlineToPlainText(item.children)}`).join("\n");
+    if (block.type === "orderedList") return block.items.map((item, index) => `${index + 1}. ${richTextInlineToPlainText(item.children)}`).join("\n");
+    return richTextInlineToPlainText(block.children);
+  }).join("\n\n").trim();
+}
+
+function richTextInlineToPlainText(children = []) {
+  return children.map((node) => node.type === "break" ? "\n" : String(node.text || "")).join("");
+}
+
+function richTextFromEditorElement(element) {
+  const doc = { type: "doc", version: RICH_TEXT_FORMAT_VERSION, content: [] };
+  [...element.childNodes].forEach((node) => {
+    const block = richTextBlockFromDomNode(node);
+    if (block) doc.content.push(block);
+  });
+  if (!doc.content.length) return richTextFromPlainText(element.textContent || "");
+  return normalizeRichTextContent(doc);
+}
+
+function richTextBlockFromDomNode(node) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent.trim();
+    return text ? { type: "paragraph", children: [{ text }] } : null;
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return null;
+  const tag = node.tagName.toLowerCase();
+  if (/^h[1-3]$/.test(tag)) return { type: "heading", level: Number(tag.slice(1)), children: richTextInlineFromDom(node) };
+  if (tag === "ul" || tag === "ol") {
+    return {
+      type: tag === "ul" ? "bulletList" : "orderedList",
+      items: [...node.children].filter((child) => child.tagName?.toLowerCase() === "li").map((child) => ({
+        type: "listItem",
+        children: richTextInlineFromDom(child),
+      })),
+    };
+  }
+  if (tag === "div" || tag === "p" || tag === "blockquote") return { type: "paragraph", children: richTextInlineFromDom(node) };
+  return { type: "paragraph", children: richTextInlineFromDom(node) };
+}
+
+function richTextInlineFromDom(root) {
+  const nodes = [];
+  const visit = (node, marks = [], link = "") => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (node.textContent) nodes.push({ text: node.textContent, ...(marks.length ? { marks } : {}), ...(link ? { link } : {}) });
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const tag = node.tagName.toLowerCase();
+    if (tag === "br") {
+      nodes.push({ type: "break" });
+      return;
+    }
+    const nextMarks = [...marks];
+    if (["strong", "b"].includes(tag)) nextMarks.push("bold");
+    if (["em", "i"].includes(tag)) nextMarks.push("italic");
+    if (tag === "u") nextMarks.push("underline");
+    if (["s", "strike", "del"].includes(tag)) nextMarks.push("strike");
+    if (tag === "code") nextMarks.push("code");
+    const nextLink = tag === "a" && isSafeRichTextUrl(node.getAttribute("href")) ? node.getAttribute("href").trim() : link;
+    [...node.childNodes].forEach((child) => visit(child, [...new Set(nextMarks)], nextLink));
+  };
+  [...root.childNodes].forEach((node) => visit(node));
+  return nodes;
+}
+
+function sanitizeRichTextHtml(html = "") {
+  const template = document.createElement("template");
+  template.innerHTML = String(html || "");
+  sanitizeRichTextNode(template.content);
+  return template.innerHTML;
+}
+
+function sanitizeRichTextNode(root) {
+  const allowed = new Set(["P", "DIV", "H1", "H2", "H3", "STRONG", "B", "EM", "I", "U", "S", "STRIKE", "UL", "OL", "LI", "A", "BR", "CODE"]);
+  [...root.childNodes].forEach((node) => {
+    if (node.nodeType === Node.COMMENT_NODE) {
+      node.remove();
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    if (!allowed.has(node.tagName)) {
+      node.replaceWith(...node.childNodes);
+      return;
+    }
+    [...node.attributes].forEach((attribute) => {
+      if (node.tagName === "A" && attribute.name.toLowerCase() === "href" && isSafeRichTextUrl(attribute.value)) return;
+      node.removeAttribute(attribute.name);
+    });
+    sanitizeRichTextNode(node);
+  });
+}
+
+function isSafeRichTextUrl(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  try {
+    const parsed = new URL(text, window.location.origin);
+    return ["http:", "https:", "mailto:"].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function applyRichTextToFinalSelection(selection, content, choice = selection?.choice || "manual") {
+  const normalized = normalizeRichTextContent(content);
+  selection.finalRequirementContent = normalized;
+  selection.finalRequirementHtml = richTextToHtml(normalized);
+  selection.finalRequirementPlainText = richTextToPlainText(normalized);
+  selection.finalRequirementFormatVersion = RICH_TEXT_FORMAT_VERSION;
+  selection.finalRequirementContentHash = semanticContentHash(selection.finalRequirementPlainText);
+  selection.text = selection.finalRequirementPlainText;
+  selection.choice = choice;
+}
+
+function semanticContentHash(value) {
+  let hash = 2166136261;
+  const text = String(value || "").replace(/\r\n?/g, "\n").replace(/[ \t]+/g, " ").trim();
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+function richTextToExcelPlainText(content) {
+  return richTextToPlainText(content);
+}
+
+function mapRichTextToWindchill(content, capabilities = {}) {
+  const normalized = normalizeRichTextContent(content);
+  if (capabilities.html === true) return { format: "html", value: richTextToHtml(normalized), version: RICH_TEXT_FORMAT_VERSION };
+  if (capabilities.structured === true) return { format: "structured", value: normalized, version: RICH_TEXT_FORMAT_VERSION };
+  return { format: "plainText", value: richTextToPlainText(normalized), version: RICH_TEXT_FORMAT_VERSION };
+}
+
+function requirementAttachmentId(requirement) {
+  return String(requirement?.id || requirement?.sourceId || requirement?.rowNumber || "").trim();
+}
+
+function renderRequirementAttachmentsSection(requirement) {
+  if (!els.requirementAttachmentsSection) return;
+  const requirementId = requirementAttachmentId(requirement);
+  const host = state.requirementReviewOpen
+    ? els.reviewAttachmentsHost
+    : isProductApprovalStarted() ? els.productApprovalDetailContent : els.productReviewDetailContent;
+  if (host && !host.contains(els.requirementAttachmentsSection)) {
+    host.append(els.requirementAttachmentsSection);
+  }
+  els.requirementAttachmentsSection.hidden = !requirementId;
+  if (!requirementId) return;
+  els.requirementAttachmentInput.disabled = !canEditProductRequirements() || state.requirementAttachmentUploading;
+  els.requirementAttachmentStatus.textContent = state.requirementAttachmentUploading
+    ? translateUiText("Upload läuft")
+    : "";
+  const attachments = state.requirementAttachments.get(requirementId);
+  if (!attachments && state.requirementAttachmentLoadingId !== requirementId) {
+    void loadRequirementAttachments(requirementId);
+  }
+  renderRequirementAttachmentList(requirementId, attachments || []);
+}
+
+async function loadRequirementAttachments(requirementId) {
+  if (!state.projectId || !requirementId) return;
+  state.requirementAttachmentLoadingId = requirementId;
+  try {
+    const response = await fetch(getRequirementAttachmentsEndpoint(state.projectId, requirementId));
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Der Anhang wurde nicht gefunden.");
+    const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+    state.requirementAttachments.set(requirementId, attachments);
+    state.requirementAttachmentCounts.set(requirementId, attachments.length);
+    renderTable();
+  } catch (error) {
+    console.warn("Anhänge konnten nicht geladen werden.", error);
+    state.requirementAttachments.set(requirementId, []);
+  } finally {
+    state.requirementAttachmentLoadingId = "";
+    const activeRequirement = state.requirements.find((item) => Number(item.rowNumber) === Number(state.activeSelectionRow));
+    if (requirementAttachmentId(activeRequirement) === requirementId) {
+      renderRequirementAttachmentsSection(activeRequirement);
+    }
+  }
+}
+
+async function loadProjectAttachmentCounts() {
+  if (!state.projectId) return;
+  try {
+    const response = await fetch(getProjectAttachmentCountsEndpoint(state.projectId));
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return;
+    state.requirementAttachmentCounts = new Map(
+      Object.entries(data.counts || {}).map(([requirementId, count]) => [requirementId, Number(count) || 0]),
+    );
+    renderTable();
+  } catch (error) {
+    console.warn("Anhangsanzahlen konnten nicht geladen werden.", error);
+  }
+}
+
+function renderRequirementAttachmentList(requirementId, attachments) {
+  if (!attachments.length) {
+    els.requirementAttachmentList.innerHTML = `<p class="muted-cell">${escapeHtml(translateUiText("Keine Anhänge vorhanden"))}</p>`;
+    return;
+  }
+  els.requirementAttachmentList.innerHTML = attachments.map((attachment) => {
+    const isImage = /^image\/(png|jpeg)$/.test(attachment.mimeType || "");
+    const downloadUrl = getRequirementAttachmentDownloadEndpoint(state.projectId, attachment.id);
+    return `
+      <article class="requirement-attachment-item" data-attachment-id="${escapeHtml(attachment.id)}">
+        <a class="requirement-attachment-preview" href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener">
+          ${isImage ? `<img src="${escapeHtml(downloadUrl)}" alt="${escapeHtml(attachment.originalFileName)}" />` : `<span>${escapeHtml(attachmentIcon(attachment.mimeType))}</span>`}
+        </a>
+        <div>
+          <strong>${escapeHtml(attachment.originalFileName || "-")}</strong>
+          <small>${escapeHtml(formatFileSize(attachment.fileSize))} · ${escapeHtml(formatProjectDate(attachment.uploadedAt))} · ${escapeHtml(attachment.uploadedByName || "-")}</small>
+        </div>
+        <div class="attachment-row-actions">
+          <a href="${escapeHtml(downloadUrl)}" download>${escapeHtml(translateUiText("Datei herunterladen"))}</a>
+          ${canEditProductRequirements() ? `<button type="button" data-delete-attachment="${escapeHtml(attachment.id)}" data-file-name="${escapeHtml(attachment.originalFileName || "")}">${escapeHtml(translateUiText("Datei löschen"))}</button>` : ""}
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+async function handleRequirementAttachmentInputChange(event) {
+  const files = [...(event.target.files || [])];
+  event.target.value = "";
+  if (!files.length) return;
+  const requirement = state.requirements.find((item) => Number(item.rowNumber) === Number(state.activeSelectionRow));
+  const requirementId = requirementAttachmentId(requirement);
+  if (!state.projectId || !requirementId) return;
+  const validationError = validateRequirementAttachmentFiles(files);
+  if (validationError) {
+    await showAlertDialog(validationError);
+    return;
+  }
+  state.requirementAttachmentUploading = true;
+  renderRequirementAttachmentsSection(requirement);
+  try {
+    const payloadFiles = await Promise.all(files.map(async (file) => ({
+      fileName: file.name,
+      mimeType: file.type,
+      size: file.size,
+      data: arrayBufferToBase64(await file.arrayBuffer()),
+    })));
+    const response = await fetch(getRequirementAttachmentsEndpoint(state.projectId, requirementId), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ files: payloadFiles }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Upload fehlgeschlagen");
+    const current = state.requirementAttachments.get(requirementId) || [];
+    const uploaded = Array.isArray(data.attachments) ? data.attachments : [];
+    state.requirementAttachments.set(requirementId, [...uploaded, ...current]);
+    state.requirementAttachmentCounts.set(requirementId, (state.requirementAttachments.get(requirementId) || []).length);
+    els.requirementAttachmentStatus.textContent = translateUiText("Upload erfolgreich");
+  } catch (error) {
+    console.warn("Attachment upload failed.", error);
+    els.requirementAttachmentStatus.textContent = translateUiText("Upload fehlgeschlagen");
+    await showAlertDialog(error.message || "Upload fehlgeschlagen");
+  } finally {
+    state.requirementAttachmentUploading = false;
+    renderRequirementAttachmentsSection(requirement);
+    renderTable();
+  }
+}
+
+async function handleRequirementAttachmentListClick(event) {
+  const button = event.target.closest("[data-delete-attachment]");
+  if (!button) return;
+  const attachmentId = button.dataset.deleteAttachment;
+  const fileName = button.dataset.fileName || "";
+  const confirmed = await showQuestionDialog(
+    translateUiTemplate("Möchtest du den Anhang '{{fileName}}' wirklich löschen?", { fileName }),
+    { confirmLabel: "Datei löschen" },
+  );
+  if (!confirmed) return;
+  const requirement = state.requirements.find((item) => Number(item.rowNumber) === Number(state.activeSelectionRow));
+  const requirementId = requirementAttachmentId(requirement);
+  try {
+    const response = await fetch(getRequirementAttachmentEndpoint(state.projectId, attachmentId), { method: "DELETE" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Der Anhang konnte nicht gelöscht werden.");
+    const next = (state.requirementAttachments.get(requirementId) || []).filter((item) => item.id !== attachmentId);
+    state.requirementAttachments.set(requirementId, next);
+    state.requirementAttachmentCounts.set(requirementId, next.length);
+    renderRequirementAttachmentsSection(requirement);
+    renderTable();
+  } catch (error) {
+    await showAlertDialog(error.message || "Der Anhang konnte nicht gelöscht werden.");
+  }
+}
+
+function validateRequirementAttachmentFiles(files) {
+  if (files.length > REQUIREMENT_ATTACHMENT_MAX_FILES) {
+    return translateUiTemplate("Maximal {{count}} Dateien pro Upload-Vorgang.", { count: REQUIREMENT_ATTACHMENT_MAX_FILES });
+  }
+  for (const file of files) {
+    const accepted = [...REQUIREMENT_ATTACHMENT_TYPES.entries()].some(([mimeType, extensions]) =>
+      extensions.some((extension) => file.name.toLowerCase().endsWith(extension)) && (!file.type || file.type === mimeType));
+    if (!accepted) return translateUiTemplate("Die Datei '{{fileName}}' wird nicht unterstützt. Erlaubt sind PNG, JPEG, PDF, Word und Excel.", { fileName: file.name });
+    if (!file.size) return translateUiTemplate("Die Datei '{{fileName}}' ist leer.", { fileName: file.name });
+    if (file.size > REQUIREMENT_ATTACHMENT_MAX_BYTES) return translateUiTemplate("Die Datei '{{fileName}}' ist größer als 25 MB.", { fileName: file.name });
+  }
+  return "";
+}
+
+function attachmentIcon(mimeType) {
+  if (mimeType === "application/pdf") return "PDF";
+  if (mimeType?.includes("word")) return "DOC";
+  if (mimeType?.includes("excel") || mimeType?.includes("spreadsheet")) return "XLS";
+  return "FILE";
 }
 
 function renderProductReviewTabs() {
@@ -4678,33 +7552,48 @@ function productFinalizationStatusLabel(status) {
   const labels = {
     IMPORTED: "Importiert",
     ANALYZED: "Analysiert",
-    FINALIZATION_OPEN: "Finalisierung offen",
-    FINAL_REQUIREMENT_SELECTED: "Finales Requirement gewählt",
-    FINAL_SCORE_PENDING: "Score neu berechnen",
-    FINAL_SCORE_PASSED: "Score bestanden",
+    FINALIZATION_OPEN: "Noch nicht übernommen",
+    FINAL_REQUIREMENT_SELECTED: "Als Requirement übernommen",
+    FINAL_SCORE_PENDING: "Analyse läuft",
+    FINAL_SCORE_PASSED: "Qualitäts-Gate erfüllt",
     FINAL_SCORE_FAILED: "Nacharbeit erforderlich",
+    FINAL_ANALYSIS_FAILED: "Analyse fehlgeschlagen",
     EXCLUDED: "Ausgeschlossen",
-    READY_FOR_APPROVAL: "Für Approval vorbereitet",
+    READY_FOR_APPROVAL: "Bereit für Approval",
+    SUBMITTED_FOR_APPROVAL: "Für Approval freigegeben",
   };
   return translateUiText(labels[status] || status);
 }
 
 function productFinalizationStatusClass(status) {
-  if (status === "READY_FOR_APPROVAL" || status === "FINAL_SCORE_PASSED") return "approved";
-  if (status === "FINAL_SCORE_FAILED") return "critical";
+  if (status === "READY_FOR_APPROVAL" || status === "SUBMITTED_FOR_APPROVAL" || status === "FINAL_SCORE_PASSED") return "approved";
+  if (status === "FINAL_SCORE_FAILED" || status === "FINAL_ANALYSIS_FAILED") return "critical";
   if (status === "EXCLUDED") return "excluded";
   return "pending";
 }
 
 function productFinalScoreStatusClass(status) {
   if (status === "PASSED") return "passed";
-  if (status === "FAILED") return "rework";
+  if (status === "FAILED" || status === "ANALYSIS_FAILED") return "rework";
   return "missing";
 }
 
-function productFinalScoreHint(status) {
+function productFinalScoreStatusLabel(status) {
+  return translateUiText(status || "MISSING");
+}
+
+function productApprovalBlockedWarningText() {
+  return translateUiText("Nacharbeit erforderlich: Dieses Requirement blockiert den Approval-Start, weil der Score unter {{minimumScore}} liegt oder neu berechnet werden muss.")
+    .replace("{{minimumScore}}", String(PRODUCT_STEP_MIN_SCORE));
+}
+
+function productFinalScoreHint(status, selection = null) {
+  if (selection?.finalRequirementAnalysisSource === "local-quality-fallback") {
+    return translateUiText("Score wurde nach AI-Timeout mit lokaler Qualitätsprüfung berechnet.");
+  }
   if (status === "PASSED") return translateUiText("Score erfüllt die Voraussetzung für den späteren Approval-Prozess.");
   if (status === "FAILED") return translateUiText("Nacharbeit erforderlich.");
+  if (status === "ANALYSIS_FAILED") return translateUiText("Analyse fehlgeschlagen. Bitte starte die Analyse erneut.");
   if (status === "STALE") return translateUiText("Score neu berechnen erforderlich.");
   if (status === "CALCULATING") return translateUiText("Score wird berechnet.");
   if (status === "EXCLUDED") return translateUiText("Ausgeschlossene Requirements benötigen keinen Score.");
@@ -4713,7 +7602,7 @@ function productFinalScoreHint(status) {
 
 function renderProductReviewHistory(selection) {
   const versions = productApprovalVersions(selection);
-  els.productReviewHistory.innerHTML = versions.length
+  const historyContent = versions.length
     ? versions
         .slice()
         .reverse()
@@ -4726,6 +7615,14 @@ function renderProductReviewHistory(selection) {
         `)
         .join("")
     : `<p class="muted-cell">Noch keine Finalisierungshistorie vorhanden.</p>`;
+  els.productReviewHistory.innerHTML = state.requirementReviewOpen
+    ? `
+      <details class="review-history-details">
+        <summary>${escapeHtml(translateUiText("Änderungsverlauf"))} (${versions.length})</summary>
+        <div class="review-history-content">${historyContent}</div>
+      </details>
+    `
+    : historyContent;
 }
 
 function renderProductApprovalTabs(selection) {
@@ -4836,15 +7733,33 @@ async function submitProductRequirementForApproval() {
   closeProductRequirementDetailDialog();
 }
 
-async function handleProductReviewPrimaryAction() {
-  if (isProductApprovalStarted()) {
-    if (approveProductRequirement(state.activeSelectionRow)) {
-      closeActiveProductEditDialog();
-    }
-    return;
-  }
+function releaseProductRequirementAfterOwnerSave(rowNumber) {
+  const selection = state.finalSelections.get(Number(rowNumber));
+  if (!selection || !canReviseProductApprovalRequirement(rowNumber)) return false;
+  if (selection.needsFinalAssessment) return false;
 
-  await finalizeProductRequirement();
+  const result = state.results.find((entry) => Number(entry.rowNumber) === Number(rowNumber));
+  const finalScore = productFinalScore(result, selection);
+  if (!Number.isFinite(finalScore) || finalScore < PRODUCT_STEP_MIN_SCORE) return false;
+
+  productApprovalComments(selection)
+    .filter((comment) => comment.type === "disapproval" && comment.resolved !== true)
+    .forEach((comment) => {
+      comment.resolved = true;
+      comment.resolvedAt = new Date().toISOString();
+      comment.resolvedBy = currentApprovalUserName();
+    });
+  state.changedProductRequirementRows.delete(Number(rowNumber));
+  updateFinalProductApproval(selection);
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
+  setProjectRevisionAction(projectRevisionActionFor("PR erneut zur Freigabe bereitgestellt", item, "PR"));
+  return true;
+}
+
+async function handleProductReviewPrimaryAction() {
+  if (await submitActiveProductRequirementForApproval(state.activeSelectionRow)) {
+    await returnToRequirementList({ focusRow: state.activeSelectionRow });
+  }
 }
 
 function handleProductReviewTabClick(event) {
@@ -4856,10 +7771,49 @@ function handleProductReviewTabClick(event) {
 }
 
 function handleProductReviewFinalTabClick(event) {
+  const editButton = event.target.closest("#aiSuggestionEditButton");
+  if (editButton) {
+    event.preventDefault();
+    startAiSuggestionEdit();
+    return;
+  }
+
   const assistButton = event.target.closest("[data-ai-assist]");
   if (!assistButton) return;
 
-  els.prImprovementInstruction.value = assistButton.dataset.aiAssist || "";
+  assistButton.setAttribute("aria-pressed", assistButton.getAttribute("aria-pressed") === "true" ? "false" : "true");
+  syncProductImprovementInstructionFromChips();
+}
+
+function syncProductImprovementInstructionFromChips() {
+  const selected = [...document.querySelectorAll(".ai-improvement-presets [data-ai-assist][aria-pressed='true']")]
+    .map((button) => button.dataset.aiAssist)
+    .filter(Boolean);
+  const manual = els.prImprovementInstruction.value
+    .split("\n")
+    .filter((line) => !line.startsWith("Schwerpunkte:") && !line.startsWith("Focus areas:"))
+    .join("\n")
+    .trim();
+  const focusLabel = selectedUiLanguage() === "en" ? "Focus areas" : "Schwerpunkte";
+  els.prImprovementInstruction.value = [
+    manual,
+    selected.length ? `${focusLabel}: ${selected.map(translateUiText).join(", ")}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function resetProductImprovementControls() {
+  els.prImprovementInstruction.value = "";
+  els.prImprovementAttachments.value = "";
+  renderImprovementAttachmentList(els.prImprovementAttachments, els.prImprovementAttachmentList);
+  document.querySelectorAll(".ai-improvement-presets [data-ai-assist]").forEach((button) => {
+    button.setAttribute("aria-pressed", "false");
+  });
+  clearPendingProductImprovement();
+}
+
+function handleProductImprovementInstructionKeydown(event) {
+  if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) return;
+  event.preventDefault();
   void improveProductRequirementWithAi();
 }
 
@@ -4867,10 +7821,12 @@ function markProductReviewFinalTextStale() {
   const selection = ensureActiveProductSelection("manual");
   if (!selection || !canModifyProductRequirements()) return;
 
-  selection.text = els.productReviewFinalText.value;
+  applyRichTextToFinalSelection(selection, richTextFromPlainText(els.productReviewFinalText.value), "manual");
   selection.choice = "manual";
   selection.selectedSource = "MANUAL_EDIT";
   selection.needsFinalAssessment = true;
+  selection.finalRequirementAnalysisStatus = "STALE";
+  selection.finalRequirementAnalysisError = "";
   selection.finalizedAt = "";
   els.productReviewFinalScoreStatus.textContent = translateUiText("STALE");
   els.productReviewFinalScoreStatus.className = "quality-badge missing";
@@ -4881,13 +7837,15 @@ function markProductReviewFinalTextStale() {
 async function saveProductReviewFinalText() {
   const selection = ensureActiveProductSelection("manual");
   if (!selection || !canModifyProductRequirements()) return;
+  const saveRowNumber = Number(state.activeSelectionRow);
+  const saveItem = state.requirements.find((requirement) => Number(requirement.rowNumber) === saveRowNumber);
 
   const text = els.productReviewFinalText.value.trim();
   if (!text) {
     alert(translateUiText("Finales Product Requirement darf nicht leer sein."));
     return;
   }
-  if (text === selection.text) return;
+  if (text === selection.text && !selection.needsFinalAssessment) return;
 
   const changeComment = await requestApprovedProductRequirementChangeComment(
     state.activeSelectionRow,
@@ -4895,14 +7853,35 @@ async function saveProductReviewFinalText() {
   );
   if (changeComment === null) return;
 
-  selection.text = text;
+  applyRichTextToFinalSelection(selection, richTextFromPlainText(text), selection.choice || "manual");
   selection.choice = selection.choice || "manual";
   selection.selectedSource = selection.selectedSource || "MANUAL_EDIT";
   selection.needsFinalAssessment = true;
+  selection.finalRequirementAnalysisStatus = "STALE";
+  selection.finalRequirementAnalysisError = "";
   selection.finalizedAt = "";
   addProductReviewHistory(selection, productChangeHistoryReason("Manuelle Änderung", changeComment), text);
   invalidateProductRequirementAfterChange(state.activeSelectionRow);
-  setProjectRevisionAction("Finales PR gespeichert");
+  showFinalScoreDialog("saving", 10);
+  const rowNumber = saveRowNumber;
+  const item = saveItem;
+  if (!item) {
+    hideFinalScoreDialog();
+    return;
+  }
+  const operationId = crypto.randomUUID();
+  const analysisHash = selection.finalRequirementContentHash || semanticContentHash(selection.text);
+  const saved = await persistCurrentProjectNow(projectRevisionActionFor("Finales PR gespeichert", item, "PR"));
+  if (!saved) {
+    hideFinalScoreDialog();
+    await showAlertDialog("Projekt konnte nicht gespeichert werden.");
+    renderProductReviewPanel();
+    return;
+  }
+  await recalculateFinalScore(item, selection.text, selection.choice || "manual", {
+    contentHash: analysisHash,
+    operationId,
+  });
   renderTable();
   renderProductReviewPanel();
   renderMetrics();
@@ -4959,7 +7938,7 @@ async function finalizeProductRequirement() {
   selectionToFinalize.finalizedAt = new Date().toISOString();
   addProductReviewHistory(selectionToFinalize, "Requirement fertiggestellt", selectionToFinalize.text);
   setProjectRevisionAction(projectRevisionActionFor("PR finalisiert", item, "PR"));
-  closeActiveProductEditDialog();
+  await closeActiveProductEditDialog();
   renderTable();
   renderMetrics();
   updateProjectActions();
@@ -5335,10 +8314,21 @@ function canUseOwnerProductApprovalDialog() {
 }
 
 async function saveProductApprovalText() {
-  await savePendingProductApprovalTextChange();
+  const rowNumber = Number(state.activeSelectionRow);
+  const pendingSave = await savePendingProductApprovalTextChange({ autoRelease: true });
+  if (!pendingSave.ok) return;
+
+  if (!pendingSave.changed) {
+    releaseProductRequirementAfterOwnerSave(rowNumber);
+    renderProductApprovalPanel();
+    renderTable();
+    renderMetrics();
+    updateExportAvailability();
+    updateProjectActions();
+  }
 }
 
-async function savePendingProductApprovalTextChange() {
+async function savePendingProductApprovalTextChange(options = {}) {
   const rowNumber = Number(state.activeSelectionRow);
   const selection = state.finalSelections.get(rowNumber);
   if (!selection || !canReviseProductApprovalRequirementInDialog(rowNumber)) return { ok: false, changed: false };
@@ -5355,6 +8345,7 @@ async function savePendingProductApprovalTextChange() {
     selectedSource: "MANUAL_EDIT",
     historyReason: "Approval-Änderung",
     revisionAction: "PR-Text im Approval geaendert",
+    autoRelease: options.autoRelease === true,
   });
   if (!updatedSelection) return { ok: false, changed: false };
   return { ok: true, changed: true };
@@ -5371,10 +8362,12 @@ async function applyProductApprovalTextChange(rowNumber, nextText, options = {})
   );
   if (changeComment === null) return null;
 
-  selection.text = nextText;
+  applyRichTextToFinalSelection(selection, richTextFromPlainText(nextText), options.choice || selection.choice || "manual");
   selection.choice = options.choice || selection.choice || "manual";
   selection.selectedSource = options.selectedSource || selection.selectedSource || "MANUAL_EDIT";
   selection.needsFinalAssessment = true;
+  selection.finalRequirementAnalysisStatus = "STALE";
+  selection.finalRequirementAnalysisError = "";
   selection.finalizedAt = "";
   resetProductApprovalForResubmission(selection);
   addProductReviewHistory(
@@ -5388,14 +8381,51 @@ async function applyProductApprovalTextChange(rowNumber, nextText, options = {})
   renderProductApprovalPanel();
   renderMetrics();
   updateProjectActions();
-  await recalculateFinalScore(item, nextText, selection.choice || "manual");
+  setProductApprovalSaveBusy(true);
+  showFinalScoreDialog("saving", 10);
+  const operationId = crypto.randomUUID();
+  const analysisHash = selection.finalRequirementContentHash || semanticContentHash(nextText);
+  const saved = await persistCurrentProjectNow(projectRevisionActionFor(options.revisionAction || "PR im Approval geaendert", item, "PR"));
+  if (!saved) {
+    hideFinalScoreDialog();
+    setProductApprovalSaveBusy(false);
+    await showAlertDialog("Projekt konnte nicht gespeichert werden.");
+    return null;
+  }
+  await recalculateFinalScore(item, nextText, selection.choice || "manual", {
+    contentHash: analysisHash,
+    operationId,
+  });
   const updatedSelection = state.finalSelections.get(Number(rowNumber));
   if (updatedSelection) {
     addProductReviewHistory(updatedSelection, "Score neu berechnet", updatedSelection.text);
+    if (options.autoRelease === true) {
+      releaseProductRequirementAfterOwnerSave(rowNumber);
+    }
   }
+  setProductApprovalSaveBusy(false);
   renderProductApprovalPanel();
+  renderTable();
+  renderMetrics();
+  updateExportAvailability();
   updateProjectActions();
   return updatedSelection;
+}
+
+function setProductApprovalSaveBusy(isBusy) {
+  if (!els.productApprovalSaveTextButton) return;
+
+  state.productApprovalSaveBusy = isBusy;
+  els.productApprovalSaveTextButton.disabled = isBusy;
+  els.productApprovalSaveTextButton.textContent = translateUiText(
+    isBusy ? "Speichert und berechnet Score..." : "Änderungen speichern",
+  );
+  if (els.productApprovalSubmitButton) {
+    els.productApprovalSubmitButton.disabled = true;
+  }
+  if (els.productApprovalAiButton) {
+    els.productApprovalAiButton.disabled = isBusy || !canReviseProductApprovalRequirementInDialog(state.activeSelectionRow);
+  }
 }
 
 async function improveProductApprovalRequirementWithAi() {
@@ -5416,6 +8446,12 @@ async function improveProductApprovalRequirementWithAi() {
     alert(translateUiText("Bitte beschreibe, was die AI am Product Requirement verbessern soll."));
     return;
   }
+  if (result?.aiSuggestionEdited) {
+    const confirmed = await showQuestionDialog("Die AI Suggestion wurde manuell bearbeitet. Bei einer Neugenerierung werden diese Änderungen ersetzt. Möchtest du fortfahren?", {
+      confirmLabel: "Bestätigen",
+    });
+    if (!confirmed) return;
+  }
 
   const previousStatus = els.productApprovalAiButton.textContent;
   els.productApprovalAiButton.disabled = true;
@@ -5425,10 +8461,11 @@ async function improveProductApprovalRequirementWithAi() {
 
   try {
     const improvementAttachments = await readImprovementAttachments(els.productApprovalAiAttachments);
-    const response = await fetch(endpoint, {
+    const data = await fetchAiJsonWithStatus(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        projectId: state.projectId,
         requirementType: "product-improvement",
         uiLanguage: selectedUiLanguage(),
         improvementInstruction: instruction,
@@ -5438,14 +8475,25 @@ async function improveProductApprovalRequirementWithAi() {
             ...item,
             text: currentText,
             score: result?.score,
+            finalScore: productFinalScore(result, state.finalSelections.get(rowNumber)),
+            finalScoreStatus: productFinalScoreStatus(
+              result,
+              state.finalSelections.get(rowNumber),
+              state.finalScoreUpdates.has(rowNumber),
+            ),
+            issues: displayProductIssues(result, state.finalSelections.get(rowNumber)),
+            originalIssues: result?.originalIssues || [],
           },
         ],
       }),
+    }, {
+      operationType: "product-improvement",
+      title: "Product Requirement wird verbessert",
+      total: 1,
+      requirements: [{ ...item, text: currentText }],
+      attachmentCount: improvementAttachments.length,
+      errorMessage: "Product Requirement konnte nicht verbessert werden",
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Product Requirement konnte nicht verbessert werden");
-    }
 
     addOpenAiUsage(data.openAiUsage);
     const improved = data.result || data.results?.[0];
@@ -5835,6 +8883,19 @@ function currentTechTypeSelection() {
     .filter(Boolean);
 }
 
+function currentOrPresetTechTypeSelection(requirement, selection) {
+  if (!state.techTypes.length) return [];
+
+  const inputs = [...els.techTypeSelectionList.querySelectorAll("[data-techtype-designation]")];
+  const panelIsActive = els.techTypeSelectionPanel && !els.techTypeSelectionPanel.hidden && !els.techTypeSelectionPanel.closest("[hidden]");
+  if (!inputs.length || !panelIsActive) return selectedTechTypesForRequirement(requirement, selection);
+
+  return inputs
+    .filter((input) => input.checked)
+    .map((input) => input.dataset.techtypeDesignation)
+    .filter(Boolean);
+}
+
 function renderTechTypeSummary(selectedCount = currentTechTypeSelection().length) {
   const total = state.techTypes.length;
   const text = techTypeSelectedText(selectedCount, total);
@@ -5984,11 +9045,17 @@ async function excludeRequirement() {
   if (!rowNumber) return;
 
   const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
-  const exclusionReason = prompt("Bitte gib einen Ausschlussgrund an.");
+  const exclusionReason = prompt(translateUiText("Bitte gib einen Ausschlussgrund an."));
   if (!exclusionReason || !exclusionReason.trim()) {
     alert(translateUiText("Ausgeschlossene Requirements benötigen einen Ausschlussgrund."));
     return;
   }
+  const confirmed = await showQuestionDialog("Das Requirement wird aus dem weiteren Bearbeitungs- und Generierungsprozess ausgeschlossen.", {
+    title: "Product Requirement ausschließen?",
+    confirmLabel: "PR ausschließen",
+    cancelLabel: "Abbrechen",
+  });
+  if (!confirmed) return;
   const changeComment = await requestApprovedProductRequirementChangeComment(rowNumber, "Requirement ausgeschlossen");
   if (changeComment === null) return;
   state.finalSelections.set(Number(rowNumber), {
@@ -6013,7 +9080,11 @@ async function excludeRequirement() {
     comments: state.finalSelections.get(Number(rowNumber))?.comments || [],
   });
   invalidateProductRequirementAfterChange(rowNumber);
-  closeSelectionDialog();
+  if (state.requirementReviewOpen) {
+    await returnToRequirementList({ focusRow: rowNumber });
+  } else {
+    await closeSelectionDialog();
+  }
   renderTable();
   renderProductApprovalPanel();
   renderMetrics();
@@ -6043,8 +9114,14 @@ async function improveProductRequirementWithAi() {
     alert(translateUiText("Bitte beschreibe, was die AI am Product Requirement verbessern soll."));
     return;
   }
+  if (result?.aiSuggestionEdited) {
+    const confirmed = await showQuestionDialog("Die AI Suggestion wurde manuell bearbeitet. Bei einer Neugenerierung werden diese Änderungen ersetzt. Möchtest du fortfahren?", {
+      confirmLabel: "Bestätigen",
+    });
+    if (!confirmed) return;
+  }
 
-  const currentText = result?.rewrittenRequirement || item.text;
+  const currentText = result?.aiSuggestionPlainText || result?.rewrittenRequirement || item.text;
   const previousVisibleScore = result ? productVisibleScore(
     result,
     state.finalSelections.get(Number(rowNumber)),
@@ -6053,14 +9130,15 @@ async function improveProductRequirementWithAi() {
   const previousStatus = els.prImproveButton.textContent;
   els.prImproveButton.disabled = true;
   els.selectAiButton.disabled = true;
-  els.prImproveButton.textContent = translateUiText("AI verbessert...");
+  els.prImproveButton.textContent = translateUiText("Verbesserung wird erzeugt ...");
 
   try {
     const improvementAttachments = await readImprovementAttachments(els.prImprovementAttachments);
-    const response = await fetch(endpoint, {
+    const data = await fetchAiJsonWithStatus(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        projectId: state.projectId,
         requirementType: "product-improvement",
         uiLanguage: selectedUiLanguage(),
         improvementInstruction: instruction,
@@ -6070,66 +9148,166 @@ async function improveProductRequirementWithAi() {
             ...item,
             text: currentText,
             score: result?.score,
+            finalScore: productFinalScore(result, state.finalSelections.get(Number(rowNumber))),
+            finalScoreStatus: productFinalScoreStatus(
+              result,
+              state.finalSelections.get(Number(rowNumber)),
+              state.finalScoreUpdates.has(Number(rowNumber)),
+            ),
+            issues: displayProductIssues(result, state.finalSelections.get(Number(rowNumber))),
+            originalIssues: result?.originalIssues || [],
           },
         ],
       }),
+    }, {
+      operationType: "product-improvement",
+      title: "AI Suggestion wird verbessert",
+      total: 1,
+      requirements: [{ ...item, text: currentText }],
+      attachmentCount: improvementAttachments.length,
+      errorMessage: "Product Requirement konnte nicht verbessert werden",
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Product Requirement konnte nicht verbessert werden");
-    }
 
     addOpenAiUsage(data.openAiUsage);
     const improved = data.result || data.results?.[0];
     if (!improved) return;
 
     const improvedText = improved.rewrittenRequirement || currentText;
-    const selection = ensureActiveProductSelection("ai");
-    const changeComment = await requestApprovedProductRequirementChangeComment(rowNumber, "AI-unterstützte Änderung");
-    if (changeComment === null) return;
-
-    upsertResult({
-      ...improved,
+    state.pendingProductImprovement = {
       rowNumber: Number(rowNumber),
-      id: item.id || improved.id || "",
-      originalScore: result?.originalScore ?? improved.originalScore ?? improved.score,
-      originalIssues: result?.originalIssues || improved.originalIssues || [],
-    });
-    els.selectionAiText.textContent = improved.rewrittenRequirement || currentText;
-    els.selectionScore.textContent = Number.isFinite(Number(previousVisibleScore))
-      ? String(previousVisibleScore)
-      : String(displayProductScore(improved, state.finalSelections.get(Number(rowNumber))) ?? "-");
-    els.selectionIssues.innerHTML = renderIssues(displayProductIssues(improved, state.finalSelections.get(Number(rowNumber))));
-    if (selection) {
-      selection.choice = "ai";
-      selection.selectedSource = "AI_ASSISTED_EDIT";
-      selection.text = improvedText;
-      selection.previousScore = previousVisibleScore;
-      selection.needsFinalAssessment = true;
-      selection.finalizedAt = "";
-      addProductReviewHistory(
-        selection,
-        productChangeHistoryReason("AI-unterstützte Änderung", changeComment),
-        selection.text,
-      );
-      invalidateProductRequirementAfterChange(rowNumber);
-    }
-  els.selectAiButton.disabled = false;
-  els.prImprovementInstruction.value = "";
-  els.prImprovementAttachments.value = "";
-  renderImprovementAttachmentList(els.prImprovementAttachments, els.prImprovementAttachmentList);
-  renderTable();
-    renderProductApprovalPanel();
-    renderMetrics();
-    setProjectRevisionAction(projectRevisionActionFor("AI-Vorschlag fuer PR erstellt", item, "PR"));
+      improved: {
+        ...improved,
+        rowNumber: Number(rowNumber),
+        id: item.id || improved.id || "",
+        rewrittenRequirement: improvedText,
+        originalScore: result?.originalScore ?? improved.originalScore ?? improved.score,
+        originalIssues: result?.originalIssues || improved.originalIssues || [],
+      },
+      previousText: currentText,
+    };
+    renderPendingProductImprovement();
+    els.selectAiButton.disabled = false;
     updateProjectActions();
   } catch (error) {
     alert(error.message);
   } finally {
     els.prImproveButton.disabled = false;
-    els.selectAiButton.disabled = !state.results.find((entry) => Number(entry.rowNumber) === Number(rowNumber))?.rewrittenRequirement;
+    els.selectAiButton.disabled = !richTextToPlainText(aiSuggestionContentForResult(state.results.find((entry) => Number(entry.rowNumber) === Number(rowNumber)))).trim();
     els.prImproveButton.textContent = previousStatus;
   }
+}
+
+function renderPendingProductImprovement() {
+  const pending = state.pendingProductImprovement;
+  if (!els.prImprovementResult) return;
+  if (!pending || Number(pending.rowNumber) !== Number(state.activeSelectionRow)) {
+    els.prImprovementResult.hidden = true;
+    els.prImprovementResult.innerHTML = "";
+    return;
+  }
+
+  els.prImprovementResult.hidden = false;
+  els.prImprovementResult.innerHTML = `
+    <div class="ai-improvement-result-header">
+      <h4>${escapeHtml(translateUiText("Verbesserter Vorschlag"))}</h4>
+      <div class="ai-improvement-result-actions">
+        <button type="button" data-product-improvement-action="accept" class="primary">${escapeHtml(translateUiText("Verbesserung übernehmen"))}</button>
+        <button type="button" data-product-improvement-action="retry">${escapeHtml(translateUiText("Erneut verbessern"))}</button>
+        <button type="button" data-product-improvement-action="discard">${escapeHtml(translateUiText("Verwerfen"))}</button>
+      </div>
+    </div>
+    <div class="ai-improvement-compare">
+      <article>
+        <strong>${escapeHtml(translateUiText("Bisherige Fassung"))}</strong>
+        <p>${escapeHtml(pending.previousText || "")}</p>
+      </article>
+      <article>
+        <strong>${escapeHtml(translateUiText("Neuer Vorschlag"))}</strong>
+        <p>${escapeHtml(pending.improved?.rewrittenRequirement || "")}</p>
+      </article>
+    </div>
+  `;
+}
+
+function clearPendingProductImprovement() {
+  state.pendingProductImprovement = null;
+  renderPendingProductImprovement();
+}
+
+function productFinalAcceptBlockReason(item, result) {
+  if (!canModifyProductRequirements()) return "Nur Product Requirement Owner oder Admins können Product Requirements bearbeiten.";
+  if (!item || !result) return "Noch kein AI-Vorschlag vorhanden.";
+  if (!richTextToPlainText(aiSuggestionContentForResult(result)).trim()) return "AI-Vorschlag darf nicht leer sein.";
+  if (Number(state.aiSuggestionEditingRow) === Number(state.activeSelectionRow)) return "Bitte speichere oder verwirf die offenen Änderungen am AI-Vorschlag.";
+  if (state.aiSuggestionEditorDirty) return "Bitte speichere oder verwirf die offenen Änderungen am AI-Vorschlag.";
+  if (state.projectSaveInFlight) return "Bitte warte, bis der Speichervorgang abgeschlossen ist.";
+  if (state.pendingProductImprovement && Number(state.pendingProductImprovement.rowNumber) === Number(state.activeSelectionRow)) {
+    return "Bitte übernimm oder verwerfe zuerst das offene Verbesserungsergebnis.";
+  }
+  if (els.prImproveButton?.disabled) return "Bitte warte, bis die AI-Verbesserung abgeschlossen ist.";
+  if (state.finalScoreUpdates.has(Number(item.rowNumber))) return "Bitte warte, bis die laufende Qualitätsprüfung abgeschlossen ist.";
+  return "";
+}
+
+async function confirmFinalAiSuggestionAcceptance() {
+  return showQuestionDialog("Der gespeicherte AI-Vorschlag wird als aktueller Requirement-Inhalt übernommen und neu bewertet.", {
+    title: "AI-Vorschlag übernehmen?",
+    confirmLabel: "Übernehmen",
+    cancelLabel: "Abbrechen",
+  });
+}
+
+async function handlePendingProductImprovementAction(event) {
+  const button = event.target.closest("[data-product-improvement-action]");
+  if (!button) return;
+
+  const action = button.dataset.productImprovementAction;
+  if (action === "discard") {
+    clearPendingProductImprovement();
+    return;
+  }
+
+  if (action === "retry") {
+    clearPendingProductImprovement();
+    void improveProductRequirementWithAi();
+    return;
+  }
+
+  if (action !== "accept") return;
+  const pending = state.pendingProductImprovement;
+  const rowNumber = Number(state.activeSelectionRow);
+  if (!pending || Number(pending.rowNumber) !== rowNumber) return;
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === rowNumber);
+  const changeComment = await requestApprovedProductRequirementChangeComment(rowNumber, "AI-unterstützte Änderung");
+  if (changeComment === null) return;
+
+  upsertResult(pending.improved);
+  const selection = ensureActiveProductSelection("ai");
+  if (selection) {
+    selection.choice = "ai";
+    selection.selectedSource = "AI_ASSISTED_EDIT";
+    applyRichTextToFinalSelection(selection, aiSuggestionContentForResult(state.results.find((entry) => Number(entry.rowNumber) === rowNumber)), "ai");
+    selection.needsFinalAssessment = true;
+    selection.finalRequirementAnalysisStatus = "STALE";
+    selection.finalRequirementAnalysisError = "";
+    selection.finalizedAt = "";
+    addProductReviewHistory(
+      selection,
+      productChangeHistoryReason("AI-unterstützte Änderung", changeComment),
+      selection.text,
+    );
+    invalidateProductRequirementAfterChange(rowNumber);
+  }
+  clearPendingProductImprovement();
+  els.prImprovementInstruction.value = "";
+  els.prImprovementAttachments.value = "";
+  renderImprovementAttachmentList(els.prImprovementAttachments, els.prImprovementAttachmentList);
+  renderAiSuggestionPreview(state.results.find((entry) => Number(entry.rowNumber) === rowNumber));
+  renderTable();
+  renderProductApprovalPanel();
+  renderMetrics();
+  setProjectRevisionAction(projectRevisionActionFor("AI-Vorschlag fuer PR erstellt", item, "PR"));
+  updateProjectActions();
 }
 
 async function selectFinalText(choice) {
@@ -6143,37 +9321,56 @@ async function selectFinalText(choice) {
 
   const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === rowNumber);
   const result = state.results.find((entry) => Number(entry.rowNumber) === rowNumber);
-  const text =
-    choice === "ai"
-      ? result?.rewrittenRequirement
-      : item?.text;
+  const richContent = choice === "ai" ? aiSuggestionContentForResult(result) : richTextFromPlainText(item?.text || "");
+  const text = richTextToPlainText(richContent);
 
   if (!item || !text) return;
-  if (state.techTypes.length && !currentTechTypeSelection().length) {
+  if (choice === "ai") {
+    if (Number(state.aiSuggestionEditingRow) === Number(rowNumber)) return;
+  }
+  if (choice === "ai") {
+    const blockReason = productFinalAcceptBlockReason(item, result);
+    if (blockReason) {
+      await showAlertDialog(blockReason);
+      renderProductReviewPanel();
+      return;
+    }
+  }
+  const previousSelection = state.finalSelections.get(Number(rowNumber));
+  const techTypes = currentOrPresetTechTypeSelection(item, previousSelection);
+  if (state.techTypes.length && !techTypes.length) {
     alert(translateUiText("Bitte wähle mindestens einen TechType aus."));
     return;
   }
 
-  const previousSelection = state.finalSelections.get(Number(rowNumber));
-  const changeComment = await requestApprovedProductRequirementChangeComment(
-    rowNumber,
-    choice === "ai" ? "AI-Vorschlag verwendet" : "Original verwendet",
-  );
-  if (changeComment === null) return;
   const existingComments = previousSelection ? productApprovalComments(previousSelection) : [];
+  const contentHash = semanticContentHash(text);
+  const acceptedAt = new Date().toISOString();
 
-  state.finalSelections.set(Number(rowNumber), {
+  const nextSelection = {
     choice,
     selectedSource: choice === "ai" ? "AI_PROPOSAL" : "ORIGINAL",
     text,
-    techTypes: currentTechTypeSelection(),
-    previousScore: result ? productVisibleScore(
-      result,
-      state.finalSelections.get(Number(rowNumber)),
-      state.finalScoreUpdates.has(Number(rowNumber)),
-    ) : null,
+    finalRequirementContent: richContent,
+    finalRequirementHtml: richTextToHtml(richContent),
+    finalRequirementPlainText: text,
+    finalRequirementFormatVersion: RICH_TEXT_FORMAT_VERSION,
+    finalRequirementContentHash: contentHash,
+    techTypes,
     needsFinalAssessment: true,
-    finalizedAt: "",
+    finalRequirementAnalysisStatus: choice === "ai" ? "PENDING" : "STALE",
+    finalRequirementAnalysisStartedAt: choice === "ai" ? new Date().toISOString() : "",
+    finalRequirementAnalysisCompletedAt: "",
+    finalRequirementAnalysisError: "",
+    finalRequirementAnalysisHash: "",
+    finalRequirementAnalysisScore: null,
+    finalRequirementAnalysisScoreBreakdown: null,
+    finalRequirementAnalysisIssues: [],
+    finalizedAt: choice === "ai" ? acceptedAt : "",
+    finalizedBy: choice === "ai" ? currentApprovalUserName() : "",
+    finalizedById: choice === "ai" ? state.currentUser?.id || "" : "",
+    finalizedContentHash: choice === "ai" ? contentHash : "",
+    finalizedSuggestionVersion: choice === "ai" ? String(result?.aiSuggestionEditedAt || result?.aiSuggestionGeneratedAt || result?.rewrittenAt || "") : "",
     approvedAt: "",
     approvedBy: "",
     approvals: [],
@@ -6184,29 +9381,52 @@ async function selectFinalText(choice) {
         text,
         changedAt: new Date().toISOString(),
         changedBy: currentApprovalUserName(),
-        reason: productChangeHistoryReason(
-          choice === "ai" ? "AI-Vorschlag verwendet" : "Original verwendet",
-          changeComment,
-        ),
+        reason: choice === "ai" ? "AI-Vorschlag übernommen" : "Original verwendet",
+        contentHash,
+        workflowStatus: choice === "ai" ? "FINAL_ACCEPTED_SCORE_PENDING" : "FINAL_DRAFT",
       },
     ],
-  });
+  };
+  state.finalSelections.set(Number(rowNumber), nextSelection);
   invalidateProductRequirementAfterChange(rowNumber, { clearApproval: false });
 
   if (choice === "ai") {
     const previousLabel = els.selectAiButton.textContent;
     els.selectAiButton.disabled = true;
     els.selectAiButton.textContent = translateUiText("Score wird berechnet...");
-    addProductReviewHistory(state.finalSelections.get(Number(rowNumber)), "Score-Neuberechnung gestartet", text);
-    const recalculatedScore = await recalculateFinalScore(item, text, choice);
+    showFinalScoreDialog("saving", 10);
+    const operationId = crypto.randomUUID();
+    const saved = await persistCurrentProjectNow(projectRevisionActionFor("AI-Vorschlag uebernommen", item, "PR"));
+    if (!saved) {
+      hideFinalScoreDialog();
+      await showAlertDialog("Projekt konnte nicht gespeichert werden.");
+      els.selectAiButton.textContent = previousLabel;
+      renderProductReviewPanel();
+      return;
+    }
+    const pendingSelection = state.finalSelections.get(Number(rowNumber));
+    const analysisHash = pendingSelection?.finalRequirementContentHash || semanticContentHash(text);
+    addProductReviewHistory(pendingSelection, `Score-Neuberechnung gestartet (${analysisHash})`, text);
+    const recalculatedScore = await recalculateFinalScore(item, text, choice, { contentHash: analysisHash, operationId });
     const updatedSelection = state.finalSelections.get(Number(rowNumber));
     if (updatedSelection && Number.isFinite(Number(recalculatedScore))) {
-      addProductReviewHistory(updatedSelection, "Score und Findings neu berechnet", updatedSelection.text);
+      addProductReviewHistory(updatedSelection, `Score und Findings neu berechnet (${analysisHash}): ${recalculatedScore}`, updatedSelection.text);
+    } else if (updatedSelection?.finalRequirementAnalysisStatus === "FAILED") {
+      addProductReviewHistory(updatedSelection, `Score-Neuberechnung fehlgeschlagen (${analysisHash})`, updatedSelection.text);
+      await showAlertDialog("Die AI Suggestion wurde übernommen, der neue Score konnte jedoch nicht berechnet werden. Bitte starte die Analyse erneut.");
+      els.selectAiButton.textContent = previousLabel;
+      renderTable();
+      renderProductApprovalPanel();
+      renderMetrics();
+      updateProjectActions();
+      return;
     }
     els.selectAiButton.textContent = previousLabel;
   }
 
-  closeSelectionDialog();
+  if (!state.requirementReviewOpen) {
+    await closeSelectionDialog();
+  }
   renderTable();
   renderProductApprovalPanel();
   renderMetrics();
@@ -6218,22 +9438,128 @@ async function selectFinalText(choice) {
   updateProjectActions();
 }
 
-function canApproveProductRequirement(rowNumber) {
-  if (!canApproveProductRequirements() || !isProductApprovalStarted()) return false;
-
+function productApprovalSubmissionBlockReason(rowNumber) {
   const selection = state.finalSelections.get(Number(rowNumber));
-  const approverSlotId = currentProductApproverSlotId();
-  if (!selection || selection.needsFinalAssessment || !approverSlotId) return false;
-  if (hasProductApprovalFrom(selection, approverSlotId)) return false;
-  if (countOpenDisapprovalComments(selection) > 0) return false;
-  if (selection.choice !== "excluded" && isProductQualityGateBlockingScore(displayProductScore(
-    state.results.find((entry) => Number(entry.rowNumber) === Number(rowNumber)),
-    selection,
-  ))) {
+  const result = state.results.find((entry) => Number(entry.rowNumber) === Number(rowNumber));
+  const isUpdatingFinalScore = state.finalScoreUpdates.has(Number(rowNumber));
+  if (!selection || !selection.finalizedAt) return "Bitte übernimm zuerst einen AI-Vorschlag als aktuellen Requirement-Inhalt.";
+  if (Number(state.aiSuggestionEditingRow) === Number(rowNumber) || state.aiSuggestionEditorDirty) return "Bitte speichere oder verwirf die offenen Änderungen am AI-Vorschlag.";
+  if (state.pendingProductImprovement && Number(state.pendingProductImprovement.rowNumber) === Number(rowNumber)) {
+    return "Bitte übernimm oder verwerfe zuerst das offene Verbesserungsergebnis.";
+  }
+  if (isUpdatingFinalScore || selection.finalRequirementAnalysisStatus === "PENDING") return "Bitte warte, bis die laufende Qualitätsprüfung abgeschlossen ist.";
+  if (selection.needsFinalAssessment || selection.finalRequirementAnalysisStatus === "STALE") return "Submit for Approval ist erst nach erfolgreicher Scoreberechnung möglich.";
+  if (selection.finalRequirementAnalysisStatus === "FAILED") return "Submit for Approval ist erst nach erfolgreicher Scoreberechnung möglich.";
+  const finalScore = productFinalScore(result, selection);
+  if (!Number.isFinite(finalScore)) return "Submit for Approval ist erst nach erfolgreicher Scoreberechnung möglich.";
+  if (finalScore < PRODUCT_STEP_MIN_SCORE) {
+    return translateUiText("Der aktuelle Score beträgt {{score}} von 100. Für die Freigabe zum Approval sind mindestens {{minimumScore}} Punkte erforderlich. Nacharbeit erforderlich.")
+      .replace("{{score}}", String(finalScore))
+      .replace("{{minimumScore}}", String(PRODUCT_STEP_MIN_SCORE));
+  }
+  const requirement = state.requirements.find((item) => Number(item.rowNumber) === Number(rowNumber));
+  if (!selectedTechTypesForRequirement(requirement, selection).length) return "Bitte wähle mindestens einen TechType aus.";
+  if (!canModifyProductRequirements()) return "Nur Product Requirement Owner oder Admins können Product Requirements für das Approval freigeben.";
+  if (selection.submittedForApprovalAt) return "Dieses Product Requirement wurde bereits für das Approval freigegeben.";
+  return "";
+}
+
+function canSubmitProductRequirementForApproval(rowNumber) {
+  return !productApprovalSubmissionBlockReason(rowNumber);
+}
+
+function productApprovalCanRecalculateBeforeSubmit(rowNumber) {
+  const normalizedRowNumber = Number(rowNumber);
+  const selection = state.finalSelections.get(normalizedRowNumber);
+  const result = state.results.find((entry) => Number(entry.rowNumber) === normalizedRowNumber);
+  if (!selection?.finalizedAt || !selection?.text?.trim()) return false;
+  if (Number(state.aiSuggestionEditingRow) === normalizedRowNumber || state.aiSuggestionEditorDirty) return false;
+  if (state.pendingProductImprovement && Number(state.pendingProductImprovement.rowNumber) === normalizedRowNumber) return false;
+  if (state.finalScoreUpdates.has(normalizedRowNumber) || selection.finalRequirementAnalysisStatus === "PENDING") return false;
+  if (!canModifyProductRequirements()) return false;
+
+  const status = productFinalScoreStatus(result, selection, false);
+  return (
+    selection.needsFinalAssessment ||
+    selection.finalRequirementAnalysisStatus === "STALE" ||
+    selection.finalRequirementAnalysisStatus === "FAILED" ||
+    status === "STALE" ||
+    status === "MISSING" ||
+    status === "ANALYSIS_FAILED"
+  );
+}
+
+async function ensureFinalScoreBeforeProductApprovalSubmit(rowNumber) {
+  if (!productApprovalCanRecalculateBeforeSubmit(rowNumber)) return true;
+
+  const normalizedRowNumber = Number(rowNumber);
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === normalizedRowNumber);
+  const selection = state.finalSelections.get(normalizedRowNumber);
+  if (!item || !selection?.text?.trim()) return false;
+
+  addProductReviewHistory(selection, "Score-Neuberechnung gestartet", selection.text);
+  const recalculatedScore = await recalculateFinalScore(item, selection.text, selection.choice || "manual");
+  const updatedSelection = state.finalSelections.get(normalizedRowNumber);
+  if (updatedSelection && Number.isFinite(Number(recalculatedScore))) {
+    addProductReviewHistory(updatedSelection, `Score neu berechnet: ${recalculatedScore}`, updatedSelection.text);
+    return true;
+  }
+
+  return false;
+}
+
+async function submitActiveProductRequirementForApproval(rowNumber = state.activeSelectionRow) {
+  await ensureFinalScoreBeforeProductApprovalSubmit(rowNumber);
+  const blockReason = productApprovalSubmissionBlockReason(rowNumber);
+  if (blockReason) {
+    alert(translateUiText(blockReason));
     return false;
   }
 
+  const selection = state.finalSelections.get(Number(rowNumber));
+  selection.submittedForApprovalAt = new Date().toISOString();
+  selection.submittedForApprovalBy = currentApprovalUserName();
+  selection.submittedForApprovalById = state.currentUser?.id || "";
+  selection.workflowStatus = "SUBMITTED_FOR_APPROVAL";
+  addProductReviewHistory(selection, "Für Approval freigegeben", selection.text);
+  state.changedProductRequirementRows.delete(Number(rowNumber));
+  renderTable();
+  renderMetrics();
+  renderProductApprovalPanel();
+  updateExportAvailability();
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
+  setProjectRevisionAction(projectRevisionActionFor("PR fuer Approval freigegeben", item, "PR"));
+  updateProjectActions();
   return true;
+}
+
+function productApproveBlockReason(rowNumber) {
+  const selection = state.finalSelections.get(Number(rowNumber));
+  const result = state.results.find((entry) => Number(entry.rowNumber) === Number(rowNumber));
+  const isUpdatingFinalScore = state.finalScoreUpdates.has(Number(rowNumber));
+  if (!selection || !selection.finalizedAt) return "Bitte übernimm zuerst einen AI-Vorschlag als aktuellen Requirement-Inhalt.";
+  if (isUpdatingFinalScore || selection.finalRequirementAnalysisStatus === "PENDING") return "Bitte warte, bis die laufende Qualitätsprüfung abgeschlossen ist.";
+  if (selection.needsFinalAssessment || selection.finalRequirementAnalysisStatus === "STALE") return "Approve PR ist erst nach erfolgreicher Scoreberechnung möglich.";
+  if (selection.finalRequirementAnalysisStatus === "FAILED") return "Approve PR ist erst nach erfolgreicher Scoreberechnung möglich.";
+  const finalScore = productFinalScore(result, selection);
+  if (!Number.isFinite(finalScore)) return "Approve PR ist erst nach erfolgreicher Scoreberechnung möglich.";
+  if (finalScore < PRODUCT_STEP_MIN_SCORE) {
+    return translateUiText("Der aktuelle Score beträgt {{score}} von 100. Für Approve PR sind mindestens {{minimumScore}} Punkte erforderlich.")
+      .replace("{{score}}", String(finalScore))
+      .replace("{{minimumScore}}", String(PRODUCT_STEP_MIN_SCORE));
+  }
+  if (!selection.submittedForApprovalAt) return "Das Product Requirement muss zuerst durch den PR Owner für Approval freigegeben werden.";
+  if (!canApproveProductRequirements()) return "Du hast keine Berechtigung, dieses Product Requirement zu approven.";
+  if (!isProductApprovalStarted()) return "Keine PR-Approver konfiguriert.";
+  const approverSlotId = currentProductApproverSlotId();
+  if (!approverSlotId) return "Du hast keine Berechtigung, dieses Product Requirement zu approven.";
+  if (hasProductApprovalFrom(selection, approverSlotId) || isProductSelectionApproved(selection)) return "Dieses Product Requirement ist bereits approved.";
+  if (countOpenDisapprovalComments(selection) > 0) return "Nacharbeit erforderlich";
+  return "";
+}
+
+function canApproveProductRequirement(rowNumber) {
+  return !productApproveBlockReason(rowNumber);
 }
 
 function productApprovalButtonText(rowNumber) {
@@ -6393,28 +9719,91 @@ function productApprovalStatusLabel(baseLabel, selection) {
   return `${baseLabel} (${countProductApprovals(selection)}/${requiredCount})`;
 }
 
-async function recalculateFinalScore(item, finalText, choice) {
-  const endpoint = getAnalyzeEndpoint();
+async function recalculateFinalScore(item, finalText, choice, options = {}) {
   const rowNumber = Number(item.rowNumber);
-  state.finalScoreUpdates.add(rowNumber);
-  if (!endpoint) {
-    state.finalScoreUpdates.delete(rowNumber);
-    updateExportAvailability();
-    return null;
+  const existingOperation = state.finalScoreOperations.get(rowNumber);
+  if (existingOperation?.promise) {
+    updateFinalScoreDialogPhase("analyzing");
+    return existingOperation.promise;
   }
 
-  renderTable();
-  updateExportAvailability();
+  const operationId = options.operationId || crypto.randomUUID();
+  const startedAtMs = Date.now();
+  const operation = {
+    operationId,
+    contentHash: contentVersion,
+    startedAt: new Date().toISOString(),
+    startedAtMs,
+    promise: null,
+  };
+  state.finalScoreOperations.set(rowNumber, operation);
+  const promise = Promise.resolve().then(() => runFinalScoreRecalculation(item, finalText, choice, { ...options, operationId }));
+  operation.promise = promise;
+  state.finalScoreOperations.set(rowNumber, {
+    ...operation,
+    promise,
+  });
 
   try {
-    const response = await fetch(endpoint, {
+    return await promise;
+  } finally {
+    const currentOperation = state.finalScoreOperations.get(rowNumber);
+    if (currentOperation?.operationId === operationId) {
+      state.finalScoreOperations.delete(rowNumber);
+    }
+  }
+}
+
+async function runFinalScoreRecalculation(item, finalText, choice, options = {}) {
+  const endpoint = getAnalyzeEndpoint();
+  const rowNumber = Number(item.rowNumber);
+  const analysisHash = options.contentHash || semanticContentHash(finalText);
+  const operationId = options.operationId || crypto.randomUUID();
+  const operation = state.finalScoreOperations.get(rowNumber);
+  const selectionAtStart = state.finalSelections.get(rowNumber);
+  let deferredErrorMessage = "";
+  if (selectionAtStart) {
+    selectionAtStart.finalRequirementAnalysisStatus = "PENDING";
+    selectionAtStart.finalRequirementAnalysisStartedAt = new Date().toISOString();
+    selectionAtStart.finalRequirementAnalysisOperationId = operationId;
+    selectionAtStart.finalRequirementAnalysisError = "";
+    selectionAtStart.finalRequirementAnalysisSource = "";
+    selectionAtStart.finalRequirementAnalysisScore = null;
+    selectionAtStart.finalRequirementAnalysisScoreBreakdown = null;
+    selectionAtStart.finalRequirementAnalysisIssues = [];
+    selectionAtStart.needsFinalAssessment = true;
+    delete selectionAtStart.previousScore;
+  }
+  state.finalScoreUpdates.add(rowNumber);
+  renderReviewScorePendingIndicator(rowNumber);
+  updateFinalScoreDialogPhase("started");
+  updateFinalScoreDialogPhase("analyzing");
+
+  try {
+    if (!endpoint) {
+      if (selectionAtStart) {
+        selectionAtStart.finalRequirementAnalysisStatus = "FAILED";
+        selectionAtStart.finalRequirementAnalysisError = "Analyse-Endpunkt nicht verfügbar.";
+        selectionAtStart.finalRequirementAnalysisSource = "";
+        selectionAtStart.finalRequirementAnalysisScore = null;
+        selectionAtStart.finalRequirementAnalysisScoreBreakdown = null;
+        selectionAtStart.finalRequirementAnalysisIssues = [];
+      }
+      updateExportAvailability();
+      return null;
+    }
+
+    const data = await fetchFinalScoreJson(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        projectId: state.projectId,
         analysisMode: "final",
         finalChoice: choice,
         requirementType: state.requirementType,
         uiLanguage: selectedUiLanguage(),
+        operationId,
+        contentVersion: analysisHash,
         requirements: [
           {
             ...item,
@@ -6422,51 +9811,194 @@ async function recalculateFinalScore(item, finalText, choice) {
           },
         ],
       }),
+    }, {
+      timeoutMs: 35000,
+      timeoutMessage: "Die Score-Neuberechnung hat zu lange gedauert und wurde abgebrochen. Bitte erneut versuchen.",
+      errorMessage: "Finale Bewertung fehlgeschlagen",
     });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Finale Bewertung fehlgeschlagen");
-    }
+    updateFinalScoreDialogPhase("received");
 
     addOpenAiUsage(data.openAiUsage);
+    const currentSelection = state.finalSelections.get(rowNumber);
+    if (
+      !currentSelection ||
+      currentSelection.finalRequirementContentHash !== analysisHash ||
+      currentSelection.finalRequirementAnalysisOperationId !== operationId
+    ) {
+      addProductReviewHistory(currentSelection, `Veraltetes Analyseergebnis verworfen (${analysisHash})`, finalText);
+      if (currentSelection?.finalRequirementAnalysisStatus === "PENDING") {
+        currentSelection.finalRequirementAnalysisStatus = "STALE";
+        currentSelection.finalRequirementAnalysisError = "Veraltetes Analyseergebnis verworfen.";
+        currentSelection.needsFinalAssessment = true;
+      }
+      return null;
+    }
+
     const updatedResult = Array.isArray(data.results) ? data.results[0] : null;
     if (updatedResult) {
+      const previousResult = state.results.find((entry) => Number(entry.rowNumber) === rowNumber);
+      if (previousResult?.originalScore != null) {
+        updatedResult.originalScore = previousResult.originalScore;
+      }
+      if (!updatedResult.originalScoreBreakdown && previousResult?.originalScoreBreakdown) {
+        updatedResult.originalScoreBreakdown = previousResult.originalScoreBreakdown;
+      }
+      if (Array.isArray(previousResult?.originalIssues)) {
+        updatedResult.originalIssues = previousResult.originalIssues;
+      }
+      updatedResult.rowNumber = Number.isFinite(Number(updatedResult.rowNumber)) ? Number(updatedResult.rowNumber) : rowNumber;
+      updatedResult.id = updatedResult.id || item.id || "";
       upsertResult(updatedResult);
       const selection = state.finalSelections.get(rowNumber);
       let recalculatedScore = null;
       if (selection) {
-        delete selection.needsFinalAssessment;
-        delete selection.previousScore;
+        updateFinalScoreDialogPhase("persisting");
         recalculatedScore = Number(displayProductScore(updatedResult, selection));
+        if (Number.isFinite(recalculatedScore)) {
+          delete selection.needsFinalAssessment;
+          delete selection.previousScore;
+          selection.finalRequirementAnalysisStatus = "COMPLETED";
+          selection.finalRequirementAnalysisCompletedAt = new Date().toISOString();
+          selection.finalRequirementAnalysisError = "";
+          selection.finalRequirementAnalysisSource = data.analysisSource || updatedResult.analysisSource || "ai";
+          selection.finalRequirementAnalysisHash = analysisHash;
+          selection.finalRequirementAnalysisOperationId = operationId;
+          selection.finalRequirementAnalysisScore = recalculatedScore;
+          selection.finalRequirementAnalysisScoreBreakdown = normalizeScoreBreakdown(updatedResult.scoreBreakdown);
+          selection.finalRequirementAnalysisIssues = displayProductIssues(updatedResult, selection);
+        } else {
+          selection.finalRequirementAnalysisStatus = "FAILED";
+          selection.finalRequirementAnalysisError = "Analyse lieferte keinen numerischen Score.";
+          selection.finalRequirementAnalysisSource = "";
+          selection.needsFinalAssessment = true;
+          selection.finalRequirementAnalysisScore = null;
+          selection.finalRequirementAnalysisScoreBreakdown = null;
+          selection.finalRequirementAnalysisIssues = [];
+        }
       }
+      await persistCurrentProjectNow(projectRevisionActionFor("Score und Findings neu berechnet", item, "PR"));
+      updateFinalScoreDialogPhase("refreshing");
       renderTable();
+      if (state.requirementReviewOpen && Number(state.activeSelectionRow) === rowNumber) {
+        renderProductReviewPanel();
+      }
       renderMetrics();
       return Number.isFinite(recalculatedScore) ? recalculatedScore : null;
     }
 
+    if (currentSelection && currentSelection.finalRequirementContentHash === analysisHash) {
+      currentSelection.finalRequirementAnalysisStatus = "FAILED";
+     currentSelection.finalRequirementAnalysisError = "Analyse lieferte kein Ergebnis.";
+      currentSelection.finalRequirementAnalysisSource = "";
+      currentSelection.needsFinalAssessment = true;
+      currentSelection.finalRequirementAnalysisScore = null;
+      currentSelection.finalRequirementAnalysisScoreBreakdown = null;
+      currentSelection.finalRequirementAnalysisIssues = [];
+    }
+
   } catch (error) {
-    alert(error.message);
+    console.error("Final requirement score recalculation failed:", { rowNumber, operationId, error: error.message });
+    const selection = state.finalSelections.get(rowNumber);
+    if (selection && selection.finalRequirementContentHash === analysisHash) {
+      selection.finalRequirementAnalysisStatus = "FAILED";
+      selection.finalRequirementAnalysisError = error.message || "Finale Bewertung fehlgeschlagen";
+      selection.finalRequirementAnalysisSource = "";
+      selection.needsFinalAssessment = true;
+      selection.finalRequirementAnalysisScore = null;
+      selection.finalRequirementAnalysisScoreBreakdown = null;
+      selection.finalRequirementAnalysisIssues = [];
+      delete selection.previousScore;
+    }
+    deferredErrorMessage = choice === "ai"
+      ? "Die AI Suggestion wurde übernommen, der neue Score konnte jedoch nicht berechnet werden. Bitte starte die Analyse erneut."
+      : error.message;
     return null;
   } finally {
+    updateFinalScoreDialogPhase("completed");
+    hideFinalScoreDialog();
+    const selection = state.finalSelections.get(rowNumber);
+    if (selection?.finalRequirementAnalysisStatus === "PENDING") {
+      selection.finalRequirementAnalysisStatus = "FAILED";
+      selection.finalRequirementAnalysisError = "Score-Neuberechnung wurde ohne Ergebnis beendet.";
+      selection.finalRequirementAnalysisSource = "";
+      selection.needsFinalAssessment = true;
+      selection.finalRequirementAnalysisScore = null;
+      selection.finalRequirementAnalysisScoreBreakdown = null;
+      selection.finalRequirementAnalysisIssues = [];
+    }
     state.finalScoreUpdates.delete(rowNumber);
     renderTable();
+    renderProductApprovalPanel();
+    if (Number(state.activeSelectionRow) === rowNumber) {
+      renderProductReviewPanel();
+    }
     renderMetrics();
     updateExportAvailability();
     updateProjectActions();
+    if (deferredErrorMessage) {
+      window.setTimeout(() => {
+        void showAlertDialog(deferredErrorMessage);
+      }, 0);
+    }
+  }
+}
+
+async function fetchFinalScoreJson(endpoint, init, options = {}) {
+  const timeoutMs = Number(options.timeoutMs) || 35_000;
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(endpoint, { ...init, signal: controller.signal });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || options.errorMessage || "Finale Bewertung fehlgeschlagen");
+    }
+    return data;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(options.timeoutMessage || "Die Score-Neuberechnung hat zu lange gedauert und wurde abgebrochen. Bitte erneut versuchen.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
   }
 }
 
 function upsertResult(result) {
   const rowNumber = Number(result.rowNumber);
+  normalizeAiSuggestionResult(result);
   const index = state.results.findIndex((entry) => Number(entry.rowNumber) === rowNumber);
 
   if (index >= 0) {
+    const previous = state.results[index];
+    if (result.originalScore == null && previous?.originalScore != null) {
+      result.originalScore = previous.originalScore;
+    }
+    if (!result.originalScoreBreakdown && previous?.originalScoreBreakdown) {
+      result.originalScoreBreakdown = previous.originalScoreBreakdown;
+    }
+    if (!Array.isArray(result.originalIssues) && Array.isArray(previous?.originalIssues)) {
+      result.originalIssues = previous.originalIssues;
+    }
     state.results[index] = result;
     return;
   }
 
   state.results.push(result);
+}
+
+function normalizeAiSuggestionResult(result) {
+  if (!result) return result;
+  const content = normalizeRichTextContent(result.aiSuggestionContent, result.aiSuggestionPlainText || result.rewrittenRequirement || "");
+  result.aiSuggestionContent = content;
+  result.aiSuggestionHtml = richTextToHtml(content);
+  result.aiSuggestionPlainText = richTextToPlainText(content);
+  result.aiSuggestionFormatVersion = RICH_TEXT_FORMAT_VERSION;
+  result.rewrittenRequirement = result.aiSuggestionPlainText;
+  result.aiSuggestionGeneratedAt = result.aiSuggestionGeneratedAt || new Date().toISOString();
+  result.originalScoreBreakdown = normalizeScoreBreakdown(result.originalScoreBreakdown);
+  result.scoreBreakdown = normalizeScoreBreakdown(result.scoreBreakdown);
+  return result;
 }
 
 function renderIssues(issues = []) {
@@ -6493,9 +10025,64 @@ function formatIssueField(value) {
 }
 
 function displayIssueField(issue, field) {
+  if (field === "severity") return issueSeverityLabel(issue?.severity);
+  if (field === "criterion") return issueCriterionLabel(issue?.criterion);
   const language = currentLanguage();
   const translated = issue?._translations?.[language]?.[field];
-  return formatIssueField(translated || issue?.[field] || "-");
+  const translationHash = issue?._translations?.[language]?.analysisHash || "";
+  const translationIsCurrent = !issue?._analysisHash || !translationHash || translationHash === issue._analysisHash;
+  return formatIssueField(translationIsCurrent ? translated || issue?.[field] || "-" : issue?.[field] || "-");
+}
+
+function issueSeverityLabel(value) {
+  const key = String(value || "").trim().toLowerCase();
+  return translateUiText(ISSUE_SEVERITY_LABELS[key] || value || "-");
+}
+
+function issueCriterionLabel(value) {
+  const key = normalizeIssueCriterionKey(value);
+  return translateUiText(ISSUE_CRITERION_LABELS[key] || value || "-");
+}
+
+function normalizeIssueCriterionKey(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9äöüß]+/g, "");
+  return ISSUE_CRITERION_ALIASES[normalized] || "";
+}
+
+function renderAnalysisTranslationNotice(issues = []) {
+  const language = currentLanguage();
+  const needsTranslation = issues.some((issue) => issueNeedsTranslation(issue, language));
+  const isLoading = state.feedbackTranslationLoadingLanguage === language && needsTranslation;
+  const hasError = state.feedbackTranslationErrorLanguage === language && needsTranslation;
+  if (!isLoading && !hasError) return "";
+
+  const progress = state.feedbackTranslationProgress?.language === language ? state.feedbackTranslationProgress : null;
+  const text = isLoading && progress
+    ? feedbackTranslationProgressText(progress)
+    : isLoading
+      ? translateUiText("Analysehinweise werden übersetzt ...")
+    : translateUiText("Die Analysehinweise konnten nicht in die gewählte Sprache übersetzt werden.");
+  return `<p class="analysis-translation-state ${isLoading ? "is-loading" : "is-error"}">${escapeHtml(text)}</p>`;
+}
+
+function feedbackTranslationProgressText(progress) {
+  const completed = Number(progress.completed) || 0;
+  const total = Number(progress.total) || 0;
+  if (currentLanguage() === "en") return `Translating analysis issues: ${completed} of ${total} requirements`;
+  return `Analysehinweise werden übersetzt: ${completed} von ${total} Requirements`;
+}
+
+function issueNeedsTranslation(issue, language = currentLanguage()) {
+  if (!issue || typeof issue !== "object") return false;
+  const translation = issue._translations?.[language];
+  if (translation && (!issue._analysisHash || !translation.analysisHash || translation.analysisHash === issue._analysisHash)) return false;
+  if (!issue.explanation && !issue.suggestion) return false;
+  return true;
 }
 
 async function readImprovementAttachments(input) {
@@ -6645,16 +10232,36 @@ function renderImprovementAttachmentList(input, list) {
     return;
   }
 
-  list.innerHTML = files
-    .slice(0, 5)
-    .map((file) => `
+  const visibleFiles = files.slice(0, 5);
+  list.innerHTML = `
+    <span class="attachment-count">${escapeHtml(translateUiText(visibleFiles.length === 1 ? "1 Datei ausgewählt" : "{{count}} Dateien ausgewählt").replace("{{count}}", String(visibleFiles.length)))}</span>
+    ${visibleFiles
+      .map((file, index) => `
       <span class="attachment-chip" title="${escapeHtml(file.name)}">
         <span class="attachment-chip-icon" aria-hidden="true">${isExcelAttachment(file) ? "XLS" : "TXT"}</span>
         <span class="attachment-chip-name">${escapeHtml(file.name)}</span>
         <small>${formatFileSize(file.size)}</small>
+        <button type="button" data-remove-improvement-attachment="${index}" aria-label="${escapeHtml(translateUiText("Anhang entfernen"))}">×</button>
       </span>
     `)
-    .join("");
+      .join("")}
+  `;
+}
+
+function handleImprovementAttachmentListClick(event, input, list) {
+  const removeButton = event.target.closest("[data-remove-improvement-attachment]");
+  if (!removeButton || !input) return;
+
+  const removeIndex = Number(removeButton.dataset.removeImprovementAttachment);
+  const files = [...(input.files || [])];
+  if (!Number.isFinite(removeIndex) || removeIndex < 0 || removeIndex >= files.length) return;
+
+  const transfer = new DataTransfer();
+  files.forEach((file, index) => {
+    if (index !== removeIndex) transfer.items.add(file);
+  });
+  input.files = transfer.files;
+  renderImprovementAttachmentList(input, list);
 }
 
 function formatFileSize(value) {
@@ -6668,16 +10275,15 @@ function renderScoreCell(result, score, isSelected, isExcluded, isUpdatingFinalS
   if (isExcluded) return "-";
 
   if (isUpdatingFinalScore) {
-    const currentScore = result ? renderScoreValue(score, isSelected, "score-stale") : "";
     return `
       <span class="score-update">
         <span class="inline-spinner" aria-hidden="true"></span>
-        <span>${currentScore || "Aktualisiert..."}</span>
+        <span>${escapeHtml(translateUiText("Score wird berechnet..."))}</span>
       </span>
     `;
   }
 
-  return result ? renderScoreValue(score, isSelected) : "-";
+  return result && Number.isFinite(Number(score)) ? renderScoreValue(score, isSelected) : "-";
 }
 
 function renderScoreValue(score, isSelected, extraClass = "") {
@@ -6692,16 +10298,14 @@ function renderScoreValue(score, isSelected, extraClass = "") {
 
 function displayProductScore(result, selection = null, options = {}) {
   if (!result) return null;
-  if (options.usePreviousScore) {
-    const previousScore = Number(selection?.previousScore);
-    if (Number.isFinite(previousScore)) return previousScore;
-  }
 
   if (!selection || selection.choice === "original") {
     const originalScore = Number(result.originalScore);
     return Number.isFinite(originalScore) ? originalScore : Number(result.score);
   }
 
+  const analyzedScore = Number(selection.finalRequirementAnalysisScore);
+  if (Number.isFinite(analyzedScore) && selection.finalRequirementAnalysisStatus === "COMPLETED") return analyzedScore;
   return Number(result.score);
 }
 
@@ -6709,6 +10313,10 @@ function displayProductIssues(result, selection = null) {
   if (!result) return [];
   if (!selection) {
     return Array.isArray(result.originalIssues) ? result.originalIssues : Array.isArray(result.issues) ? result.issues : [];
+  }
+
+  if (selection.finalizedAt || selection.choice === "ai" || selection.selectedSource === "AI_PROPOSAL") {
+    return Array.isArray(result.issues) ? result.issues : [];
   }
 
   if (!isProductSelectionFullyApproved(selection)) {
@@ -6764,6 +10372,7 @@ function renderMetrics() {
   updateWorkflowState();
   renderSoftwarePage();
   renderE2ePage();
+  renderWorkflowArtifactPages();
 }
 
 function renderProductWorkflowMetrics({ count, countLabel, score, issues }) {
@@ -6819,13 +10428,20 @@ function renderProductNextAction(productReady = isProductReadyForTransferSimulat
     personalReworkCount,
     personalApprovalCount,
   });
+  els.productNextActionPanel.hidden = Boolean(nextAction.hidden);
+  if (nextAction.hidden) {
+    renderProductTodoList();
+    return;
+  }
 
   els.productNextActionKicker.textContent = translateUiText(nextAction.kicker || "Arbeitszentrale");
   els.productNextActionTitle.textContent = translateUiText(nextAction.title);
   els.productNextActionText.textContent = translateUiText(nextAction.text);
-  els.productNextActionButton.textContent = translateUiText(nextAction.button);
-  els.productNextActionButton.disabled = nextAction.disabled;
-  els.productNextActionButton.dataset.productAction = nextAction.action;
+  const hasActionButton = Boolean(nextAction.button && nextAction.action !== "none");
+  els.productNextActionButton.hidden = !hasActionButton;
+  els.productNextActionButton.textContent = hasActionButton ? translateUiText(nextAction.button) : "";
+  els.productNextActionButton.disabled = !hasActionButton || nextAction.disabled;
+  els.productNextActionButton.dataset.productAction = hasActionButton ? nextAction.action : "none";
   els.productNextActionPanel.classList.toggle("is-complete", nextAction.state === "complete");
   els.productNextActionPanel.classList.toggle("is-blocked", nextAction.state === "blocked");
 
@@ -6917,16 +10533,21 @@ function productNextActionState({
   }
 
   if (!approvalComplete) {
+    if (approvalStarted) {
+      return {
+        hidden: true,
+        currentStep: els.productApprovalBar,
+      };
+    }
+
     return {
       kicker: "Arbeitszentrale",
-      title: approvalStarted ? "Freigabe prüfen" : "Freigabe starten",
-      text: approvalStarted
-        ? "Der Approval-Prozess läuft. Für dich sind aktuell keine offenen Aufgaben vorhanden."
-        : "Alle Product Requirements sind bearbeitet. Starte die Freigabe mit den ausgewählten Approvern.",
-      button: approvalStarted ? "Approval-Status ansehen" : "Freigabe starten",
+      title: "Freigabe starten",
+      text: "Alle Product Requirements sind bearbeitet. Starte die Freigabe mit den ausgewählten Approvern.",
+      button: "Freigabe starten",
       action: "approval",
-      disabled: approvalStarted ? !canOpenApproval : !canStartApproval,
-      state: approvalStarted || canStartApproval ? "active" : "blocked",
+      disabled: !canStartApproval,
+      state: canStartApproval ? "active" : "blocked",
       currentStep: els.productApprovalBar,
     };
   }
@@ -7043,6 +10664,7 @@ function handleProductTodoClick(event) {
 
 function openProductPersonalWorkList(filter, rowNumber = null) {
   state.productApprovalStatusFilter = filter;
+  state.productApprovalStatusFilterManual = true;
   state.productApprovalListSearch = "";
   if (els.productApprovalSearch) els.productApprovalSearch.value = "";
   if (els.productApprovalStatusFilter) els.productApprovalStatusFilter.value = filter;
@@ -7108,7 +10730,7 @@ function renderProductQualityGate() {
   if (gate.status === "BLOCKED") {
     els.productQualityGateTitle.textContent = translateUiText("PR Bearbeitung offen");
     els.productQualityGateSummary.textContent = `${gate.readyRequirements}/${gate.totalRequirements - gate.excludedRequirements} ${translateUiText("Requirements bereit für Freigabe")}`;
-    els.productQualityGateDetail.textContent = `${gate.failedScoreRequirements} ${translateUiText("mit Nacharbeit")}, ${gate.missingTechTypeRequirements} ${translateUiText("ohne TechTypes")}. ${translateUiText("Approval-Prozess kann erst gestartet werden, wenn alle nicht ausgeschlossenen Requirements Score >= 85 haben.")}`;
+    els.productQualityGateDetail.textContent = `${gate.failedScoreRequirements} ${translateUiText("mit Nacharbeit")}, ${gate.missingTechTypeRequirements} ${translateUiText("ohne TechTypes")}, ${gate.pendingSubmissionRequirements} ${translateUiText("ohne Owner-Freigabe")}. ${translateUiText("Approval-Prozess kann erst gestartet werden, wenn alle nicht ausgeschlossenen Requirements Score >= 85 haben und durch den PR Owner freigegeben wurden.")}`;
     els.productQualityGateCard.title = `${els.productQualityGateSummary.textContent} ${els.productQualityGateDetail.textContent}`;
     els.productEditButton.textContent = translateUiText("PR bearbeiten");
     return;
@@ -7216,18 +10838,18 @@ function renderSoftwarePage() {
           const isExcluded = selection?.excluded === true;
           return `
           <tr class="software-derived-row${item.pending ? " software-pending-row" : ""} ${isExcluded ? "excluded-row" : ""}" data-software-id="${escapeHtml(softwareId)}" tabindex="0">
-            <td class="decision-cell">
+            <td class="decision-cell" data-label="${escapeHtml(translateUiText("Status"))}">
               <span class="decision-icon ${status.className}" aria-label="${escapeHtml(status.label)}">
                 ${status.icon}
               </span>
             </td>
-            <td>${escapeHtml(softwareId)}</td>
-            <td>
+            <td data-label="${escapeHtml(translateUiText("SR-ID"))}">${escapeHtml(softwareId)}</td>
+            <td data-label="${escapeHtml(translateUiText("Verwendetes Product Requirement"))}">
               <strong>${escapeHtml(source.name || source.id || "Product Requirement")}</strong><br />
               ${escapeHtml(source.text)}
             </td>
-            <td>${item.pending ? '<span class="muted-cell">Noch nicht abgeleitet.</span>' : renderSoftwareRequirementContent(item)}</td>
-            <td>${item.pending ? "-" : renderSoftwareScoreCell(item, isExcluded)}</td>
+            <td data-label="${escapeHtml(translateUiText("Software Requirement"))}">${item.pending ? '<span class="muted-cell">Noch nicht abgeleitet.</span>' : renderSoftwareRequirementContent(item)}</td>
+            <td data-label="${escapeHtml(translateUiText("Score"))}">${item.pending ? "-" : renderSoftwareScoreCell(item, isExcluded)}</td>
           </tr>
         `;
         },
@@ -7541,15 +11163,17 @@ async function regenerateSoftwareRequirementFromDialog() {
   els.softwareSelectionRegenerateButton.textContent = translateUiText("SR wird abgeleitet...");
 
   try {
-    const response = await fetch(endpoint, {
+    const data = await fetchAiJsonWithStatus(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requirementType: "software", uiLanguage: selectedUiLanguage(), requirements: [sourceRequirement] }),
+      body: JSON.stringify({ projectId: state.projectId, requirementType: "software", uiLanguage: selectedUiLanguage(), requirements: [sourceRequirement] }),
+    }, {
+      operationType: "sr-derivation",
+      title: "Software Requirements werden abgeleitet",
+      total: 1,
+      requirements: [sourceRequirement],
+      errorMessage: "Software Requirement konnte nicht neu abgeleitet werden",
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Software Requirement konnte nicht neu abgeleitet werden");
-    }
 
     addOpenAiUsage(data.openAiUsage);
     const rawSoftwareRequirements = Array.isArray(data.softwareRequirements) ? data.softwareRequirements : [];
@@ -7647,10 +11271,11 @@ async function improveSoftwareRequirementWithAi() {
 
   try {
     const improvementAttachments = await readImprovementAttachments(els.softwareImprovementAttachments);
-    const response = await fetch(endpoint, {
+    const data = await fetchAiJsonWithStatus(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        projectId: state.projectId,
         requirementType: "software-improvement",
         uiLanguage: selectedUiLanguage(),
         improvementInstruction: instruction,
@@ -7661,11 +11286,14 @@ async function improveSoftwareRequirementWithAi() {
           text: els.softwareSelectionText.value.trim() || item.text || "",
         },
       }),
+    }, {
+      operationType: "software-improvement",
+      title: "Software Requirement wird verbessert",
+      total: 1,
+      requirements: [sourceRequirement],
+      attachmentCount: improvementAttachments.length,
+      errorMessage: "Software Requirement konnte nicht verbessert werden",
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Software Requirement konnte nicht verbessert werden");
-    }
 
     addOpenAiUsage(data.openAiUsage);
     const improved = data.softwareRequirement || {};
@@ -7701,6 +11329,7 @@ async function improveSoftwareRequirementWithAi() {
     } else {
       state.e2eTests = [];
       state.e2eSelections = new Map();
+      resetWorkflowArtifacts();
       state.e2eScoreFilterActive = false;
       resetSoftwareWindchillTransfer();
     }
@@ -7764,6 +11393,7 @@ function acceptSoftwareRequirement() {
   } else {
     state.e2eTests = [];
     state.e2eSelections = new Map();
+    resetWorkflowArtifacts();
     state.e2eScoreFilterActive = false;
     resetSoftwareWindchillTransfer();
   }
@@ -7794,6 +11424,7 @@ function excludeSoftwareRequirement() {
   } else {
     state.e2eTests = [];
     state.e2eSelections = new Map();
+    resetWorkflowArtifacts();
     state.e2eScoreFilterActive = false;
     resetSoftwareWindchillTransfer();
   }
@@ -7894,7 +11525,13 @@ async function generateSoftwareRequirements() {
 
   els.generateSoftwareButton.disabled = true;
   setMenuButtonAvailability(els.generateSoftwareMenuButton, false, "Software Requirements werden abgeleitet");
-  await showProgress(requirements.length, { requirements, mode: "sr-derivation", batchSize: ANALYSIS_BATCH_SIZE });
+  await showProgress(requirements.length, {
+    requirements,
+    mode: "sr-derivation",
+    operationType: "sr-derivation",
+    title: "Software Requirements werden abgeleitet",
+    batchSize: ANALYSIS_BATCH_SIZE,
+  });
 
   try {
     const rawSoftwareRequirements = [];
@@ -7915,7 +11552,7 @@ async function generateSoftwareRequirements() {
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requirementType: "software", uiLanguage: selectedUiLanguage(), requirements: batch }),
+        body: JSON.stringify({ projectId: state.projectId, requirementType: "software", uiLanguage: selectedUiLanguage(), requirements: batch }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -7941,6 +11578,7 @@ async function generateSoftwareRequirements() {
     if (!keepExistingE2eTests) {
       state.e2eTests = [];
       state.e2eSelections = new Map();
+      resetWorkflowArtifacts();
     }
     requirements.forEach((requirement) => state.changedProductRequirementRows.delete(Number(requirement.rowNumber)));
     state.changedSoftwareRequirementIds = keepExistingE2eTests
@@ -7954,7 +11592,7 @@ async function generateSoftwareRequirements() {
     setProjectRevisionAction(`Software Requirements abgeleitet: ${state.softwareRequirements.length} SR`);
     updateProjectActions();
   } catch (error) {
-    hideProgress();
+    failProgress(error);
     alert(error.message);
   } finally {
     renderSoftwarePage();
@@ -8154,18 +11792,18 @@ function renderE2ePage() {
         const isExcluded = selection?.excluded === true;
         return `
           <tr class="e2e-derived-row${item.pending ? " software-pending-row" : ""} ${isExcluded ? "excluded-row" : ""}" data-e2e-id="${escapeHtml(e2eId)}" tabindex="0">
-            <td class="decision-cell">
+            <td class="decision-cell" data-label="${escapeHtml(translateUiText("Status"))}">
               <span class="decision-icon ${status.className}" aria-label="${escapeHtml(status.label)}">
                 ${status.icon}
               </span>
             </td>
-            <td>${escapeHtml(e2eId)}</td>
-            <td>
+            <td data-label="${escapeHtml(translateUiText("E2E-ID"))}">${escapeHtml(e2eId)}</td>
+            <td data-label="${escapeHtml(translateUiText("Verwendetes Software Requirement"))}">
               <strong>${escapeHtml(source.id || "Software Requirement")}</strong><br />
               ${escapeHtml(source.text)}
             </td>
-            <td>${item.pending ? '<span class="muted-cell">Noch nicht abgeleitet.</span>' : renderE2eContent(item)}</td>
-            <td>${item.pending ? "-" : renderE2eScoreCell(item, isExcluded)}</td>
+            <td data-label="${escapeHtml(translateUiText("E2E TestCase"))}">${item.pending ? '<span class="muted-cell">Noch nicht abgeleitet.</span>' : renderE2eContent(item)}</td>
+            <td data-label="${escapeHtml(translateUiText("Score"))}">${item.pending ? "-" : renderE2eScoreCell(item, isExcluded)}</td>
           </tr>
         `;
       }),
@@ -8524,15 +12162,17 @@ async function regenerateE2eTestFromDialog() {
   els.e2eSelectionRegenerateButton.textContent = translateUiText("E2E TestCase wird abgeleitet...");
 
   try {
-    const response = await fetch(endpoint, {
+    const data = await fetchAiJsonWithStatus(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requirementType: "e2e", uiLanguage: selectedUiLanguage(), requirements: [sourceRequirement] }),
+      body: JSON.stringify({ projectId: state.projectId, requirementType: "e2e", uiLanguage: selectedUiLanguage(), requirements: [sourceRequirement] }),
+    }, {
+      operationType: "e2e-derivation",
+      title: "E2E TestCases werden abgeleitet",
+      total: 1,
+      requirements: [sourceRequirement],
+      errorMessage: "E2E TestCase konnte nicht neu abgeleitet werden",
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "E2E TestCase konnte nicht neu abgeleitet werden");
-    }
 
     addOpenAiUsage(data.openAiUsage);
     const rawE2eTests = Array.isArray(data.e2eTests) ? data.e2eTests : [];
@@ -8611,10 +12251,11 @@ async function improveE2eTestWithAi() {
 
   try {
     const improvementAttachments = await readImprovementAttachments(els.e2eImprovementAttachments);
-    const response = await fetch(endpoint, {
+    const data = await fetchAiJsonWithStatus(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        projectId: state.projectId,
         requirementType: "e2e-improvement",
         uiLanguage: selectedUiLanguage(),
         improvementInstruction: instruction,
@@ -8625,11 +12266,14 @@ async function improveE2eTestWithAi() {
           description: els.e2eSelectionText.value.trim() || item.description || item.text || "",
         },
       }),
+    }, {
+      operationType: "e2e-improvement",
+      title: "E2E TestCase wird verbessert",
+      total: 1,
+      requirements: [sourceRequirement],
+      attachmentCount: improvementAttachments.length,
+      errorMessage: "E2E TestCase konnte nicht verbessert werden",
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "E2E TestCase konnte nicht verbessert werden");
-    }
 
     addOpenAiUsage(data.openAiUsage);
     const improved = data.e2eTest || {};
@@ -8835,7 +12479,13 @@ async function generateE2eTests() {
 
   els.generateE2eButton.disabled = true;
   setMenuButtonAvailability(els.generateE2eMenuButton, false, "E2E TestCases werden abgeleitet");
-  await showProgress(requirements.length, { requirements, mode: "e2e-derivation", batchSize: ANALYSIS_BATCH_SIZE });
+  await showProgress(requirements.length, {
+    requirements,
+    mode: "e2e-derivation",
+    operationType: "e2e-derivation",
+    title: "E2E TestCases werden abgeleitet",
+    batchSize: ANALYSIS_BATCH_SIZE,
+  });
 
   try {
     const rawE2eTests = [];
@@ -8855,7 +12505,7 @@ async function generateE2eTests() {
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requirementType: "e2e", uiLanguage: selectedUiLanguage(), requirements: batch }),
+        body: JSON.stringify({ projectId: state.projectId, requirementType: "e2e", uiLanguage: selectedUiLanguage(), requirements: batch }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -8875,13 +12525,14 @@ async function generateE2eTests() {
 
     state.e2eTests = normalizeE2eTests(rawE2eTests, requirements);
     state.e2eSelections = new Map();
+    resetWorkflowArtifacts();
     requirements.forEach((requirement) => state.changedSoftwareRequirementIds.delete(String(requirement.id || "")));
     state.e2eScoreFilterActive = false;
     completeProgress(requirements.length);
     setProjectRevisionAction(`E2E TestCases abgeleitet: ${state.e2eTests.length} TestCases`);
     updateProjectActions();
   } catch (error) {
-    hideProgress();
+    failProgress(error);
     alert(error.message);
   } finally {
     renderE2ePage();
@@ -8970,6 +12621,339 @@ function clearE2eScoreFilter() {
   renderE2ePage();
 }
 
+function resetWorkflowArtifacts(fromStep = "usecase") {
+  if (fromStep === "usecase") {
+    state.useCases = [];
+    state.userStories = [];
+    state.appTests = [];
+    return;
+  }
+
+  if (fromStep === "userstory") {
+    state.userStories = [];
+    state.appTests = [];
+    return;
+  }
+
+  if (fromStep === "app-test") {
+    state.appTests = [];
+  }
+}
+
+function renderWorkflowArtifactPages() {
+  renderWorkflowArtifactPage(workflowArtifactUiConfig("usecase"));
+  renderWorkflowArtifactPage(workflowArtifactUiConfig("userstory"));
+  renderWorkflowArtifactPage(workflowArtifactUiConfig("app-test"));
+}
+
+function renderWorkflowArtifactPage(config) {
+  if (!config?.body) return;
+
+  const sources = config.getSources();
+  const artifacts = config.getArtifacts();
+  const scores = artifacts.map((item) => Number(item.score)).filter(Number.isFinite);
+  const criticalCount = artifacts.filter((item) => isCriticalScore(Number(item.score))).length;
+  config.derivedMetric.textContent = `${getWorkflowArtifactDerivedCount(artifacts)} / ${sources.length}`;
+  config.scoreMetric.textContent = scores.length
+    ? String(Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length))
+    : "-";
+  config.issueMetric.textContent = String(criticalCount);
+  config.generateButton.disabled = !hasProject() || !config.canGenerate();
+
+  if (!sources.length) {
+    config.body.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(translateUiText(config.emptySourceMessage))}</td></tr>`;
+    return;
+  }
+
+  const artifactsBySourceId = new Map();
+  artifacts.forEach((item) => {
+    const sourceId = String(item.sourceId || "");
+    const entries = artifactsBySourceId.get(sourceId) || [];
+    entries.push(item);
+    artifactsBySourceId.set(sourceId, entries);
+  });
+
+  const rows = [];
+  sources.forEach((source, sourceIndex) => {
+    const sourceArtifacts = artifactsBySourceId.get(String(source.id || "")) || [];
+    const displayArtifacts = sourceArtifacts.length
+      ? sourceArtifacts
+      : [{
+          id: buildWorkflowArtifactId(config.idPrefix, source, { fallbackIndex: sourceIndex }),
+          sourceId: source.id || "",
+          pending: true,
+        }];
+
+    rows.push(...displayArtifacts.map((item) => renderWorkflowArtifactRow(config, item, source)));
+  });
+
+  config.body.innerHTML = rows.length
+    ? rows.join("")
+    : `<tr><td colspan="5" class="empty">${escapeHtml(translateUiText(config.emptyArtifactsMessage))}</td></tr>`;
+}
+
+function renderWorkflowArtifactRow(config, item, source) {
+  const score = Number(item.score);
+  const isPending = item.pending === true;
+  const statusClass = isPending ? "empty" : isCriticalScore(score) ? "critical" : "approved";
+  const statusIcon = isPending ? "" : isCriticalScore(score) ? "!" : "&#10003;";
+  const statusLabel = isPending ? config.pendingLabel : isCriticalScore(score) ? config.criticalLabel : config.readyLabel;
+
+  return `
+    <tr class="software-derived-row${isPending ? " software-pending-row" : ""}">
+      <td class="decision-cell" data-label="${escapeHtml(translateUiText("Status"))}">
+        <span class="decision-icon ${statusClass}" aria-label="${escapeHtml(translateUiText(statusLabel))}">${statusIcon}</span>
+      </td>
+      <td data-label="${escapeHtml(translateUiText(config.idHeader))}">${escapeHtml(item.id || "")}</td>
+      <td data-label="${escapeHtml(translateUiText(config.sourceHeader))}">
+        <strong>${escapeHtml(source.id || config.sourceFallback)}</strong><br />
+        ${escapeHtml(source.text || source.description || "")}
+      </td>
+      <td data-label="${escapeHtml(translateUiText(config.artifactHeader))}">
+        ${isPending ? `<span class="muted-cell">${escapeHtml(translateUiText("Noch nicht abgeleitet."))}</span>` : renderWorkflowArtifactContent(item)}
+      </td>
+      <td data-label="${escapeHtml(translateUiText("Score"))}">${isPending ? "-" : renderWorkflowArtifactScoreCell(item)}</td>
+    </tr>
+  `;
+}
+
+function renderWorkflowArtifactContent(item) {
+  return `
+    <p class="e2e-group-label"><span>${escapeHtml(translateUiText("Titel"))}</span>${escapeHtml(item.title || item.id || "")}</p>
+    <p class="software-requirement-text">${escapeHtml(item.description || "")}</p>
+    ${renderFlowSection("Details", item.details)}
+    ${renderFlowSection(acceptanceCriteriaLabelForSoftwareRequirement(item), item.acceptanceCriteria)}
+  `;
+}
+
+function renderWorkflowArtifactScoreCell(item) {
+  const score = Number(item.score);
+  if (!Number.isFinite(score)) return "-";
+
+  return `
+    ${renderScoreValue(score, isCriticalScore(score))}
+    ${item.rationale ? `<p class="score-rationale">${escapeHtml(item.rationale)}</p>` : ""}
+    ${Array.isArray(item.issues) && item.issues.length ? renderIssues(item.issues) : ""}
+  `;
+}
+
+async function generateWorkflowArtifacts(type) {
+  const config = workflowArtifactUiConfig(type);
+  if (!config) return;
+  if (!config.canGenerate()) return;
+
+  const endpoint = getAnalyzeEndpoint();
+  if (!endpoint) {
+    alert(translateUiText("Bitte starte den lokalen Server und öffne die App über http://localhost:3000."));
+    return;
+  }
+
+  const requirements = config.getSources();
+  if (!requirements.length) return;
+
+  config.generateButton.disabled = true;
+  await showProgress(requirements.length, {
+    requirements,
+    mode: config.progressMode,
+    operationType: "workflow-derivation",
+    title: "Artefakte werden abgeleitet",
+    batchSize: ANALYSIS_BATCH_SIZE,
+  });
+
+  try {
+    const rawArtifacts = [];
+    const totalBatches = Math.ceil(requirements.length / ANALYSIS_BATCH_SIZE);
+    let processed = 0;
+
+    for (let index = 0; index < requirements.length; index += ANALYSIS_BATCH_SIZE) {
+      const batchNumber = Math.floor(index / ANALYSIS_BATCH_SIZE) + 1;
+      const batch = requirements.slice(index, index + ANALYSIS_BATCH_SIZE);
+      updateProgress({ processed, total: requirements.length, batchNumber, totalBatches });
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: state.projectId, requirementType: type, uiLanguage: selectedUiLanguage(), requirements: batch }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || config.errorMessage);
+      }
+
+      addOpenAiUsage(data.openAiUsage);
+      rawArtifacts.push(...(Array.isArray(data[config.responseKey]) ? data[config.responseKey] : []));
+      processed += batch.length;
+      updateProgress({ processed, total: requirements.length, batchNumber, totalBatches });
+    }
+
+    config.setArtifacts(normalizeWorkflowArtifacts(config, rawArtifacts, requirements));
+    if (config.nextResetStep) {
+      resetWorkflowArtifacts(config.nextResetStep);
+    }
+    completeProgress(requirements.length);
+    setProjectRevisionAction(`${config.revisionLabel}: ${config.getArtifacts().length}`);
+    updateProjectActions();
+  } catch (error) {
+    failProgress(error);
+    alert(error.message);
+  } finally {
+    renderWorkflowArtifactPages();
+    updateWorkflowState();
+    updateContextualMenuActions();
+  }
+}
+
+function normalizeWorkflowArtifacts(config, artifacts, sourceRequirements) {
+  const sourcesById = new Map(sourceRequirements.map((item) => [String(item.id || ""), item]));
+  const indexBySource = new Map();
+  return artifacts.map((item, index) => {
+    const source = sourcesById.get(String(item.sourceId || "")) || sourceRequirements[index] || {};
+    const sourceId = item.sourceId || source.id || "";
+    const sourceIndex = (indexBySource.get(sourceId) || 0) + 1;
+    indexBySource.set(sourceId, sourceIndex);
+
+    return {
+      sourceId,
+      sourcePrId: item.sourcePrId || source.sourcePrId || source.sourceId || "",
+      id: item.id || buildWorkflowArtifactId(config.idPrefix, source, { fallbackIndex: index, sourceIndex }),
+      title: item.title || `${config.artifactHeader} ${sourceIndex}`,
+      description: item.description || item.text || "",
+      details: Array.isArray(item.details) ? item.details.filter(Boolean) : [],
+      acceptanceCriteria: Array.isArray(item.acceptanceCriteria) ? item.acceptanceCriteria.filter(Boolean) : [],
+      score: Number(item.score),
+      issues: Array.isArray(item.issues) ? item.issues : [],
+      rationale: item.rationale || "",
+      category: source.category || "",
+      subcategory: source.subcategory || "",
+      techTypes: Array.isArray(source.techTypes) ? source.techTypes : [],
+    };
+  });
+}
+
+function buildWorkflowArtifactId(prefix, source, options = {}) {
+  const fallbackIndex = Number(options.fallbackIndex) || 0;
+  const sourceIndex = Number(options.sourceIndex) || 1;
+  const sourceId = String(source?.id || "").trim();
+  const base = sourceId
+    ? sourceId.replace(/^(SR|UC|US|E2E|PR)[_-]?/i, "").replace(/[^a-z0-9.]+/gi, "_")
+    : String(fallbackIndex + 1).padStart(3, "0");
+  return `${prefix}_${base}.${sourceIndex}`;
+}
+
+function getWorkflowArtifactDerivedCount(artifacts) {
+  const sourceIds = artifacts.map((item) => String(item.sourceId || "")).filter(Boolean);
+  return sourceIds.length ? new Set(sourceIds).size : artifacts.length;
+}
+
+function getUseCaseSources() {
+  return getFinalSoftwareRequirements();
+}
+
+function getUserStorySources() {
+  return state.useCases.map((item) => ({
+    sourceId: item.sourceId || "",
+    sourcePrId: item.sourcePrId || "",
+    id: item.id || "",
+    category: item.category || "",
+    subcategory: item.subcategory || "",
+    text: `${item.title || ""}\n\n${item.description || ""}`.trim(),
+    acceptanceCriteria: Array.isArray(item.acceptanceCriteria) ? item.acceptanceCriteria : [],
+    techTypes: Array.isArray(item.techTypes) ? item.techTypes : [],
+    score: Number(item.score),
+  }));
+}
+
+function workflowArtifactUiConfig(type) {
+  const configs = {
+    usecase: {
+      idPrefix: "UC",
+      responseKey: "useCases",
+      artifactHeader: "UseCase",
+      idHeader: "UseCase-ID",
+      sourceHeader: "Verwendetes Software Requirement",
+      sourceFallback: "Software Requirement",
+      emptySourceMessage: "Schließe Software Requirements ab, um UseCases abzuleiten.",
+      emptyArtifactsMessage: "Noch keine UseCases abgeleitet.",
+      pendingLabel: "UseCase noch nicht abgeleitet",
+      readyLabel: "UseCase bereit",
+      criticalLabel: "UseCase Score unter 85",
+      errorMessage: "UseCases konnten nicht abgeleitet werden",
+      progressMode: "usecase-derivation",
+      revisionLabel: "UseCases abgeleitet",
+      nextResetStep: "userstory",
+      body: els.useCasesBody,
+      derivedMetric: els.useCaseDerivedMetric,
+      scoreMetric: els.useCaseScoreMetric,
+      issueMetric: els.useCaseIssueMetric,
+      generateButton: els.generateUseCasesButton,
+      getSources: getUseCaseSources,
+      getArtifacts: () => state.useCases,
+      setArtifacts: (artifacts) => {
+        state.useCases = artifacts;
+      },
+      canGenerate: () => canEditSoftwareRequirements() && isSoftwareStepComplete(),
+    },
+    userstory: {
+      idPrefix: "US",
+      responseKey: "userStories",
+      artifactHeader: "UserStory",
+      idHeader: "UserStory-ID",
+      sourceHeader: "Verwendeter UseCase",
+      sourceFallback: "UseCase",
+      emptySourceMessage: "Leite zuerst UseCases ab, um UserStories zu erstellen.",
+      emptyArtifactsMessage: "Noch keine UserStories abgeleitet.",
+      pendingLabel: "UserStory noch nicht abgeleitet",
+      readyLabel: "UserStory bereit",
+      criticalLabel: "UserStory Score unter 85",
+      errorMessage: "UserStories konnten nicht abgeleitet werden",
+      progressMode: "userstory-derivation",
+      revisionLabel: "UserStories abgeleitet",
+      nextResetStep: "app-test",
+      body: els.userStoriesBody,
+      derivedMetric: els.userStoryDerivedMetric,
+      scoreMetric: els.userStoryScoreMetric,
+      issueMetric: els.userStoryIssueMetric,
+      generateButton: els.generateUserStoriesButton,
+      getSources: getUserStorySources,
+      getArtifacts: () => state.userStories,
+      setArtifacts: (artifacts) => {
+        state.userStories = artifacts;
+      },
+      canGenerate: () => canEditSoftwareRequirements() && state.useCases.length > 0,
+    },
+    "app-test": {
+      idPrefix: "AT",
+      responseKey: "appTests",
+      artifactHeader: "App TestCase",
+      idHeader: "App-Test-ID",
+      sourceHeader: "Verwendeter UseCase",
+      sourceFallback: "UseCase",
+      emptySourceMessage: "Leite zuerst UseCases ab, um App TestCases zu erstellen.",
+      emptyArtifactsMessage: "Noch keine App TestCases abgeleitet.",
+      pendingLabel: "App TestCase noch nicht abgeleitet",
+      readyLabel: "App TestCase bereit",
+      criticalLabel: "App TestCase Score unter 85",
+      errorMessage: "App TestCases konnten nicht abgeleitet werden",
+      progressMode: "app-test-derivation",
+      revisionLabel: "App TestCases abgeleitet",
+      nextResetStep: "",
+      body: els.appTestsBody,
+      derivedMetric: els.appTestDerivedMetric,
+      scoreMetric: els.appTestScoreMetric,
+      issueMetric: els.appTestIssueMetric,
+      generateButton: els.generateAppTestsButton,
+      getSources: getUserStorySources,
+      getArtifacts: () => state.appTests,
+      setArtifacts: (artifacts) => {
+        state.appTests = artifacts;
+      },
+      canGenerate: () => canEditE2eTests() && state.useCases.length > 0,
+    },
+  };
+
+  return configs[type] || null;
+}
+
 function getCriticalE2eTests() {
   return state.e2eTests.filter((item) => {
     const selection = state.e2eSelections.get(String(item.id || ""));
@@ -9013,6 +12997,12 @@ function invalidateProductRequirementAfterChange(rowNumber, options = {}) {
   const selection = state.finalSelections.get(normalizedRowNumber);
   if (options.clearApproval !== false) {
     clearApproval(selection);
+    if (selection) {
+      selection.submittedForApprovalAt = "";
+      selection.submittedForApprovalBy = "";
+      selection.submittedForApprovalById = "";
+      if (selection.workflowStatus === "SUBMITTED_FOR_APPROVAL") selection.workflowStatus = "";
+    }
   }
 
   if (isProductApprovalStarted() || state.productWindchillTransferComplete || state.productTransferChangeRows.size) {
@@ -9024,6 +13014,7 @@ function invalidateProductRequirementAfterChange(rowNumber, options = {}) {
     state.softwareSelections = new Map();
     state.e2eTests = [];
     state.e2eSelections = new Map();
+    resetWorkflowArtifacts();
     resetProductWindchillTransfer();
     resetSoftwareWindchillTransfer();
   } else {
@@ -9258,14 +13249,14 @@ function productApprovalStartHint(qualityGate = getProductQualityGate()) {
     return "Alle Product Requirements erfüllen das Gate. Der Approval-Prozess kann gestartet werden.";
   }
   if (qualityGate.status === "BLOCKED") {
-    return "Approval-Prozess kann erst gestartet werden, wenn alle nicht ausgeschlossenen Requirements Score >= 85 haben.";
+    return "Approval-Prozess kann erst gestartet werden, wenn alle nicht ausgeschlossenen Requirements Score >= 85 haben und durch den PR Owner freigegeben wurden.";
   }
   return "Finale Scores fehlen oder sind für ein oder mehrere Requirements veraltet.";
 }
 
 function productApprovalStartBlockReason(qualityGate = getProductQualityGate()) {
   if (!canEditProductRequirements()) return "Nur Product Requirement Owner können den Approval-Prozess starten.";
-  if (qualityGate.status === "BLOCKED") return "Finalization Gate blocked: mindestens ein Requirement benötigt Nacharbeit oder TechTypes.";
+  if (qualityGate.status === "BLOCKED") return "Finalization Gate blocked: mindestens ein Requirement benötigt Nacharbeit, TechTypes oder Owner-Freigabe.";
   if (qualityGate.status === "NOT_CHECKED") return "Finalization Gate not complete: Scores fehlen oder sind veraltet.";
   if (hasPendingFinalProductAssessments()) return "Finale Score-Bewertung läuft oder fehlt.";
   return "";
@@ -9552,6 +13543,7 @@ function startProductApprovalProcess() {
   state.productApprovalStartedAt = new Date().toISOString();
   state.productApprovalStartedBy = currentApprovalUserName();
   state.productApprovalStartedById = String(state.currentUser?.id || "");
+  state.productApprovalStatusFilterManual = false;
   state.finalSelections.forEach((selection) => clearApproval(selection));
   state.activeSelectionRow = null;
   closeProductApprovalDialog();
@@ -9748,7 +13740,8 @@ function writeFinalProductRequirementsToExportSheet(worksheet, descriptionColumn
     if (!Number.isInteger(rowIndex) || rowIndex < 0 || !selection || selection.choice === "excluded") return;
 
     const requirementNumber = String(requirement.id || `PR-${requirement.rowNumber}`).trim();
-    const finalText = normalizeExcelMultilineText(selection.text);
+    const windchillPayload = mapRichTextToWindchill(selection.finalRequirementContent || richTextFromPlainText(selection.text), { plainText: true });
+    const finalText = normalizeExcelMultilineText(richTextToExcelPlainText(selection.finalRequirementContent || richTextFromPlainText(windchillPayload.value || selection.text)));
     if (!finalText) return;
 
     setWorksheetStringCell(worksheet, rowIndex, 0, requirementNumber);
@@ -9995,7 +13988,31 @@ function updateContextualMenuActions() {
     projectOpen ? "" : "Öffne zuerst ein Projekt",
   );
   setMenuButtonAvailability(
+    els.openAiCostButton,
+    projectOpen && Boolean(state.projectId),
+    projectOpen && state.projectId ? "" : "Öffne zuerst ein Projekt",
+  );
+  if (els.closeProjectButton) {
+    els.closeProjectButton.hidden = !projectOpen;
+  }
+  setMenuButtonAvailability(
+    els.closeProjectButton,
+    projectOpen,
+    projectOpen ? "" : "Öffne zuerst ein Projekt",
+  );
+  setMenuButtonAvailability(
     els.openFileButton,
+    canImportFile,
+    canImportFile
+      ? ""
+      : canEditProduct
+        ? isProductApprovalLocked()
+          ? "Product Requirements sind während des Approval-Prozesses gesperrt"
+          : "Dateiimport ist nur im PR-Schritt verfügbar"
+        : "Nur Product Requirement Owner oder Admins können Product Requirements erstellen",
+  );
+  setMenuButtonAvailability(
+    els.openPdfImportButton,
     canImportFile,
     canImportFile
       ? ""
@@ -10138,21 +14155,26 @@ function scheduleProjectAutoSave() {
   }, 600);
 }
 
-async function saveCurrentProjectToDatabase() {
-  if (state.projectSavePaused || !state.projectId || !state.projectDirty) return false;
+async function saveCurrentProjectToDatabase(options = {}) {
+  if (state.projectSavePaused || !state.projectId) return false;
+
+  if (state.projectSaveInFlight) {
+    state.projectSaveQueued = true;
+    if (!options.force) return false;
+    await state.projectSavePromise;
+    updateProjectDirtyState();
+    if (!state.projectDirty) return true;
+  }
+
+  if (!state.projectDirty) return options.force === true;
 
   const endpoint = getProjectEndpoint(state.projectId);
   if (!endpoint) return false;
 
-  if (state.projectSaveInFlight) {
-    state.projectSaveQueued = true;
-    return false;
-  }
-
   state.projectSaveInFlight = true;
   const revisionAction = state.projectRevisionAction || "Projekt automatisch gespeichert";
   try {
-    const response = await fetch(endpoint, {
+    state.projectSavePromise = fetch(endpoint, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -10160,6 +14182,7 @@ async function saveCurrentProjectToDatabase() {
         action: revisionAction,
       }),
     });
+    const response = await state.projectSavePromise;
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       console.warn("Projekt konnte nicht automatisch gespeichert werden.", data.error || response.statusText);
@@ -10177,6 +14200,7 @@ async function saveCurrentProjectToDatabase() {
     return false;
   } finally {
     state.projectSaveInFlight = false;
+    state.projectSavePromise = null;
     if (state.projectSaveQueued) {
       state.projectSaveQueued = false;
       scheduleProjectAutoSave();
@@ -10220,6 +14244,9 @@ function createProjectPayload() {
         id,
         ...selection,
       })),
+      useCases: state.useCases,
+      userStories: state.userStories,
+      appTests: state.appTests,
       finalSelections: [...state.finalSelections.entries()].map(([rowNumber, selection]) => ({
         rowNumber: Number(rowNumber),
         ...selection,
@@ -10262,6 +14289,7 @@ function loadProjectPayload(payload, fileName, projectId = "") {
   resetProjectApprovalState();
   state.sourceWorkbookData = typeof source.workbookData === "string" ? source.workbookData : "";
   state.sourceWorkbookEncoding = source.workbookEncoding || (state.sourceWorkbookData ? "base64" : "");
+  state.pdfImportPreview = null;
   state.workbook = workbookFromStoredSource(source);
   state.rows = source.rows;
   state.headers = source.headers.map((header) => String(header || ""));
@@ -10275,15 +14303,27 @@ function loadProjectPayload(payload, fileName, projectId = "") {
   state.productRequirementOwnerId = projectMetadata.productRequirementOwnerId;
   state.productRequirementOwnerName = projectMetadata.productRequirementOwnerName;
   state.projectId = projectId || payload.project?.id || "";
+  state.requirementAttachments = new Map();
+  state.requirementAttachmentCounts = new Map();
   state.projectFileName = fileName || "";
   state.projectRevisionAction = "";
-  state.results = Array.isArray(payload.state?.results) ? payload.state.results : [];
+  state.results = (Array.isArray(payload.state?.results) ? payload.state.results : []).map((result) => normalizeAiSuggestionResult(result));
   state.softwareRequirements = Array.isArray(payload.state?.softwareRequirements) ? payload.state.softwareRequirements : [];
   state.softwareSelections = new Map(
     (Array.isArray(payload.state?.softwareSelections) ? payload.state.softwareSelections : []).map((selection) => [
       String(selection.id || ""),
       {
-        text: selection.text || "",
+        text: selection.finalRequirementPlainText || selection.text || "",
+        finalRequirementContent: normalizeRichTextContent(selection.finalRequirementContent, selection.finalRequirementPlainText || selection.text || ""),
+        finalRequirementHtml: selection.finalRequirementHtml || richTextToHtml(normalizeRichTextContent(selection.finalRequirementContent, selection.finalRequirementPlainText || selection.text || "")),
+        finalRequirementPlainText: selection.finalRequirementPlainText || selection.text || "",
+        finalRequirementFormatVersion: selection.finalRequirementFormatVersion || RICH_TEXT_FORMAT_VERSION,
+        finalRequirementContentHash: selection.finalRequirementContentHash || semanticContentHash(selection.finalRequirementPlainText || selection.text || ""),
+        finalRequirementAnalysisStatus: selection.finalRequirementAnalysisStatus || (selection.needsFinalAssessment ? "STALE" : ""),
+        finalRequirementAnalysisStartedAt: selection.finalRequirementAnalysisStartedAt || "",
+        finalRequirementAnalysisCompletedAt: selection.finalRequirementAnalysisCompletedAt || "",
+        finalRequirementAnalysisError: selection.finalRequirementAnalysisError || "",
+        finalRequirementAnalysisHash: selection.finalRequirementAnalysisHash || "",
         description: selection.description || selection.text || "",
         score: Number(selection.score),
         excluded: Boolean(selection.excluded),
@@ -10307,6 +14347,9 @@ function loadProjectPayload(payload, fileName, projectId = "") {
       },
     ]),
   );
+  state.useCases = Array.isArray(payload.state?.useCases) ? payload.state.useCases : [];
+  state.userStories = Array.isArray(payload.state?.userStories) ? payload.state.userStories : [];
+  state.appTests = Array.isArray(payload.state?.appTests) ? payload.state.appTests : [];
   state.finalSelections = new Map(
     (Array.isArray(payload.state?.finalSelections) ? payload.state.finalSelections : []).map((selection) => [
       Number(selection.rowNumber),
@@ -10318,6 +14361,26 @@ function loadProjectPayload(payload, fileName, projectId = "") {
         excluded: Boolean(selection.excluded),
         exclusionReason: selection.exclusionReason || "",
         finalizedAt: selection.finalizedAt || "",
+        finalizedBy: selection.finalizedBy || "",
+        finalizedById: selection.finalizedById || "",
+        finalizedContentHash: selection.finalizedContentHash || "",
+        finalizedSuggestionVersion: selection.finalizedSuggestionVersion || "",
+        finalRequirementContent: normalizeRichTextContent(selection.finalRequirementContent, selection.finalRequirementPlainText || selection.text || ""),
+        finalRequirementHtml: selection.finalRequirementHtml || richTextToHtml(normalizeRichTextContent(selection.finalRequirementContent, selection.finalRequirementPlainText || selection.text || "")),
+        finalRequirementPlainText: selection.finalRequirementPlainText || selection.text || "",
+        finalRequirementFormatVersion: selection.finalRequirementFormatVersion || RICH_TEXT_FORMAT_VERSION,
+        finalRequirementContentHash: selection.finalRequirementContentHash || semanticContentHash(selection.finalRequirementPlainText || selection.text || ""),
+        finalRequirementAnalysisStatus: selection.finalRequirementAnalysisStatus || (selection.needsFinalAssessment ? "STALE" : ""),
+        finalRequirementAnalysisStartedAt: selection.finalRequirementAnalysisStartedAt || "",
+        finalRequirementAnalysisCompletedAt: selection.finalRequirementAnalysisCompletedAt || "",
+        finalRequirementAnalysisError: selection.finalRequirementAnalysisError || "",
+        finalRequirementAnalysisSource: selection.finalRequirementAnalysisSource || "",
+        finalRequirementAnalysisHash: selection.finalRequirementAnalysisHash || "",
+        finalRequirementAnalysisOperationId: selection.finalRequirementAnalysisOperationId || "",
+        finalRequirementAnalysisScore: Number.isFinite(Number(selection.finalRequirementAnalysisScore)) ? Number(selection.finalRequirementAnalysisScore) : null,
+        finalRequirementAnalysisScoreBreakdown: normalizeScoreBreakdown(selection.finalRequirementAnalysisScoreBreakdown),
+        finalRequirementAnalysisIssues: Array.isArray(selection.finalRequirementAnalysisIssues) ? selection.finalRequirementAnalysisIssues : [],
+        needsFinalAssessment: Boolean(selection.needsFinalAssessment),
         approvedAt: selection.approvedAt || "",
         approvedBy: selection.approvedBy || "",
         approvals: Array.isArray(selection.approvals) ? selection.approvals : [],
@@ -10398,7 +14461,9 @@ function loadProjectPayload(payload, fileName, projectId = "") {
   renderWorkspaceState();
   renderProcessPages();
   renderTable();
+  handleReviewRouteFromHash();
   renderMetrics();
+  void loadProjectAttachmentCounts();
   markProjectSaved();
   scheduleApplyTranslations();
 }
@@ -10502,6 +14567,48 @@ function formatUsd(value) {
     minimumFractionDigits: 4,
     maximumFractionDigits: 4,
   }).format(amount);
+}
+
+function formatUsdPrecise(value) {
+  const amount = Number(value) || 0;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 8,
+    maximumFractionDigits: 8,
+  }).format(amount);
+}
+
+function translateUiTemplate(template, replacements) {
+  return Object.entries(replacements || {}).reduce(
+    (text, [key, value]) => text.replaceAll(`{{${key}}}`, String(value)),
+    translateUiText(template),
+  );
+}
+
+function translateAiUsageAction(action) {
+  const labels = {
+    product_requirement_analysis: "Product-Requirement-Analyse",
+    improvement_suggestion: "Verbesserungsvorschlag",
+    translation: "Übersetzung",
+    score_recalculation: "Score-Neuberechnung",
+    software_requirement_generation: "Software-Requirement-Generierung",
+    use_case_generation: "Use-Case-Generierung",
+    e2e_testcase_generation: "E2E-Testfall-Generierung",
+    user_story_generation: "User-Story-Generierung",
+    app_testcase_generation: "App-Testfall-Generierung",
+    other_ai_processing: "sonstige KI-Verarbeitung",
+  };
+  return translateUiText(labels[action] || "sonstige KI-Verarbeitung");
+}
+
+function translateAiUsageStatus(status) {
+  const labels = {
+    captured: "Erfasst",
+    price_unavailable: "Preis nicht verfügbar",
+    missing_usage: "Usage-Daten fehlen",
+  };
+  return translateUiText(labels[status] || status || "-");
 }
 
 function formatInteger(value) {
@@ -10758,6 +14865,7 @@ function setLanguage(language, options = {}) {
     renderWorkspaceState();
     renderProcessPages();
     renderTable();
+    renderProductApprovalPanel();
     renderMetrics();
     renderOpenAiCostSummary();
     renderAboutPage();
@@ -10773,10 +14881,12 @@ async function changeLanguage(language) {
 
   const translated = await translateExistingFeedback(nextLanguage);
   if (!translated) return;
+  if (currentLanguage() !== nextLanguage) return;
 
   renderWorkspaceState();
   renderProcessPages();
   renderTable();
+  renderProductApprovalPanel();
   renderMetrics();
   renderAboutPage();
   scheduleApplyTranslations();
@@ -10786,76 +14896,325 @@ async function translateExistingFeedback(targetLanguage) {
   const endpoint = getFeedbackTranslationEndpoint();
   if (!endpoint) return false;
 
-  const entries = collectFeedbackTranslationEntries(targetLanguage);
-  if (!entries.length) return false;
-
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        uiLanguage: targetLanguage,
-        items: entries.map((entry) => ({
-          id: entry.id,
-          criterion: entry.issue.criterion || "",
-          explanation: entry.issue.explanation || "",
-          suggestion: entry.issue.suggestion || "",
-        })),
-      }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Hinweise konnten nicht übersetzt werden");
-    }
-
-    addOpenAiUsage(data.openAiUsage);
-    const translationsById = new Map((Array.isArray(data.items) ? data.items : []).map((item) => [String(item.id), item]));
-    entries.forEach((entry) => {
-      const translated = translationsById.get(entry.id);
-      if (!translated) return;
-
-      entry.issue._translations = entry.issue._translations || {};
-      entry.issue._translations[targetLanguage] = {
-        criterion: translated.criterion || entry.issue.criterion || "",
-        explanation: translated.explanation || entry.issue.explanation || "",
-        suggestion: translated.suggestion || entry.issue.suggestion || "",
-      };
-    });
-
-    return true;
-  } catch (error) {
-    console.warn("Feedback translation failed:", error);
+  if (state.feedbackTranslationInFlight.has(targetLanguage)) {
+    return state.feedbackTranslationInFlight.get(targetLanguage);
+  }
+  const allEntries = collectFeedbackTranslationEntries(targetLanguage);
+  const entries = allEntries.filter((entry) => !entryHasValidTranslation(entry, targetLanguage));
+  if (!allEntries.length) return false;
+  if (!entries.length) {
+    state.feedbackTranslationProgress = {
+      language: targetLanguage,
+      total: allEntries.length,
+      completed: allEntries.length,
+      failed: 0,
+    };
     return false;
   }
+
+  const requestId = state.feedbackTranslationRequestId + 1;
+  state.feedbackTranslationRequestId = requestId;
+  state.feedbackTranslationLoadingLanguage = targetLanguage;
+  state.feedbackTranslationErrorLanguage = "";
+  state.feedbackTranslationProgress = {
+    language: targetLanguage,
+    total: allEntries.length,
+    completed: allEntries.length - entries.length,
+    failed: 0,
+  };
+  console.info(JSON.stringify({
+    event: "analysis_feedback_translation_started",
+    locale: targetLanguage,
+    analyzedRequirements: allEntries.length,
+    cachedRequirements: allEntries.length - entries.length,
+    pendingRequirements: entries.length,
+    batches: Math.ceil(entries.length / FEEDBACK_TRANSLATION_BATCH_SIZE),
+  }));
+  renderProductApprovalPanel();
+
+  const promise = (async () => {
+    const failedRequirementIds = new Set();
+    try {
+      for (let index = 0; index < entries.length; index += FEEDBACK_TRANSLATION_BATCH_SIZE) {
+        if (state.feedbackTranslationRequestId !== requestId) {
+          console.info(JSON.stringify({
+            event: "analysis_feedback_translation_stale",
+            locale: targetLanguage,
+            requestId,
+          }));
+          return false;
+        }
+
+        const batch = entries.slice(index, index + FEEDBACK_TRANSLATION_BATCH_SIZE);
+        const batchResult = await translateFeedbackBatch(endpoint, targetLanguage, batch, requestId);
+        addOpenAiUsage(batchResult.openAiUsage);
+        batchResult.translated.forEach((entry) => {
+          mergeFeedbackTranslation(entry, targetLanguage);
+        });
+        batchResult.failed.forEach((entry) => failedRequirementIds.add(entry.requirementId));
+        state.feedbackTranslationProgress = {
+          language: targetLanguage,
+          total: allEntries.length,
+          completed: allEntries.length - entries.length + countEntriesWithValidTranslation(entries, targetLanguage),
+          failed: failedRequirementIds.size,
+        };
+        renderProductApprovalPanel();
+      }
+
+      if (state.feedbackTranslationRequestId === requestId && state.feedbackTranslationLoadingLanguage === targetLanguage) {
+        state.feedbackTranslationLoadingLanguage = "";
+      }
+      const complete = failedRequirementIds.size === 0 && allEntries.every((entry) => entryHasValidTranslation(entry, targetLanguage));
+      console.info(JSON.stringify({
+        event: complete ? "analysis_feedback_translation_completed" : "analysis_feedback_translation_partial",
+        locale: targetLanguage,
+        expectedRequirements: allEntries.length,
+        translatedRequirements: allEntries.filter((entry) => entryHasValidTranslation(entry, targetLanguage)).length,
+        failedRequirements: [...failedRequirementIds],
+      }));
+      return complete;
+    } catch (error) {
+      console.warn("Feedback translation failed:", error);
+      if (state.feedbackTranslationRequestId === requestId) {
+        state.feedbackTranslationErrorLanguage = targetLanguage;
+        state.feedbackTranslationLoadingLanguage = "";
+      }
+      return false;
+    } finally {
+      state.feedbackTranslationInFlight.delete(targetLanguage);
+      if (currentLanguage() === targetLanguage) {
+        renderProductApprovalPanel();
+      }
+    }
+  })();
+
+  state.feedbackTranslationInFlight.set(targetLanguage, promise);
+  return promise;
 }
 
 function collectFeedbackTranslationEntries(targetLanguage) {
   const entries = [];
-  let index = 0;
-  const addIssues = (issues) => {
+  const addIssues = (result, issueSet, issues) => {
     if (!Array.isArray(issues)) return;
-
+    const requirement = requirementForResult(result);
+    const requirementId = stableRequirementAnalysisId(result, requirement, issueSet);
+    normalizeIssueIds(requirementId, issueSet, issues);
+    const analysisHash = analysisIssueSetHash(issues);
+    if (!issues.length || !analysisHash) return;
     issues.forEach((issue) => {
-      if (!issue || typeof issue !== "object") return;
-      if (issue._translations?.[targetLanguage]) return;
-      if (!issue.criterion && !issue.explanation && !issue.suggestion) return;
+      if (issue && typeof issue === "object") issue._analysisHash = analysisHash;
+    });
 
-      entries.push({
-        id: String(index++),
-        issue,
-      });
+    entries.push({
+      requirementId,
+      issueSet,
+      analysisHash,
+      result,
+      issues,
     });
   };
 
   state.results.forEach((result) => {
-    addIssues(result.originalIssues);
-    addIssues(result.issues);
+    addIssues(result, "originalIssues", result.originalIssues);
+    addIssues(result, "issues", result.issues);
   });
-  state.softwareRequirements.forEach((item) => addIssues(item.issues));
-  state.e2eTests.forEach((item) => addIssues(item.issues));
+  state.softwareRequirements.forEach((item) => addIssues(item, "softwareIssues", item.issues));
+  state.e2eTests.forEach((item) => addIssues(item, "e2eIssues", item.issues));
 
   return entries;
+}
+
+function requirementForResult(result) {
+  const rowNumber = Number(result?.rowNumber);
+  return state.requirements.find((item) => Number(item.rowNumber) === rowNumber) || null;
+}
+
+function stableRequirementAnalysisId(result, requirement, issueSet) {
+  const baseId = String(
+    result?.id ||
+    result?.sourceId ||
+    requirement?.id ||
+    requirement?.sourceId ||
+    (Number.isFinite(Number(result?.rowNumber)) ? `row-${Number(result.rowNumber)}` : ""),
+  ).trim() || "requirement";
+  return `${baseId}:${issueSet}`;
+}
+
+function normalizeIssueIds(requirementId, issueSet, issues) {
+  const hashCounts = new Map();
+  issues.forEach((issue) => {
+    if (!issue || typeof issue !== "object") return;
+    if (issue.id) return;
+    const hash = stableTextHash([
+      issueSet,
+      issue.severity || "",
+      issue.criterion || "",
+      issue.explanation || "",
+      issue.suggestion || "",
+    ].join("\u0000"));
+    const count = (hashCounts.get(hash) || 0) + 1;
+    hashCounts.set(hash, count);
+    issue.id = `${requirementId}:issue:${hash}:${count}`;
+  });
+}
+
+function analysisIssueSetHash(issues) {
+  if (!Array.isArray(issues) || !issues.length) return "";
+  return stableTextHash(JSON.stringify(issues.map((issue) => ({
+    id: issue.id || "",
+    severity: issue.severity || "",
+    criterion: issue.criterion || "",
+    explanation: issue.explanation || "",
+    suggestion: issue.suggestion || "",
+  }))));
+}
+
+function stableTextHash(value) {
+  const text = String(value || "");
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function entryHasValidTranslation(entry, targetLanguage) {
+  return validateFeedbackTranslation(entry, entryToTranslatedRequirement(entry, targetLanguage), targetLanguage).valid;
+}
+
+function countEntriesWithValidTranslation(entries, targetLanguage) {
+  return entries.filter((entry) => entryHasValidTranslation(entry, targetLanguage)).length;
+}
+
+function entryToTranslatedRequirement(entry, targetLanguage) {
+  return {
+    requirementId: entry.requirementId,
+    analysisHash: entry.analysisHash,
+    issues: entry.issues.map((issue) => ({
+      id: issue.id || "",
+      severity: issue.severity || "",
+      criterion: issue.criterion || "",
+      explanation: issue._translations?.[targetLanguage]?.explanation || "",
+      suggestion: issue._translations?.[targetLanguage]?.suggestion || "",
+    })),
+  };
+}
+
+async function translateFeedbackBatch(endpoint, targetLanguage, entries, requestId) {
+  let pending = entries;
+  const translated = [];
+  const failed = new Map();
+  let openAiUsage = null;
+
+  for (let attempt = 1; attempt <= FEEDBACK_TRANSLATION_MAX_ATTEMPTS && pending.length; attempt += 1) {
+    if (state.feedbackTranslationRequestId !== requestId) break;
+    if (attempt > 1) await delay(250 * 2 ** (attempt - 2));
+
+    try {
+      const data = await fetchAiJsonWithStatus(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: state.projectId,
+          uiLanguage: targetLanguage,
+          requirements: pending.map(feedbackTranslationPayloadForEntry),
+        }),
+      }, {
+        operationType: "feedback-translation",
+        title: "Analyse-Feedback wird übersetzt",
+        total: pending.length,
+        requirements: pending.map((entry) => ({ text: feedbackTranslationPayloadForEntry(entry).issues?.map((issue) => `${issue.explanation || ""} ${issue.suggestion || ""}`).join(" ") || "" })),
+        errorMessage: "Hinweise konnten nicht übersetzt werden",
+      });
+      openAiUsage = data.openAiUsage || openAiUsage;
+      const requirementsById = new Map((Array.isArray(data.requirements) ? data.requirements : []).map((item) => [String(item.requirementId || ""), item]));
+      const retry = [];
+      pending.forEach((entry) => {
+        const translatedRequirement = requirementsById.get(entry.requirementId);
+        const validation = validateFeedbackTranslation(entry, translatedRequirement, targetLanguage);
+        if (validation.valid) {
+          translated.push({ entry, translatedRequirement });
+          failed.delete(entry.requirementId);
+          return;
+        }
+        failed.set(entry.requirementId, validation.reason);
+        retry.push(entry);
+        console.warn("Feedback translation validation failed.", {
+          requirementId: entry.requirementId,
+          locale: targetLanguage,
+          attempt,
+          reason: validation.reason,
+        });
+      });
+      pending = retry;
+    } catch (error) {
+      console.warn("Feedback translation batch failed.", {
+        locale: targetLanguage,
+        attempt,
+        requirementIds: pending.map((entry) => entry.requirementId),
+        error: error?.message || String(error),
+      });
+      pending.forEach((entry) => failed.set(entry.requirementId, error?.message || "request failed"));
+    }
+  }
+
+  return {
+    translated,
+    failed: pending.length ? pending : [...failed.keys()].map((requirementId) => entries.find((entry) => entry.requirementId === requirementId)).filter(Boolean),
+    openAiUsage,
+  };
+}
+
+function feedbackTranslationPayloadForEntry(entry) {
+  return {
+    requirementId: entry.requirementId,
+    analysisHash: entry.analysisHash,
+    issues: entry.issues.map((issue) => ({
+      id: issue.id || "",
+      severity: issue.severity || "",
+      criterion: normalizeIssueCriterionKey(issue.criterion) || String(issue.criterion || ""),
+      explanation: String(issue.explanation || ""),
+      suggestion: String(issue.suggestion || ""),
+    })),
+  };
+}
+
+function validateFeedbackTranslation(entry, translatedRequirement, targetLanguage) {
+  if (!translatedRequirement || typeof translatedRequirement !== "object") return { valid: false, reason: "missing requirement" };
+  if (String(translatedRequirement.requirementId || "") !== entry.requirementId) return { valid: false, reason: "wrong requirement id" };
+  if (String(translatedRequirement.analysisHash || "") !== entry.analysisHash) return { valid: false, reason: "wrong analysis hash" };
+  const translatedIssues = Array.isArray(translatedRequirement.issues) ? translatedRequirement.issues : [];
+  if (translatedIssues.length !== entry.issues.length) return { valid: false, reason: "issue count mismatch" };
+
+  const translatedById = new Map(translatedIssues.map((issue) => [String(issue.id || ""), issue]));
+  for (const sourceIssue of entry.issues) {
+    const translatedIssue = translatedById.get(String(sourceIssue.id || ""));
+    if (!translatedIssue) return { valid: false, reason: `missing issue ${sourceIssue.id || ""}` };
+    if (String(translatedIssue.severity || "") !== String(sourceIssue.severity || "")) return { valid: false, reason: `changed severity ${sourceIssue.id || ""}` };
+    const sourceCriterion = normalizeIssueCriterionKey(sourceIssue.criterion) || String(sourceIssue.criterion || "");
+    const translatedCriterion = normalizeIssueCriterionKey(translatedIssue.criterion) || String(translatedIssue.criterion || "");
+    if (translatedCriterion !== sourceCriterion) return { valid: false, reason: `changed criterion ${sourceIssue.id || ""}` };
+    if (!String(translatedIssue.explanation || "").trim()) return { valid: false, reason: `empty explanation ${sourceIssue.id || ""}` };
+    if (!String(translatedIssue.suggestion || "").trim()) return { valid: false, reason: `empty suggestion ${sourceIssue.id || ""}` };
+  }
+
+  return { valid: true, locale: targetLanguage };
+}
+
+function mergeFeedbackTranslation({ entry, translatedRequirement }, targetLanguage) {
+  const translatedById = new Map((translatedRequirement.issues || []).map((issue) => [String(issue.id || ""), issue]));
+  entry.issues.forEach((issue) => {
+    const translated = translatedById.get(String(issue.id || ""));
+    if (!translated) return;
+    issue._translations = issue._translations || {};
+    issue._translations[targetLanguage] = {
+      analysisHash: entry.analysisHash,
+      criterion: issue.criterion || "",
+      explanation: translated.explanation || issue.explanation || "",
+      suggestion: translated.suggestion || issue.suggestion || "",
+    };
+  });
 }
 
 function setupTranslationObserver() {
@@ -10870,6 +15229,7 @@ function applyTranslations() {
   try {
     translateKnownUiElements();
     translateStaticSelectOptions();
+    translateRichTextToolbar();
     renderProjectHeader();
     renderOpenAiCostSummary();
   } finally {
@@ -10910,7 +15270,7 @@ function shouldSkipUiTextElement(element) {
   if (element.closest(".workflow-step")) return true;
   if (element.closest(".attachment-list")) return true;
   if (element.closest("textarea, input, select, option, script, style")) return true;
-  if (element.closest(".readonly-requirement-text, .software-requirement-text, .issue-list, .acceptance-criteria-list, .readonly-techtype-list")) return true;
+  if (element.closest(".readonly-requirement-text, .software-requirement-text, .issue-list, .acceptance-criteria-list, .readonly-techtype-list, .rich-text-preview, .rich-text-editor")) return true;
   if ([...element.childNodes].some((node) => node.nodeType === Node.ELEMENT_NODE)) return true;
   return !element.textContent.trim();
 }
@@ -10989,6 +15349,14 @@ function getAnalyzeEndpoint() {
   return getApiEndpoint("api/analyze");
 }
 
+function getPdfImportEndpoint() {
+  return getApiEndpoint("api/import/pdf");
+}
+
+function getExcelImportEndpoint() {
+  return getApiEndpoint("api/import/excel");
+}
+
 function getProjectsEndpoint() {
   return getApiEndpoint("api/projects");
 }
@@ -10999,6 +15367,33 @@ function getProjectEndpoint(projectId) {
 
 function getProjectRevisionsEndpoint(projectId) {
   return getApiEndpoint(`api/projects/${encodeURIComponent(projectId)}/revisions`);
+}
+
+function getProjectAiUsageEndpoint(projectId, filters = {}) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      params.set(key, String(value));
+    }
+  });
+  const query = params.toString();
+  return getApiEndpoint(`api/projects/${encodeURIComponent(projectId)}/ai-usage${query ? `?${query}` : ""}`);
+}
+
+function getProjectAttachmentCountsEndpoint(projectId) {
+  return getApiEndpoint(`api/projects/${encodeURIComponent(projectId)}/attachment-counts`);
+}
+
+function getRequirementAttachmentsEndpoint(projectId, requirementId) {
+  return getApiEndpoint(`api/projects/${encodeURIComponent(projectId)}/requirements/${encodeURIComponent(requirementId)}/attachments`);
+}
+
+function getRequirementAttachmentDownloadEndpoint(projectId, attachmentId) {
+  return getApiEndpoint(`api/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/download`);
+}
+
+function getRequirementAttachmentEndpoint(projectId, attachmentId) {
+  return getApiEndpoint(`api/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`);
 }
 
 function getProjectRevisionRestoreEndpoint(projectId, revisionId) {
@@ -11094,18 +15489,37 @@ async function showProgress(total, options = {}) {
   state.progressInitialEstimatedMs = null;
   state.progressMode = options.mode || "";
   state.progressInputCharCount = countProgressInputChars(options.requirements);
+  state.progressStatus = "running";
+  state.progressSteps = Array.isArray(options.steps) && options.steps.length
+    ? options.steps
+    : defaultProgressSteps(options.mode);
+  state.progressStepIndex = 0;
+  state.progressLastPercent = 0;
+  state.progressLastTimePercent = 0;
+  state.progressOperation = buildProgressOperation(total, options);
   els.progressOverlay.hidden = false;
-  els.progressTitle.textContent = translateUiText("Requirements werden analysiert");
+  els.progressOverlay.style.display = "grid";
+  els.progressMiniStatus.hidden = true;
+  els.progressEyebrow.textContent = translateUiText(options.eyebrow || "AI-Operation läuft");
+  els.progressTitle.textContent = translateUiText(options.title || "Requirements werden analysiert");
   els.progressText.textContent = translateUiText("Berechne voraussichtliche Bearbeitungszeit...");
   els.progressBar.style.width = "0%";
   els.progressTimeBar.style.width = "0%";
+  els.progressTimeLabel.textContent = translateUiText("Geschätzter Zeitfortschritt");
   els.progressTimeText.textContent = translateUiText("Restzeit wird berechnet");
+  els.progressResult.hidden = true;
+  els.progressResult.textContent = "";
+  els.progressResult.classList.remove("is-success", "is-error");
+  els.progressMinimizeButton.hidden = false;
+  els.progressCloseButton.hidden = true;
+  renderProgressSteps();
   renderProgressDetail();
   state.progressEstimatedRemainingMs = await calculateInitialProgressEstimate(total, options);
   state.progressInitialEstimatedMs = state.progressEstimatedRemainingMs;
   renderProgressDetail();
-  els.progressText.textContent = translateUiText("Die Analyse wird vorbereitet.");
+  els.progressText.textContent = translateUiText(options.waitingText || "Die Analyse wird vorbereitet.");
   state.progressTimerId = window.setInterval(tickProgressCountdown, 1000);
+  els.progressDialog?.focus();
 }
 
 function updateProgress({ processed, total, batchNumber, totalBatches }) {
@@ -11119,25 +15533,67 @@ function updateProgress({ processed, total, batchNumber, totalBatches }) {
   }
   const percent = progressPercent({ processed, total, batchNumber, totalBatches });
   els.progressText.textContent = translateUiText(`Batch ${batchNumber} von ${totalBatches} wird verarbeitet.`);
-  els.progressBar.style.width = `${percent}%`;
+  setProgressBarPercent(percent, false);
   renderProgressDetail();
 }
 
-function completeProgress(processed) {
+function setProgressStep(stepIndex, text) {
+  state.progressStepIndex = Math.max(0, Math.min(Number(stepIndex) || 0, state.progressSteps.length));
+  if (text) {
+    els.progressText.textContent = translateUiText(text);
+  }
+  if (state.progressSteps.length) {
+    setProgressBarPercent((state.progressStepIndex / state.progressSteps.length) * 100, false);
+  }
+  renderProgressSteps();
+}
+
+function completeProgress(processed, options = {}) {
   clearProgressTimer();
+  state.progressStatus = "completed";
   rememberProgressTiming(Date.now() - state.progressStartedAt);
-  els.progressTitle.textContent = translateUiText("Analyse abgeschlossen");
-  els.progressText.textContent = translateUiText("Alle verfügbaren Ergebnisse wurden verarbeitet.");
-  els.progressBar.style.width = "100%";
-  els.progressTimeBar.style.width = "100%";
+  rememberAiOperationRuntime({ success: true, openAiUsage: options.openAiUsage });
+  els.progressEyebrow.textContent = translateUiText("Abgeschlossen");
+  els.progressTitle.textContent = translateUiText(options.title || "AI-Vorgang abgeschlossen");
+  els.progressText.textContent = translateUiText(options.text || "Alle verfügbaren Ergebnisse wurden verarbeitet.");
+  setProgressBarPercent(100, true);
+  setProgressTimePercent(100, true);
   els.progressTimeText.textContent = translateUiText("Abgeschlossen");
-  els.progressDetail.textContent = translateUiText(`${processed} Requirements analysiert · Dauer ${formatDuration(Date.now() - state.progressStartedAt)}`);
-  window.setTimeout(hideProgress, 900);
+  els.progressDetail.textContent = completionProgressDetail(processed);
+  els.progressResult.hidden = false;
+  els.progressResult.classList.add("is-success");
+  els.progressResult.textContent = translateUiText(options.resultText || "Die AI-Operation wurde erfolgreich abgeschlossen.");
+  els.progressMinimizeButton.hidden = true;
+  els.progressCloseButton.hidden = true;
+  renderProgressSteps(true);
+  window.setTimeout(hideProgress, Number(options.autoCloseMs) || 900);
+}
+
+function failProgress(error, options = {}) {
+  clearProgressTimer();
+  state.progressStatus = "failed";
+  rememberAiOperationRuntime({ success: false, error });
+  els.progressEyebrow.textContent = translateUiText("Fehlgeschlagen");
+  els.progressTitle.textContent = translateUiText(options.title || "AI-Vorgang fehlgeschlagen");
+  els.progressText.textContent = translateUiText("Bitte prüfe die Fehlermeldung und starte den Vorgang bei Bedarf erneut.");
+  els.progressResult.hidden = false;
+  els.progressResult.classList.add("is-error");
+  els.progressResult.textContent = error?.message || String(error || translateUiText("AI-Vorgang fehlgeschlagen"));
+  els.progressTimeText.textContent = translateUiText("Fehlgeschlagen");
+  els.progressMinimizeButton.hidden = true;
+  els.progressCloseButton.hidden = false;
+  renderProgressDetail();
 }
 
 function hideProgress() {
+  if (state.progressStatus === "running") return;
   clearProgressTimer();
   els.progressOverlay.hidden = true;
+  els.progressOverlay.style.display = "";
+  els.progressMiniStatus.hidden = true;
+  state.progressStartedAt = 0;
+  state.progressStatus = "idle";
+  state.progressOperation = null;
 }
 
 function tickProgressCountdown() {
@@ -11155,25 +15611,26 @@ function renderProgressDetail() {
   const totalBatches = Number(state.progressTotalBatches) || 0;
   const elapsed = state.progressStartedAt ? Date.now() - state.progressStartedAt : 0;
   const remaining = state.progressEstimatedRemainingMs;
-  const remainingText = remaining == null ? translateUiText("Restzeit wird berechnet") : translateUiText(`Restzeit ca. ${formatDuration(remaining)}`);
+  const remainingText = remaining == null ? translateUiText("Restzeit wird berechnet") : `${translateUiText("Verbleibend")} ${formatDuration(remaining)}`;
   const batchText = totalBatches > 1
     ? ` · Batch ${Math.min(batchNumber || 1, totalBatches)} ${translateUiText("von")} ${totalBatches}`
     : "";
-  els.progressDetail.textContent = `${processed} ${translateUiText("von")} ${total} ${translateUiText("Requirements verarbeitet")}${batchText} · ${translateUiText("Laufzeit")} ${formatDuration(elapsed)} · ${remainingText}`;
+  const estimateBasis = progressEstimateBasisText();
+  els.progressDetail.textContent = `${processed} ${translateUiText("von")} ${total} ${translateUiText("Requirements verarbeitet")}${batchText} · ${translateUiText("Laufzeit")} ${formatDuration(elapsed)} · ${remainingText}${estimateBasis}`;
   renderProgressTimeBar(elapsed, remaining);
 }
 
 function renderProgressTimeBar(elapsed, remaining) {
   if (remaining == null || !state.progressInitialEstimatedMs) {
-    els.progressTimeBar.style.width = "0%";
+    setProgressTimePercent(0, false);
     els.progressTimeText.textContent = translateUiText("Restzeit wird berechnet");
     return;
   }
 
   const totalTime = Math.max(elapsed + remaining, state.progressInitialEstimatedMs, 1);
   const percent = Math.max(0, Math.min(100, Math.round((elapsed / totalTime) * 100)));
-  els.progressTimeBar.style.width = `${percent}%`;
-  els.progressTimeText.textContent = `${percent}% · ${formatDuration(remaining)} ${translateUiText("verbleibend")}`;
+  const renderedPercent = setProgressTimePercent(percent, state.progressStatus === "completed");
+  els.progressTimeText.textContent = `${renderedPercent}% · ${formatDuration(remaining)} ${translateUiText("verbleibend")}`;
 }
 
 function estimateRemainingMs({ processed, total, totalBatches }) {
@@ -11221,6 +15678,10 @@ function progressPercent({ processed, total, batchNumber, totalBatches }) {
 }
 
 function calculateInitialProgressEstimate(total, options = {}) {
+  if (options.operationType && options.operationType !== "pr-analysis") {
+    return Promise.resolve(estimateAiOperationDuration(total, options).estimatedMs);
+  }
+
   const requirements = Array.isArray(options.requirements) ? options.requirements : [];
   const mode = options.mode || "default";
   const defaults = getProgressTimingDefaults(mode);
@@ -11244,6 +15705,255 @@ function calculateInitialProgressEstimate(total, options = {}) {
       resolve(Math.max(estimatedMs, total > 0 ? 1000 : 0));
     }, 250);
   });
+}
+
+function buildProgressOperation(total, options = {}) {
+  const inputCharCount = countProgressInputChars(options.requirements);
+  const attachmentCount = Number(options.attachmentCount) || countProgressAttachments(options);
+  const operationType = options.operationType || options.mode || "default";
+  const sizeClass = options.sizeClass || classifyAiOperationSize({
+    operationType,
+    requirementCount: total,
+    charCount: inputCharCount,
+    attachmentCount,
+  });
+  const estimate = estimateAiOperationDuration(total, {
+    ...options,
+    operationType,
+    sizeClass,
+    inputCharCount,
+    attachmentCount,
+  });
+
+  return {
+    operationType,
+    sizeClass,
+    requirementCount: Number(total) || 0,
+    inputCharCount,
+    attachmentCount,
+    model: options.model || "default",
+    estimateBasis: estimate.basis,
+    startedAt: new Date().toISOString(),
+  };
+}
+
+function defaultProgressSteps(mode = "") {
+  if (mode === "pr-analysis") {
+    return [
+      "AI-Anfrage wird vorbereitet",
+      "Batch wird an die AI gesendet",
+      "AI verarbeitet die Anfrage",
+      "Antwort wird geprüft",
+      "Ansicht wird aktualisiert",
+    ];
+  }
+
+  return [
+    "AI-Anfrage wird vorbereitet",
+    "AI verarbeitet die Anfrage",
+    "Antwort wird geprüft",
+    "Ansicht wird aktualisiert",
+  ];
+}
+
+function renderProgressSteps(forceComplete = false) {
+  if (!els.progressSteps) return;
+  const steps = state.progressSteps || [];
+  els.progressSteps.hidden = !steps.length;
+  els.progressSteps.innerHTML = steps.map((step, index) => {
+    const number = index + 1;
+    const status = forceComplete || number < state.progressStepIndex
+      ? "done"
+      : number === state.progressStepIndex
+        ? "active"
+        : "pending";
+    return `<li class="${status}">${escapeHtml(translateUiText(step))}</li>`;
+  }).join("");
+}
+
+function setProgressBarPercent(percent, complete = false) {
+  const capped = complete
+    ? 100
+    : Math.min(95, Math.max(state.progressLastPercent || 0, Math.round(Number(percent) || 0)));
+  state.progressLastPercent = capped;
+  els.progressBar.style.width = `${capped}%`;
+  return capped;
+}
+
+function setProgressTimePercent(percent, complete = false) {
+  const capped = complete
+    ? 100
+    : Math.min(95, Math.max(state.progressLastTimePercent || 0, Math.round(Number(percent) || 0)));
+  state.progressLastTimePercent = capped;
+  els.progressTimeBar.style.width = `${capped}%`;
+  return capped;
+}
+
+function completionProgressDetail(processed) {
+  const elapsed = state.progressStartedAt ? Date.now() - state.progressStartedAt : 0;
+  const total = Number(state.progressTotal) || Number(processed) || 0;
+  return `${Number(processed) || total} ${translateUiText("von")} ${total} ${translateUiText("Requirements verarbeitet")} · ${translateUiText("Laufzeit")} ${formatDuration(elapsed)}`;
+}
+
+function progressEstimateBasisText() {
+  const operation = state.progressOperation;
+  if (!operation?.estimateBasis) return "";
+  return ` · ${translateUiText("Schätzung")}: ${translateUiText(operation.estimateBasis)}`;
+}
+
+function classifyAiOperationSize({ requirementCount = 0, charCount = 0, attachmentCount = 0 } = {}) {
+  const count = Number(requirementCount) || 0;
+  const chars = Number(charCount) || 0;
+  const attachments = Number(attachmentCount) || 0;
+  if (count >= AI_OPERATION_SIZE_CLASS_LIMITS.batch.minRequirements) return "batch";
+  if (
+    count > AI_OPERATION_SIZE_CLASS_LIMITS.large.maxRequirements ||
+    chars > AI_OPERATION_SIZE_CLASS_LIMITS.large.maxChars ||
+    attachments > AI_OPERATION_SIZE_CLASS_LIMITS.large.maxAttachments
+  ) {
+    return "batch";
+  }
+  if (
+    count > AI_OPERATION_SIZE_CLASS_LIMITS.medium.maxRequirements ||
+    chars > AI_OPERATION_SIZE_CLASS_LIMITS.medium.maxChars ||
+    attachments > AI_OPERATION_SIZE_CLASS_LIMITS.medium.maxAttachments
+  ) {
+    return "large";
+  }
+  if (
+    count > AI_OPERATION_SIZE_CLASS_LIMITS.small.maxRequirements ||
+    chars > AI_OPERATION_SIZE_CLASS_LIMITS.small.maxChars ||
+    attachments > AI_OPERATION_SIZE_CLASS_LIMITS.small.maxAttachments
+  ) {
+    return "medium";
+  }
+  return "small";
+}
+
+function estimateAiOperationDuration(total, options = {}) {
+  const operationType = options.operationType || options.mode || "default";
+  const sizeClass = options.sizeClass || classifyAiOperationSize({
+    operationType,
+    requirementCount: total,
+    charCount: options.inputCharCount ?? countProgressInputChars(options.requirements),
+    attachmentCount: options.attachmentCount ?? countProgressAttachments(options),
+  });
+  const comparable = readAiOperationRuntimeStats()
+    .filter((entry) =>
+      entry.success &&
+      entry.operationType === operationType &&
+      entry.sizeClass === sizeClass &&
+      Number(entry.durationMs) > 0)
+    .slice(-50);
+  if (comparable.length >= 3) {
+    const durations = comparable.map((entry) => Number(entry.durationMs)).sort((a, b) => a - b);
+    const mid = Math.floor(durations.length / 2);
+    const median = durations.length % 2 ? durations[mid] : Math.round((durations[mid - 1] + durations[mid]) / 2);
+    return { estimatedMs: Math.max(median, 1000), basis: "üblicherweise" };
+  }
+
+  const defaults = AI_OPERATION_DEFAULT_ESTIMATES[operationType] || AI_OPERATION_DEFAULT_ESTIMATES.default;
+  const estimatedMs = defaults[sizeClass] || defaults.medium || AI_OPERATION_DEFAULT_ESTIMATES.default.medium;
+  return { estimatedMs, basis: "geschätzt" };
+}
+
+function countProgressAttachments(options = {}) {
+  if (Number.isFinite(Number(options.attachmentCount))) return Number(options.attachmentCount);
+  return Array.isArray(options.attachments) ? options.attachments.length : 0;
+}
+
+async function fetchAiJsonWithStatus(endpoint, init, options = {}) {
+  await showProgress(options.total || 1, {
+    requirements: options.requirements || [],
+    mode: options.mode || options.operationType || "default",
+    operationType: options.operationType || options.mode || "default",
+    title: options.title,
+    steps: options.steps,
+    attachmentCount: options.attachmentCount,
+    waitingText: "Warte auf externe AI-Antwort. Der Balken zeigt nur eine Zeitschätzung und bleibt bis zur echten Antwort unter 100 %.",
+  });
+  setProgressStep(1);
+  await waitForNextPaint();
+  const timeoutMs = Number(options.timeoutMs) || aiOperationTimeoutMs(options.operationType || options.mode);
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  if (init?.signal) {
+    init.signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  try {
+    setProgressStep(2, options.processingMessage || "AI verarbeitet die Anfrage");
+    const response = await fetch(endpoint, { ...init, signal: controller.signal });
+    setProgressStep(3, "Antwort wird geprüft");
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || options.errorMessage || "AI-Vorgang fehlgeschlagen");
+    }
+    setProgressStep(4, "Ansicht wird aktualisiert");
+    completeProgress(options.total || 1, {
+      openAiUsage: data.openAiUsage,
+      text: "AI-Antwort erhalten. Die Ansicht wird aktualisiert.",
+      resultText: options.successMessage || "Die AI-Operation wurde erfolgreich abgeschlossen.",
+      autoCloseMs: options.autoCloseMs,
+    });
+    return data;
+  } catch (error) {
+    const normalizedError = error?.name === "AbortError"
+      ? new Error(options.timeoutMessage || "AI-Vorgang hat zu lange gedauert und wurde abgebrochen.")
+      : error;
+    failProgress(normalizedError);
+    throw normalizedError;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function aiOperationTimeoutMs(operationType = "") {
+  if (operationType === "final-score") return 90000;
+  if (operationType === "product-improvement" || operationType === "software-improvement" || operationType === "e2e-improvement") return 120000;
+  return 180000;
+}
+
+function waitForNextPaint() {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+  });
+}
+
+function readAiOperationRuntimeStats() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(AI_OPERATION_TIMING_STORAGE_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((entry) => entry && typeof entry === "object") : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberAiOperationRuntime({ success, error, openAiUsage } = {}) {
+  const operation = state.progressOperation;
+  if (!operation || !state.progressStartedAt) return;
+  try {
+    const history = readAiOperationRuntimeStats();
+    const endedAt = new Date();
+    history.push({
+      operationType: operation.operationType,
+      startedAt: operation.startedAt,
+      endedAt: endedAt.toISOString(),
+      durationMs: Math.max(endedAt.getTime() - state.progressStartedAt, 0),
+      success: Boolean(success),
+      error: success ? "" : String(error?.message || error || "").slice(0, 180),
+      model: openAiUsage?.model || operation.model || "",
+      promptVersion: AI_OPERATION_PROMPT_VERSION,
+      sizeClass: operation.sizeClass,
+      requirementCount: operation.requirementCount,
+      inputCharCount: operation.inputCharCount,
+      attachmentCount: operation.attachmentCount,
+      totalTokens: Number(openAiUsage?.totalTokens || openAiUsage?.total_tokens) || 0,
+      outputTokens: Number(openAiUsage?.outputTokens || openAiUsage?.output_tokens) || 0,
+    });
+    window.localStorage.setItem(AI_OPERATION_TIMING_STORAGE_KEY, JSON.stringify(history.slice(-200)));
+  } catch {
+    // Runtime history is only used for local estimates and must never block the workflow.
+  }
 }
 
 function rememberProgressTiming(elapsedMs) {
@@ -11372,6 +16082,7 @@ Promise.allSettled([loadRuntimeInfo(), loadSession()]).finally(() => {
   renderAuthState();
   renderWorkspaceState();
   renderProcessPages();
+  handleReviewRouteFromHash();
   updateProjectActions();
   renderMetrics();
   scheduleApplyTranslations();

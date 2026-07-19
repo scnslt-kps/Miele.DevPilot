@@ -19,6 +19,8 @@ model User {
   ownedProjects      Project[]       @relation("ProjectOwner")
   projectMembers     ProjectMember[]
   projectRevisions   ProjectRevision[]
+  projectAiUsages    ProjectAiUsage[]
+  requirementAttachments ProjectRequirementAttachment[]
 
   @@unique([name])
 }
@@ -32,10 +34,64 @@ model Project {
   owner       User            @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Restrict)
   members     ProjectMember[]
   revisions   ProjectRevision[]
+  aiUsages    ProjectAiUsage[]
+  requirementAttachments ProjectRequirementAttachment[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
   @@index([ownerId])
+}
+
+model ProjectRequirementAttachment {
+  id               String   @id @default(uuid())
+  projectId        String
+  requirementId    String
+  originalFileName String
+  storageKey       String   @unique
+  mimeType         String
+  fileSize         Int
+  uploadedAt       DateTime @default(now())
+  uploadedByUserId String?
+  description      String   @default("")
+  checksum         String?
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploadedBy       User?    @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, requirementId])
+  @@index([uploadedByUserId])
+  @@index([uploadedAt])
+}
+
+model ProjectAiUsage {
+  id                String   @id @default(uuid())
+  projectId         String
+  userId            String?
+  action            String
+  model             String
+  inputTokens       Int      @default(0)
+  outputTokens      Int      @default(0)
+  cachedInputTokens Int      @default(0)
+  reasoningTokens   Int      @default(0)
+  totalTokens       Int      @default(0)
+  inputCost         Decimal  @default(0) @db.Decimal(18, 8)
+  outputCost        Decimal  @default(0) @db.Decimal(18, 8)
+  cachedInputCost   Decimal  @default(0) @db.Decimal(18, 8)
+  totalCost         Decimal  @default(0) @db.Decimal(18, 8)
+  currency          String   @default("USD")
+  providerRequestId String?
+  status            String
+  errorType         String?
+  pricingVersion    String
+  createdAt         DateTime @default(now())
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([providerRequestId])
+  @@index([projectId])
+  @@index([createdAt])
+  @@index([action])
+  @@index([model])
+  @@index([projectId, createdAt])
 }
 
 model ProjectRevision {
