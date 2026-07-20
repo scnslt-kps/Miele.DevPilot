@@ -128,6 +128,7 @@ const state = {
   requirementReviewReturnContext: null,
   requirementReviewHighlightRow: null,
   pendingProductImprovement: null,
+  productRequirementExclusionInFlight: false,
   aiSuggestionEditingRow: null,
   aiSuggestionEditorInitialHtml: "",
   aiSuggestionEditorDirty: false,
@@ -399,12 +400,21 @@ const UI_TRANSLATIONS = {
     "Approve PR": "Approve PR",
     "Für Approval freigeben": "Submit for approval",
     "Für Approval freigegeben": "Submitted for approval",
+    "Detailansicht schließen": "Close detail view",
     "Das Product Requirement wurde für das Approval freigegeben.": "The Product Requirement has been submitted for approval.",
     "Nur Product Requirement Owner oder Admins können Product Requirements für das Approval freigeben.": "Only Product Requirement Owners or admins can submit Product Requirements for approval.",
     "Dieses Product Requirement wurde bereits für das Approval freigegeben.": "This Product Requirement has already been submitted for approval.",
     "PR ausschließen": "Exclude PR",
     "Product Requirement ausschließen?": "Exclude product requirement?",
+    "Bereits freigegebenes PR ausschließen?": "Exclude already submitted PR?",
     "Das Requirement wird aus dem weiteren Bearbeitungs- und Generierungsprozess ausgeschlossen.": "The requirement will be excluded from further processing and generation.",
+    "Dieses Product Requirement wurde bereits für das Approval freigegeben. Durch den Ausschluss wird es aus dem aktuellen Approval-Umfang entfernt. Die bisherige Statushistorie bleibt erhalten.": "This Product Requirement has already been submitted for approval. Excluding it removes it from the current approval scope. The existing status history remains available.",
+    "Ausschlussgrund erfassen": "Enter exclusion reason",
+    "Bitte gib an, warum dieses Product Requirement ausgeschlossen wird.": "Please enter why this Product Requirement is being excluded.",
+    "Ausschlussgrund *": "Exclusion reason *",
+    "Ausschlussgrund speichern": "Save exclusion reason",
+    "Kommentar zur Änderung *": "Change comment *",
+    "Kommentar speichern": "Save comment",
     "Ausgeschlossene Requirements benötigen einen Ausschlussgrund.": "Excluded requirements require an exclusion reason.",
     "Bitte gib einen Ausschlussgrund an.": "Please enter an exclusion reason.",
     "Bitte übernimm zuerst einen AI-Vorschlag als aktuellen Requirement-Inhalt.": "Please accept an AI suggestion as the current requirement content first.",
@@ -1921,6 +1931,7 @@ const els = {
   changeRequestConfirmButton: document.querySelector("#changeRequestConfirmButton"),
   changeRequestTitle: document.querySelector("#changeRequestTitle"),
   changeRequestDescription: document.querySelector("#changeRequestDescription"),
+  changeRequestLabel: document.querySelector("label[for='changeRequestComment']"),
   changeRequestComment: document.querySelector("#changeRequestComment"),
   changeRequestMessage: document.querySelector("#changeRequestMessage"),
   appDialogOverlay: document.querySelector("#appDialogOverlay"),
@@ -5865,6 +5876,16 @@ function productFinalizationState(requirement, result, selection, isUpdatingFina
   return "FINAL_SCORE_PASSED";
 }
 
+function isSubmittedProductRequirement(selection) {
+  return Boolean(selection?.submittedForApprovalAt) && selection.choice !== "excluded";
+}
+
+function canExcludeProductRequirement(selection) {
+  if (selection?.choice === "excluded") return false;
+  if (canModifyProductRequirements()) return true;
+  return isSubmittedProductRequirement(selection) && canEditProductRequirements();
+}
+
 function productReviewSourceLabel(selection) {
   const source = productReviewSource(selection);
   const labels = {
@@ -6615,22 +6636,64 @@ function renderProductReviewPanel() {
   els.prImproveButton.disabled = !canEditProduct;
   const approveBlockReason = productApprovalSubmissionBlockReason(rowNumber);
   const canRecalculateBeforeSubmit = productApprovalCanRecalculateBeforeSubmit(rowNumber);
-  els.approveRequirementButton.hidden = false;
-  els.selectionDeferButton.hidden = false;
-  els.approveRequirementButton.disabled = Boolean(approveBlockReason && !canRecalculateBeforeSubmit);
-  els.approveRequirementButton.textContent = translateUiText(canRecalculateBeforeSubmit ? "Score neu berechnen" : "Für Approval freigeben");
-  els.approveRequirementButton.title = approveBlockReason ? translateUiText(approveBlockReason) : "";
-  els.excludeRequirementButton.textContent = translateUiText("PR ausschließen");
-  els.selectionDeferButton.textContent = translateUiText("Später entscheiden");
-  els.reviewDecisionStatus.textContent = approveBlockReason
-    ? translateUiText(approveBlockReason)
-    : `${translateUiText("Bereit für Approval")} · ${translateUiText("Finaler Score")} ${scoreDisplayText(finalScore, finalScoreStatus)}`;
+  renderProductReviewDecisionActions({
+    selection,
+    approveBlockReason,
+    canRecalculateBeforeSubmit,
+    finalScore,
+    finalScoreStatus,
+  });
   els.selectionIssues.innerHTML = result
     ? renderRequirementReviewAnalysis(result, selection, finalScoreStatus, finalizationStatus, visibleScore)
     : translateUiText("Noch keine Analysehinweise vorhanden.");
   renderProductReviewHistory(selection);
   renderRequirementReviewWorkspaceMeta(item, result, selection, finalScoreStatus, finalizationStatus, visibleScore, scoreDisplayState);
   renderRequirementAttachmentsSection(item);
+}
+
+function renderProductReviewDecisionActions({
+  selection,
+  approveBlockReason,
+  canRecalculateBeforeSubmit,
+  finalScore,
+  finalScoreStatus,
+}) {
+  const isExcluded = selection?.choice === "excluded";
+  const isSubmitted = isSubmittedProductRequirement(selection);
+  const canExclude = canExcludeProductRequirement(selection);
+
+  els.approveRequirementButton.hidden = false;
+  els.approveRequirementButton.dataset.reviewPrimaryAction = isExcluded || isSubmitted ? "close" : "submit";
+  els.approveRequirementButton.disabled = false;
+  els.approveRequirementButton.title = "";
+  els.excludeRequirementButton.textContent = translateUiText("PR ausschließen");
+  els.excludeRequirementButton.disabled = !canExclude || state.productRequirementExclusionInFlight;
+  els.selectionDeferButton.textContent = translateUiText("Später entscheiden");
+
+  if (isExcluded) {
+    els.selectionDeferButton.hidden = true;
+    els.excludeRequirementButton.hidden = true;
+    els.approveRequirementButton.textContent = translateUiText("Detailansicht schließen");
+    els.reviewDecisionStatus.textContent = translateUiText("Ausgeschlossen");
+    return;
+  }
+
+  if (isSubmitted) {
+    els.selectionDeferButton.hidden = true;
+    els.excludeRequirementButton.hidden = false;
+    els.approveRequirementButton.textContent = translateUiText("Detailansicht schließen");
+    els.reviewDecisionStatus.textContent = `${translateUiText("Für Approval freigegeben")} · ${translateUiText("Finaler Score")} ${scoreDisplayText(finalScore, finalScoreStatus)}`;
+    return;
+  }
+
+  els.selectionDeferButton.hidden = false;
+  els.excludeRequirementButton.hidden = false;
+  els.approveRequirementButton.disabled = Boolean(approveBlockReason && !canRecalculateBeforeSubmit);
+  els.approveRequirementButton.textContent = translateUiText(canRecalculateBeforeSubmit ? "Score neu berechnen" : "Für Approval freigeben");
+  els.approveRequirementButton.title = approveBlockReason ? translateUiText(approveBlockReason) : "";
+  els.reviewDecisionStatus.textContent = approveBlockReason
+    ? translateUiText(approveBlockReason)
+    : `${translateUiText("Bereit für Approval")} · ${translateUiText("Finaler Score")} ${scoreDisplayText(finalScore, finalScoreStatus)}`;
 }
 
 function mountProductReviewWorkspaceControls() {
@@ -7757,6 +7820,11 @@ function releaseProductRequirementAfterOwnerSave(rowNumber) {
 }
 
 async function handleProductReviewPrimaryAction() {
+  if (els.approveRequirementButton?.dataset.reviewPrimaryAction === "close") {
+    await returnToRequirementList({ focusRow: state.activeSelectionRow });
+    return;
+  }
+
   if (await submitActiveProductRequirementForApproval(state.activeSelectionRow)) {
     await returnToRequirementList({ focusRow: state.activeSelectionRow });
   }
@@ -8026,6 +8094,7 @@ function openAppDialog({
   message = "",
   confirmLabel = "Schließen",
   cancelLabel = "Abbrechen",
+  confirmVariant = "",
   showCancel = false,
 } = {}) {
   return new Promise((resolve) => {
@@ -8043,6 +8112,7 @@ function openAppDialog({
     els.appDialogCancelButton.hidden = !showCancel;
     els.appDialogCancelButton.textContent = translateUiText(cancelLabel);
     els.appDialogConfirmButton.textContent = translateUiText(confirmLabel);
+    els.appDialogConfirmButton.classList.toggle("is-destructive", confirmVariant === "destructive");
     els.appDialogOverlay.hidden = false;
     window.setTimeout(() => {
       (showCancel ? els.appDialogCancelButton : els.appDialogConfirmButton).focus();
@@ -8073,16 +8143,20 @@ function appDialogTitleForType(type) {
   return "Hinweis";
 }
 
-function openChangeRequestDialog(changeType = "Änderung") {
+function openChangeRequestDialog(changeType = "Änderung", options = {}) {
   return new Promise((resolve) => {
     if (state.changeRequestDialogResolve) {
       state.changeRequestDialogResolve(null);
     }
 
     state.changeRequestDialogResolve = resolve;
-    els.changeRequestTitle.textContent = translateUiText("Änderung am freigegebenen Requirement");
-    els.changeRequestDescription.textContent = translateUiText("Bitte dokumentiere, warum das bereits freigegebene Requirement geändert wird.");
-    els.changeRequestComment.value = changeType ? `Change Request - ${translateUiText(changeType)}` : "Change Request";
+    els.changeRequestTitle.textContent = translateUiText(options.title || "Änderung am freigegebenen Requirement");
+    els.changeRequestDescription.textContent = translateUiText(options.description || "Bitte dokumentiere, warum das bereits freigegebene Requirement geändert wird.");
+    if (els.changeRequestLabel) {
+      els.changeRequestLabel.textContent = translateUiText(options.label || "Kommentar zur Änderung *");
+    }
+    els.changeRequestConfirmButton.textContent = translateUiText(options.confirmLabel || "Kommentar speichern");
+    els.changeRequestComment.value = options.initialValue ?? (changeType ? `Change Request - ${translateUiText(changeType)}` : "Change Request");
     els.changeRequestMessage.textContent = "";
     els.changeRequestOverlay.hidden = false;
     updateChangeRequestDialogState();
@@ -8090,6 +8164,16 @@ function openChangeRequestDialog(changeType = "Änderung") {
       els.changeRequestComment.focus();
       els.changeRequestComment.select();
     }, 0);
+  });
+}
+
+function requestProductRequirementExclusionReason() {
+  return openChangeRequestDialog("Requirement ausgeschlossen", {
+    title: "Ausschlussgrund erfassen",
+    description: "Bitte gib an, warum dieses Product Requirement ausgeschlossen wird.",
+    label: "Ausschlussgrund *",
+    confirmLabel: "Ausschlussgrund speichern",
+    initialValue: "",
   });
 }
 
@@ -9036,62 +9120,106 @@ async function persistActiveRequirementTechTypes() {
 }
 
 async function excludeRequirement() {
-  if (!canModifyProductRequirements()) {
-    alert(productApprovalLockedMessage());
-    return;
-  }
+  if (state.productRequirementExclusionInFlight) return;
 
   const rowNumber = state.activeSelectionRow;
   if (!rowNumber) return;
 
   const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
-  const exclusionReason = prompt(translateUiText("Bitte gib einen Ausschlussgrund an."));
-  if (!exclusionReason || !exclusionReason.trim()) {
-    alert(translateUiText("Ausgeschlossene Requirements benötigen einen Ausschlussgrund."));
+  if (!item) return;
+  const currentSelection = state.finalSelections.get(Number(rowNumber));
+  if (!canExcludeProductRequirement(currentSelection)) {
+    alert(productApprovalLockedMessage());
     return;
   }
-  const confirmed = await showQuestionDialog("Das Requirement wird aus dem weiteren Bearbeitungs- und Generierungsprozess ausgeschlossen.", {
-    title: "Product Requirement ausschließen?",
-    confirmLabel: "PR ausschließen",
-    cancelLabel: "Abbrechen",
-  });
-  if (!confirmed) return;
-  const changeComment = await requestApprovedProductRequirementChangeComment(rowNumber, "Requirement ausgeschlossen");
-  if (changeComment === null) return;
-  state.finalSelections.set(Number(rowNumber), {
-    choice: "excluded",
-    selectedSource: "EXCLUDED",
-    text: "",
-    excluded: true,
-    exclusionReason: exclusionReason.trim(),
-    finalizedAt: new Date().toISOString(),
-    approvedAt: "",
-    approvedBy: "",
-    approvals: [],
-    versions: [
-      {
-        version: 1,
-        text: exclusionReason.trim(),
-        changedAt: new Date().toISOString(),
-        changedBy: currentApprovalUserName(),
-        reason: productChangeHistoryReason("Requirement ausgeschlossen", changeComment),
-      },
-    ],
-    comments: state.finalSelections.get(Number(rowNumber))?.comments || [],
-  });
-  invalidateProductRequirementAfterChange(rowNumber);
-  if (state.requirementReviewOpen) {
-    await returnToRequirementList({ focusRow: rowNumber });
-  } else {
-    await closeSelectionDialog();
-  }
-  renderTable();
+
+  state.productRequirementExclusionInFlight = true;
   renderProductApprovalPanel();
-  renderMetrics();
-  renderSoftwarePage();
-  updateExportAvailability();
-  setProjectRevisionAction(projectRevisionActionFor("PR ausgeschlossen", item, "PR"));
-  updateProjectActions();
+  try {
+    const existingSelection = state.finalSelections.get(Number(rowNumber));
+    const wasSubmitted = isSubmittedProductRequirement(existingSelection);
+    const exclusionReason = await requestProductRequirementExclusionReason();
+    if (exclusionReason === null) return;
+    if (!exclusionReason.trim()) {
+      await showAlertDialog("Ausgeschlossene Requirements benötigen einen Ausschlussgrund.");
+      return;
+    }
+    const confirmed = await showQuestionDialog(
+      wasSubmitted
+        ? "Dieses Product Requirement wurde bereits für das Approval freigegeben. Durch den Ausschluss wird es aus dem aktuellen Approval-Umfang entfernt. Die bisherige Statushistorie bleibt erhalten."
+        : "Das Requirement wird aus dem weiteren Bearbeitungs- und Generierungsprozess ausgeschlossen.",
+      {
+        title: wasSubmitted ? "Bereits freigegebenes PR ausschließen?" : "Product Requirement ausschließen?",
+        confirmLabel: "PR ausschließen",
+        cancelLabel: "Abbrechen",
+        confirmVariant: "destructive",
+      },
+    );
+    if (!confirmed) return;
+    const changeComment = await requestApprovedProductRequirementChangeComment(rowNumber, "Requirement ausgeschlossen");
+    if (changeComment === null) return;
+
+    const normalizedRowNumber = Number(rowNumber);
+    const previousSelection = existingSelection ? JSON.parse(JSON.stringify(existingSelection)) : null;
+    const now = new Date().toISOString();
+    const nextSelection = {
+      ...(existingSelection || {}),
+      choice: "excluded",
+      selectedSource: "EXCLUDED",
+      text: existingSelection?.text || item.text || "",
+      excluded: true,
+      exclusionReason: exclusionReason.trim(),
+      excludedAt: now,
+      excludedBy: currentApprovalUserName(),
+      excludedById: state.currentUser?.id || "",
+      submittedForApprovalAt: "",
+      submittedForApprovalBy: "",
+      submittedForApprovalById: "",
+      workflowStatus: "EXCLUDED",
+      approvedAt: "",
+      approvedBy: "",
+      approvals: productApprovalRecords(existingSelection),
+      comments: productApprovalComments(existingSelection),
+      versions: productApprovalVersions(existingSelection),
+    };
+    addProductReviewHistory(
+      nextSelection,
+      productChangeHistoryReason(wasSubmitted ? "Für Approval freigegebenes Requirement ausgeschlossen" : "Requirement ausgeschlossen", changeComment),
+      nextSelection.text || exclusionReason.trim(),
+    );
+    state.finalSelections.set(normalizedRowNumber, nextSelection);
+    invalidateProductRequirementAfterChange(rowNumber, { clearApproval: false });
+    nextSelection.submittedForApprovalAt = "";
+    nextSelection.submittedForApprovalBy = "";
+    nextSelection.submittedForApprovalById = "";
+    nextSelection.workflowStatus = "EXCLUDED";
+    const saved = await persistCurrentProjectNow(projectRevisionActionFor("PR ausgeschlossen", item, "PR"));
+    if (!saved) {
+      if (previousSelection) {
+        state.finalSelections.set(normalizedRowNumber, previousSelection);
+      } else {
+        state.finalSelections.delete(normalizedRowNumber);
+      }
+      renderProductApprovalPanel();
+      await showAlertDialog("Projekt konnte nicht gespeichert werden.");
+      return;
+    }
+
+    if (state.requirementReviewOpen) {
+      await returnToRequirementList({ focusRow: rowNumber });
+    } else {
+      await closeSelectionDialog();
+    }
+    renderTable();
+    renderProductApprovalPanel();
+    renderMetrics();
+    renderSoftwarePage();
+    updateExportAvailability();
+    updateProjectActions();
+  } finally {
+    state.productRequirementExclusionInFlight = false;
+    renderProductApprovalPanel();
+  }
 }
 
 async function improveProductRequirementWithAi() {
@@ -14361,6 +14489,9 @@ function loadProjectPayload(payload, fileName, projectId = "") {
         ...(Array.isArray(selection.techTypes) ? { techTypes: selection.techTypes } : {}),
         excluded: Boolean(selection.excluded),
         exclusionReason: selection.exclusionReason || "",
+        excludedAt: selection.excludedAt || "",
+        excludedBy: selection.excludedBy || "",
+        excludedById: selection.excludedById || "",
         finalizedAt: selection.finalizedAt || "",
         finalizedBy: selection.finalizedBy || "",
         finalizedById: selection.finalizedById || "",
@@ -14382,6 +14513,10 @@ function loadProjectPayload(payload, fileName, projectId = "") {
         finalRequirementAnalysisScoreBreakdown: normalizeScoreBreakdown(selection.finalRequirementAnalysisScoreBreakdown),
         finalRequirementAnalysisIssues: Array.isArray(selection.finalRequirementAnalysisIssues) ? selection.finalRequirementAnalysisIssues : [],
         needsFinalAssessment: Boolean(selection.needsFinalAssessment),
+        submittedForApprovalAt: selection.submittedForApprovalAt || "",
+        submittedForApprovalBy: selection.submittedForApprovalBy || "",
+        submittedForApprovalById: selection.submittedForApprovalById || "",
+        workflowStatus: selection.workflowStatus || "",
         approvedAt: selection.approvedAt || "",
         approvedBy: selection.approvedBy || "",
         approvals: Array.isArray(selection.approvals) ? selection.approvals : [],

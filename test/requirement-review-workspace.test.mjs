@@ -115,6 +115,49 @@ test("integrates the per-requirement decision actions into the review sidebar", 
   assert.match(css, /\.review-decision-card \.selection-actions\s*\{[\s\S]{0,120}display:\s*grid/);
 });
 
+test("submitted or excluded Product Requirements use close-first review actions", () => {
+  assert.match(app, /function isSubmittedProductRequirement\(selection\)/);
+  assert.match(app, /Boolean\(selection\?\.submittedForApprovalAt\) && selection\.choice !== "excluded"/);
+  assert.match(app, /function canExcludeProductRequirement\(selection\)/);
+  assert.match(app, /isSubmittedProductRequirement\(selection\) && canEditProductRequirements\(\)/);
+  assert.match(app, /function renderProductReviewDecisionActions/);
+  assert.match(app, /els\.approveRequirementButton\.dataset\.reviewPrimaryAction = isExcluded \|\| isSubmitted \? "close" : "submit"/);
+  assert.match(app, /if \(isExcluded\) \{[\s\S]*els\.selectionDeferButton\.hidden = true[\s\S]*els\.excludeRequirementButton\.hidden = true[\s\S]*Detailansicht schließen/);
+  assert.match(app, /if \(isSubmitted\) \{[\s\S]*els\.selectionDeferButton\.hidden = true[\s\S]*els\.excludeRequirementButton\.hidden = false[\s\S]*Detailansicht schließen/);
+  assert.match(app, /els\.excludeRequirementButton\.disabled = !canExclude \|\| state\.productRequirementExclusionInFlight/);
+  assert.match(app, /"Detailansicht schließen": "Close detail view"/);
+});
+
+test("close action returns to the list without resubmitting approved Product Requirements", () => {
+  const handler = app.match(/async function handleProductReviewPrimaryAction\(\) \{[\s\S]*?\n\}/)?.[0] || "";
+  assert.match(handler, /dataset\.reviewPrimaryAction === "close"/);
+  assert.match(handler, /await returnToRequirementList\(\{ focusRow: state\.activeSelectionRow \}\)/);
+  assert.doesNotMatch(handler.match(/dataset\.reviewPrimaryAction === "close"[\s\S]*?return;/)?.[0] || "", /submitActiveProductRequirementForApproval/);
+});
+
+test("excluding an already submitted Product Requirement warns, preserves history, and persists before closing", () => {
+  const excludeHandler = app.match(/async function excludeRequirement\(\) \{[\s\S]*?async function improveProductRequirementWithAi/)?.[0] || "";
+  assert.match(excludeHandler, /state\.productRequirementExclusionInFlight/);
+  assert.match(excludeHandler, /canExcludeProductRequirement\(currentSelection\)/);
+  assert.match(excludeHandler, /const wasSubmitted = isSubmittedProductRequirement\(existingSelection\)/);
+  assert.match(excludeHandler, /await requestProductRequirementExclusionReason\(\)/);
+  assert.doesNotMatch(excludeHandler, /prompt\(/);
+  assert.match(excludeHandler, /Bereits freigegebenes PR ausschließen\?/);
+  assert.match(excludeHandler, /Durch den Ausschluss wird es aus dem aktuellen Approval-Umfang entfernt/);
+  assert.match(excludeHandler, /confirmVariant: "destructive"/);
+  assert.match(excludeHandler, /text: existingSelection\?\.text \|\| item\.text \|\| ""/);
+  assert.match(excludeHandler, /approvals: productApprovalRecords\(existingSelection\)/);
+  assert.match(excludeHandler, /comments: productApprovalComments\(existingSelection\)/);
+  assert.match(excludeHandler, /versions: productApprovalVersions\(existingSelection\)/);
+  assert.match(excludeHandler, /submittedForApprovalAt: ""/);
+  assert.match(excludeHandler, /persistCurrentProjectNow\(projectRevisionActionFor\("PR ausgeschlossen", item, "PR"\)\)/);
+  assert.match(excludeHandler, /if \(!saved\) \{[\s\S]*state\.finalSelections\.set\(normalizedRowNumber, previousSelection\)/);
+  assert.match(excludeHandler, /await returnToRequirementList\(\{ focusRow: rowNumber \}\)/);
+  assert.doesNotMatch(excludeHandler, /approvals:\s*\[\]/);
+  assert.match(app, /"Ausschlussgrund erfassen": "Enter exclusion reason"/);
+  assert.match(app, /"Ausschlussgrund speichern": "Save exclusion reason"/);
+});
+
 test("AI acceptance does not require a confirmation dialog and blocks unsafe states", () => {
   assert.doesNotMatch(app, /await confirmFinalAiSuggestionAcceptance\(\)/);
   assert.match(app, /function productFinalAcceptBlockReason/);
