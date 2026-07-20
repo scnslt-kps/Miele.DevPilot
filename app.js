@@ -124,6 +124,9 @@ const state = {
   productReviewActiveTab: "final",
   productReviewTechTypeSearch: "",
   productReviewTechTypeFilter: "all",
+  productReviewTechTypeDraftRow: null,
+  productReviewTechTypeDraftSelection: [],
+  productReviewTechTypeReturnFocus: null,
   requirementReviewOpen: false,
   requirementReviewReturnContext: null,
   requirementReviewHighlightRow: null,
@@ -1750,7 +1753,8 @@ const els = {
   techTypeModalSummary: document.querySelector("#techTypeModalSummary"),
   techTypeModalCloseButton: document.querySelector("#techTypeModalCloseButton"),
   techTypeModalSelectionHost: document.querySelector("#techTypeModalSelectionHost"),
-  techTypeModalDoneButton: document.querySelector("#techTypeModalDoneButton"),
+  techTypeModalCancelButton: document.querySelector("#techTypeModalCancelButton"),
+  techTypeModalSaveButton: document.querySelector("#techTypeModalSaveButton"),
   productReviewAnalysisHost: document.querySelector("#productReviewAnalysisHost"),
   productReviewHistory: document.querySelector("#productReviewHistory"),
   productApprovalDetailContent: document.querySelector("#productApprovalDetailContent"),
@@ -2455,16 +2459,18 @@ els.productReviewSelectVisibleTechTypesButton.addEventListener("click", selectVi
 els.productReviewClearTechTypesButton.addEventListener("click", clearTechTypesForActiveRequirement);
 els.productReviewResetTechTypesButton.addEventListener("click", resetTechTypesForActiveRequirement);
 els.productReviewTechTypesHost.addEventListener("click", handleProductReviewTechTypeSummaryClick);
-els.techTypeModalCloseButton.addEventListener("click", closeTechTypeModal);
-els.techTypeModalDoneButton.addEventListener("click", closeTechTypeModal);
+els.techTypeModalCloseButton.addEventListener("click", cancelTechTypeModal);
+els.techTypeModalCancelButton.addEventListener("click", cancelTechTypeModal);
+els.techTypeModalSaveButton.addEventListener("click", saveTechTypeModal);
 els.techTypeModalOverlay.addEventListener("click", (event) => {
   if (event.target === els.techTypeModalOverlay) {
-    closeTechTypeModal();
+    cancelTechTypeModal();
   }
 });
 els.techTypeModalOverlay.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    closeTechTypeModal();
+    event.preventDefault();
+    cancelTechTypeModal();
   }
 });
 els.productApprovalSaveTextButton.addEventListener("click", saveProductApprovalText);
@@ -8237,31 +8243,79 @@ function renderTechTypeSummaryCard(requirement, selection, host) {
 }
 
 function handleProductReviewTechTypeSummaryClick(event) {
-  const button = event.target.closest("[data-techtype-edit]");
+  const button = event.target.closest?.("[data-techtype-edit]");
   if (!button || button.disabled) return;
-  openTechTypeModal();
+  openTechTypeModal(button);
 }
 
-function openTechTypeModal() {
+function openTechTypeModal(trigger = null) {
   const rowNumber = Number(state.activeSelectionRow);
   const requirement = state.requirements.find((item) => Number(item.rowNumber) === rowNumber);
   if (!requirement) return;
+  const selection = state.finalSelections.get(rowNumber);
+  const initialSelection = selectedTechTypesForRequirement(requirement, selection);
 
   state.productReviewTechTypeSearch = "";
   state.productReviewTechTypeFilter = "all";
+  state.productReviewTechTypeDraftRow = rowNumber;
+  state.productReviewTechTypeDraftSelection = [...initialSelection];
+  state.productReviewTechTypeReturnFocus = trigger || document.activeElement;
   els.productReviewTechTypeSearch.value = "";
   els.productReviewTechTypeFilter.value = "all";
   els.techTypeModalOverlay.hidden = false;
   mountTechTypeSelectionPanel(els.techTypeModalSelectionHost);
-  renderTechTypeSelection(requirement, state.finalSelections.get(rowNumber));
+  renderTechTypeSelection(requirement, { techTypes: state.productReviewTechTypeDraftSelection });
+  translateStaticSelectOptions();
   els.productReviewTechTypeSearch.focus();
 }
 
 function closeTechTypeModal() {
   if (!els.techTypeModalOverlay || els.techTypeModalOverlay.hidden) return;
 
+  const closedRowNumber = Number(state.productReviewTechTypeDraftRow || state.activeSelectionRow);
   els.techTypeModalOverlay.hidden = true;
+  state.productReviewTechTypeDraftRow = null;
+  state.productReviewTechTypeDraftSelection = [];
+  const returnFocus = state.productReviewTechTypeReturnFocus;
+  state.productReviewTechTypeReturnFocus = null;
   renderProductApprovalPanel();
+  if (returnFocus?.isConnected) {
+    window.setTimeout(() => returnFocus.focus(), 0);
+  } else if (Number(state.activeSelectionRow) === closedRowNumber) {
+    window.setTimeout(() => document.querySelector("#reviewTechTypesHost [data-techtype-edit]")?.focus(), 0);
+  }
+}
+
+function cancelTechTypeModal() {
+  closeTechTypeModal();
+}
+
+async function saveTechTypeModal() {
+  if (!canEditActiveProductTechTypes()) return;
+
+  const rowNumber = Number(state.productReviewTechTypeDraftRow || state.activeSelectionRow);
+  const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === rowNumber);
+  if (!item) {
+    closeTechTypeModal();
+    return;
+  }
+
+  const selection = state.finalSelections.get(rowNumber);
+  const techTypes = currentTechTypeSelection();
+  const previousTechTypes = selectedTechTypesForRequirement(item, selection);
+  if (arraysHaveSameValues(previousTechTypes, techTypes)) {
+    closeTechTypeModal();
+    return;
+  }
+
+  els.techTypeModalSaveButton.disabled = true;
+  const saved = await applyActiveRequirementTechTypes(rowNumber, techTypes);
+  els.techTypeModalSaveButton.disabled = false;
+  if (saved) {
+    closeTechTypeModal();
+  } else {
+    renderTechTypeSelection(item, { techTypes: previousTechTypes });
+  }
 }
 
 function canEditActiveProductTechTypes() {
@@ -8277,7 +8331,7 @@ function clearTechTypesForActiveRequirement() {
   });
   syncTechTypeGroupCheckboxes();
   renderTechTypeSummary(0);
-  void persistActiveRequirementTechTypes();
+  updateTechTypeDraftSelectionFromControls();
 }
 
 function resetTechTypesForActiveRequirement() {
@@ -8289,7 +8343,7 @@ function resetTechTypesForActiveRequirement() {
   });
   syncTechTypeGroupCheckboxes();
   renderTechTypeSummary(selected.size);
-  void persistActiveRequirementTechTypes();
+  updateTechTypeDraftSelectionFromControls();
 }
 
 function canReviseProductApprovalRequirement(rowNumber = state.activeSelectionRow) {
@@ -8920,7 +8974,7 @@ function handleTechTypeSelectionChange(event) {
 
   syncTechTypeGroupCheckboxes();
   renderTechTypeSummary();
-  void persistActiveRequirementTechTypes();
+  updateTechTypeDraftSelectionFromControls();
 }
 
 function handleTechTypeSelectionClick(event) {
@@ -8979,7 +9033,7 @@ function selectAllTechTypesForActiveRequirement() {
   });
   syncTechTypeGroupCheckboxes();
   renderTechTypeSummary(state.techTypes.length);
-  void persistActiveRequirementTechTypes();
+  updateTechTypeDraftSelectionFromControls();
 }
 
 function selectVisibleTechTypesForActiveRequirement() {
@@ -8996,19 +9050,22 @@ function selectVisibleTechTypesForActiveRequirement() {
   });
   syncTechTypeGroupCheckboxes();
   renderTechTypeSummary();
-  void persistActiveRequirementTechTypes();
+  updateTechTypeDraftSelectionFromControls();
 }
 
-async function persistActiveRequirementTechTypes() {
+function updateTechTypeDraftSelectionFromControls() {
+  if (state.productReviewTechTypeDraftRow == null) return;
+  state.productReviewTechTypeDraftSelection = currentTechTypeSelection();
+}
+
+async function applyActiveRequirementTechTypes(rowNumber, techTypes) {
   if (!canEditActiveProductTechTypes()) return;
 
-  const rowNumber = state.activeSelectionRow;
   if (!rowNumber) return;
 
   const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber));
   if (!item) return;
 
-  const techTypes = currentTechTypeSelection();
   const selection = state.finalSelections.get(Number(rowNumber));
   if (!selection) return;
   const previousTechTypes = selectedTechTypesForRequirement(item, selection);
@@ -9033,6 +9090,7 @@ async function persistActiveRequirementTechTypes() {
   setProjectRevisionAction(projectRevisionActionFor("TechTypes fuer PR geaendert", item, "PR"));
   renderProductApprovalPanel();
   updateProjectActions();
+  return persistCurrentProjectNow(projectRevisionActionFor("TechTypes fuer PR geaendert", item, "PR"));
 }
 
 async function excludeRequirement() {
@@ -15337,7 +15395,7 @@ function translateElementAttributes(element) {
 }
 
 function translateStaticSelectOptions() {
-  [els.requirementType].filter(Boolean).forEach((select) => {
+  [els.requirementType, els.productReviewTechTypeFilter].filter(Boolean).forEach((select) => {
     [...select.options].forEach((option) => {
       const original = option.dataset.i18nOriginalText || option.textContent;
       option.dataset.i18nOriginalText = original;

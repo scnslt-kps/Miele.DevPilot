@@ -177,6 +177,23 @@ test("saving or cancelling AI suggestion editing restores preview actions", () =
   assert.doesNotMatch(app.match(/async function saveAiSuggestionEdit[\s\S]*?async function cancelAiSuggestionEdit/)?.[0] || "", /recalculateFinalScore/);
 });
 
+test("tech type sidebar edit opens a blocking modal with save and cancel draft actions", () => {
+  const techTypeSource = app.match(/function handleProductReviewTechTypeSummaryClick[\s\S]*?async function excludeRequirement/)?.[0] || "";
+  assert.match(techTypeSource, /event\.target\.closest\?\.\("\[data-techtype-edit\]"\)/);
+  assert.match(techTypeSource, /openTechTypeModal\(button\)/);
+  assert.match(techTypeSource, /state\.productReviewTechTypeDraftSelection = \[\.\.\.initialSelection\]/);
+  assert.match(techTypeSource, /renderTechTypeSelection\(requirement, \{ techTypes: state\.productReviewTechTypeDraftSelection \}\)/);
+  assert.match(techTypeSource, /translateStaticSelectOptions\(\)/);
+  assert.match(techTypeSource, /function cancelTechTypeModal\(\)/);
+  assert.match(techTypeSource, /async function saveTechTypeModal\(\)/);
+  assert.match(techTypeSource, /applyActiveRequirementTechTypes\(rowNumber, techTypes\)/);
+  assert.doesNotMatch(techTypeSource, /void persistActiveRequirementTechTypes\(\)/);
+  assert.match(html, /id="techTypeModalCancelButton"[^>]*>Abbrechen<\/button>/);
+  assert.match(html, /id="techTypeModalSaveButton"[^>]*>Speichern<\/button>/);
+  assert.match(css, /\.techtype-modal-overlay\s*\{[\s\S]{0,120}z-index:\s*var\(--z-blocking-overlay\)/);
+  assert.match(app, /\[els\.requirementType, els\.productReviewTechTypeFilter\]/);
+});
+
 test("back to list replaces decide later and preserves return context", () => {
   assert.match(app, /els\.reviewBackButton\.addEventListener\("click", \(\) => returnToRequirementList/);
   assert.match(app, /Speichern und zur Liste/);

@@ -2490,7 +2490,7 @@ button:disabled {
 .techtype-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: var(--z-blocking-overlay);
   display: grid;
   place-items: center;
   background: rgba(2, 6, 23, 0.62);
