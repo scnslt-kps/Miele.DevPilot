@@ -9721,6 +9721,7 @@ function productApprovalStatusLabel(baseLabel, selection) {
 
 async function recalculateFinalScore(item, finalText, choice, options = {}) {
   const rowNumber = Number(item.rowNumber);
+  const analysisHash = options.contentHash || semanticContentHash(finalText);
   const existingOperation = state.finalScoreOperations.get(rowNumber);
   if (existingOperation?.promise) {
     updateFinalScoreDialogPhase("analyzing");
@@ -9731,7 +9732,7 @@ async function recalculateFinalScore(item, finalText, choice, options = {}) {
   const startedAtMs = Date.now();
   const operation = {
     operationId,
-    contentHash: contentVersion,
+    contentHash: analysisHash,
     startedAt: new Date().toISOString(),
     startedAtMs,
     promise: null,

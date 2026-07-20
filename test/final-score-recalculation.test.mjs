@@ -17,7 +17,10 @@ test("final score recalculation is single-flight per requirement and versioned",
   assert.match(app, /finalScoreOperations: new Map\(\)/);
   assert.match(recalcSource, /const existingOperation = state\.finalScoreOperations\.get\(rowNumber\)/);
   assert.match(recalcSource, /if \(existingOperation\?\.promise\)/);
+  assert.match(recalcSource, /const analysisHash = options\.contentHash \|\| semanticContentHash\(finalText\)/);
   assert.match(recalcSource, /const operationId = options\.operationId \|\| crypto\.randomUUID\(\)/);
+  assert.match(recalcSource, /contentHash:\s*analysisHash/);
+  assert.doesNotMatch(recalcSource, /contentHash:\s*contentVersion/);
   assert.match(recalcSource, /finalRequirementAnalysisOperationId = operationId/);
   assert.match(recalcSource, /currentSelection\.finalRequirementAnalysisOperationId !== operationId/);
   assert.match(recalcSource, /currentSelection\.finalRequirementContentHash !== analysisHash/);
