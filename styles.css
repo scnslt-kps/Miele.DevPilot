@@ -1268,6 +1268,16 @@ button.primary:hover:not(:disabled) {
   color: #fff;
 }
 
+button.primary.is-destructive {
+  background: var(--danger);
+  color: #fff;
+}
+
+button.primary.is-destructive:hover:not(:disabled) {
+  background: #a82418;
+  color: #fff;
+}
+
 button.primary:focus-visible {
   border-color: transparent;
   outline: 3px solid rgba(0, 113, 227, 0.2);
