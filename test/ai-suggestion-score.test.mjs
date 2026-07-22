@@ -78,13 +78,89 @@ test("product analysis and improvement use one central quality definition", () =
 });
 
 test("product improvement prompt receives current score gaps without trusting generator score", () => {
-  assert.match(app, /finalScore: productFinalScore\(result, state\.finalSelections\.get\(Number\(rowNumber\)\)\)/);
-  assert.match(app, /finalScoreStatus: productFinalScoreStatus\(/);
-  assert.match(app, /issues: displayProductIssues\(result, state\.finalSelections\.get\(Number\(rowNumber\)\)\)/);
+  assert.match(app, /const finalScore = productFinalScore\(result, selection\)/);
+  assert.match(app, /const finalScoreStatus = productFinalScoreStatus\(/);
+  assert.match(app, /issues: displayProductIssues\(result, selection\)/);
+  assert.match(app, /scoreBreakdown: activeScoreBreakdown/);
+  assert.match(app, /finalScoreBreakdown: selection\?\.finalRequirementAnalysisScoreBreakdown/);
   assert.match(server, /improvementContext/);
+  assert.match(server, /currentCriterionScores/);
+  assert.match(server, /scoreGaps/);
+  assert.match(server, /targetScoreInstruction/);
   assert.match(server, /fulfilledCriteria/);
   assert.match(server, /openCriteria/);
+  assert.match(server, /100\/100/);
   assert.match(server, /qualityCheck is only a diagnostic prediction and is never the stored score/);
+});
+
+test("using a product improvement changes only the editable draft", () => {
+  const acceptImprovementSource = app.match(/async function handlePendingProductImprovementAction[\s\S]*?async function selectFinalText/)?.[0] || "";
+
+  assert.match(app, /data-product-improvement-action="accept" class="primary">\$\{escapeHtml\(translateUiText\("In Bearbeitung übernehmen"\)\)\}/);
+  assert.match(acceptImprovementSource, /applyProductImprovementToEditingDraft\(pending, item, rowNumber\)/);
+  assert.match(acceptImprovementSource, /els\.productReviewFinalText\?\.focus\(\)/);
+  assert.doesNotMatch(acceptImprovementSource, /upsertResult\(activeImprovement\)/);
+  assert.doesNotMatch(acceptImprovementSource, /await recalculateFinalScore/);
+  assert.doesNotMatch(acceptImprovementSource, /requestApprovedProductRequirementChangeComment/);
+  assert.doesNotMatch(acceptImprovementSource, /finalizedAt = new Date/);
+  assert.doesNotMatch(acceptImprovementSource, /finalRequirementAnalysisScore\s*=\s*100/);
+});
+
+test("product improvement draft transfer keeps the original AI suggestion as a separate reference", () => {
+  const transferSource = app.match(/function applyProductImprovementToEditingDraft[\s\S]*?async function requestProductRequirementImprovement/)?.[0] || "";
+
+  assert.match(transferSource, /applyRichTextToFinalSelection\(selection, richTextFromPlainText\(improvedText\), "manual"\)/);
+  assert.match(transferSource, /selectedSource = "MANUAL_EDIT"/);
+  assert.doesNotMatch(transferSource, /upsertResult/);
+  assert.doesNotMatch(transferSource, /aiSuggestionContentForResult/);
+});
+
+test("draft transfer marks score as stale and clears old final score data", () => {
+  const transferSource = app.match(/function applyProductImprovementToEditingDraft[\s\S]*?async function requestProductRequirementImprovement/)?.[0] || "";
+
+  assert.match(transferSource, /needsFinalAssessment = true/);
+  assert.match(transferSource, /finalRequirementAnalysisStatus = "STALE"/);
+  assert.match(transferSource, /finalRequirementAnalysisHash = ""/);
+  assert.match(transferSource, /finalRequirementAnalysisScore = null/);
+  assert.match(transferSource, /finalRequirementAnalysisScoreBreakdown = null/);
+  assert.match(transferSource, /finalizedAt = ""/);
+});
+
+test("new product improvements prefer the current editable draft as source text", () => {
+  const improvementSource = app.match(/async function improveProductRequirementWithAi[\s\S]*?function renderPendingProductImprovement/)?.[0] || "";
+
+  assert.match(app, /function productImprovementBaseText/);
+  assert.match(app, /return \{ text: editorText, source: "editing" \}/);
+  assert.match(improvementSource, /const improvementBase = productImprovementBaseText\(item, result, rowNumber\)/);
+  assert.match(improvementSource, /text: currentText/);
+});
+
+test("product improvement status dialog exposes generation, check, rescore, and optimization steps", () => {
+  assert.match(app, /function productImprovementProgressSteps/);
+  assert.match(app, /"Verbesserung wird erstellt"/);
+  assert.match(app, /"Qualitätskriterien werden überprüft"/);
+  assert.match(app, /"Score wird neu berechnet"/);
+  assert.match(app, /"Verbleibende Qualitätsdefizite werden optimiert"/);
+});
+
+test("manual draft changes are confirmed before a preview replaces the editor", () => {
+  const acceptImprovementSource = app.match(/async function handlePendingProductImprovementAction[\s\S]*?async function selectFinalText/)?.[0] || "";
+
+  assert.match(app, /function productReviewFinalDraftChangedSinceImprovement/);
+  assert.match(acceptImprovementSource, /productReviewFinalDraftChangedSinceImprovement\(pending\)/);
+  assert.match(acceptImprovementSource, /Der aktuelle Bearbeitungsstand enthält Änderungen/);
+  assert.match(acceptImprovementSource, /Bearbeitungsstand ersetzen\?/);
+});
+
+test("new product improvement translation keys are present", () => {
+  assert.match(app, /"Verbesserung wird erstellt": "Creating improvement"/);
+  assert.match(app, /"Qualitätskriterien werden überprüft": "Checking quality criteria"/);
+  assert.match(app, /"Score wird neu berechnet": "Recalculating score"/);
+  assert.match(app, /"Verbleibende Qualitätsdefizite werden optimiert": "Optimizing remaining quality deficits"/);
+  assert.match(app, /"Verbleibende Punktabzüge:": "Remaining point deductions:"/);
+  assert.match(app, /"In Bearbeitung übernehmen": "Use for editing"/);
+  assert.match(app, /"Die Verbesserung wurde in den Bearbeitungsstand übernommen und kann weiter angepasst werden\.": "The improvement was copied into the editing draft and can be adjusted further\."/);
+  assert.match(app, /"Bearbeitungsstand ersetzen\?": "Replace editing draft\?"/);
 });
 
 test("local product quality assessment penalizes missing facts instead of pretending maximum quality", () => {

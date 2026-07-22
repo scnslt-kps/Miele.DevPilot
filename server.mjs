@@ -25,6 +25,7 @@ import { normalizeProjectRichTextPayload } from "./src/lib/rich-text.mjs";
 import {
   assessProductRequirementQuality,
   normalizeProductRequirementQualityResult,
+  normalizeProductRequirementScoreBreakdown,
   productRequirementQualityPromptContext,
   productRequirementStructuredOutputSchemaExtension,
   scoreBreakdownJsonSchema,
@@ -938,8 +939,14 @@ async function handleAnalyze(req, res, user) {
       rowNumber: Number(item.rowNumber),
       id: String(item.id || "").slice(0, 200),
       sourceId: String(item.sourceId || "").slice(0, 200),
+      name: String(item.name || "").slice(0, 500),
+      category: String(item.category || "").slice(0, 500),
+      subcategory: String(item.subcategory || "").slice(0, 500),
       text: String(item.text || "").trim().slice(0, 6000),
       score: Number(item.score),
+      scoreBreakdown: normalizeProductRequirementScoreBreakdown(item.scoreBreakdown),
+      originalScoreBreakdown: normalizeProductRequirementScoreBreakdown(item.originalScoreBreakdown),
+      finalScoreBreakdown: normalizeProductRequirementScoreBreakdown(item.finalScoreBreakdown),
       techTypes: Array.isArray(item.techTypes)
         ? item.techTypes.map((techType) => String(techType || "").trim().slice(0, 500)).filter(Boolean)
         : [],
@@ -967,7 +974,10 @@ async function handleAnalyze(req, res, user) {
   }
 
   if (requirementType === "product-improvement") {
-    await handleProductImprovement(cleaned[0], String(body.improvementInstruction || "").trim(), improvementAttachments, uiLanguage, res, aiUsageContext);
+    await handleProductImprovement(cleaned[0], String(body.improvementInstruction || "").trim(), improvementAttachments, uiLanguage, res, aiUsageContext, {
+      iterationAttempt: Math.max(1, Number(body.iterationAttempt) || 1),
+      maxAttempts: Math.max(1, Number(body.maxAttempts) || 1),
+    });
     return;
   }
 
@@ -1476,7 +1486,7 @@ async function handleExcelImportValidation(req, res) {
   sendJson(res, 200, result);
 }
 
-async function handleProductImprovement(requirement, improvementInstruction, improvementAttachments, uiLanguage, res, aiUsageContext = null) {
+async function handleProductImprovement(requirement, improvementInstruction, improvementAttachments, uiLanguage, res, aiUsageContext = null, options = {}) {
   if (!requirement?.text) {
     sendJson(res, 400, { error: "Product Requirement is required." });
     return;
@@ -1523,15 +1533,49 @@ async function handleProductImprovement(requirement, improvementInstruction, imp
     `${issue.criterion}:${issue.explanation}:${issue.suggestion}`,
     issue,
   ])).values()];
+  const activeScoreBreakdown = requirement.finalScoreBreakdown || requirement.scoreBreakdown || requirement.originalScoreBreakdown || null;
+  const currentCriterionScores = qualityDefinition.criteria.map((criterion) => {
+    const entry = activeScoreBreakdown?.[criterion.id] || {};
+    const points = Number(entry.points);
+    const currentPoints = Number.isFinite(points) ? points : null;
+    return {
+      criterionId: criterion.id,
+      maxPoints: criterion.maxPoints,
+      currentPoints,
+      missingPoints: currentPoints == null ? null : Math.max(0, criterion.maxPoints - currentPoints),
+      status: currentPoints == null ? "unknown" : currentPoints >= criterion.maxPoints ? "fulfilled" : "needs_improvement",
+    };
+  });
+  const scoreGaps = currentCriterionScores.filter((entry) => entry.missingPoints == null || entry.missingPoints > 0);
   const improvementContext = {
     currentRequirementContent: requirement.text,
     currentRequirementVersion: requirement.sourceId || requirement.id || requirement.rowNumber || "",
+    originalRequirement: requirement.text,
+    category: requirement.category || "",
+    subcategory: requirement.subcategory || "",
+    requirementName: requirement.name || "",
     currentScore: Number.isFinite(Number(requirement.finalScore)) ? Number(requirement.finalScore) : Number(requirement.score),
+    maximumScore: qualityDefinition.maximumScore,
+    targetScore: qualityDefinition.maximumScore,
+    targetScoreInstruction: "Try to create a fachlich korrektes Product Requirement that should receive 100/100 in the independent scoring. Do not claim, store, or force this score.",
+    iterationAttempt: Math.max(1, Number(options.iterationAttempt) || 1),
+    maxAttempts: Math.max(1, Number(options.maxAttempts) || 1),
     finalScoreStatus: requirement.finalScoreStatus || "",
+    currentCriterionScores,
+    scoreGaps,
     fulfilledCriteria: qualityDefinition.criteria
-      .filter((criterion) => !uniqueKnownIssues.some((issue) => String(issue.criterion || "").toLowerCase().includes(criterion.id)))
+      .filter((criterion) => {
+        const scoreEntry = currentCriterionScores.find((entry) => entry.criterionId === criterion.id);
+        if (scoreEntry && scoreEntry.status !== "fulfilled") return false;
+        return !uniqueKnownIssues.some((issue) => String(issue.criterion || "").toLowerCase().includes(criterion.id));
+      })
       .map((criterion) => criterion.id),
-    openCriteria: uniqueKnownIssues.map((issue) => issue.criterion).filter(Boolean),
+    openCriteria: [
+      ...new Set([
+        ...scoreGaps.map((entry) => entry.criterionId),
+        ...uniqueKnownIssues.map((issue) => issue.criterion).filter(Boolean),
+      ]),
+    ],
     analysisFindings: uniqueKnownIssues,
   };
   const apiKey = process.env.OPENAI_API_KEY;
@@ -1560,7 +1604,7 @@ async function handleProductImprovement(requirement, improvementInstruction, imp
             role: "user",
             content: JSON.stringify({
               task:
-                "Improve the Product Requirement according to the improvement instruction, improvementContext, and every criterion in qualityDefinition. Resolve all current score gaps that can be resolved by rewriting. Preserve already fulfilled criteria, intent, scope, product level, solution neutrality, formatting that carries meaning, and all factual information. Do not turn it into a Software Requirement. Do not add acceptance criteria, Given/When/Then blocks, test steps, or implementation details. The optimization target is content that should independently score the maximum, but do not invent facts and do not claim a binding score.",
+                "Improve the Product Requirement according to the improvement instruction, improvementContext, and every criterion in qualityDefinition. The explicit optimization target is a fachlich korrektes Requirement that should independently score 100/100. Use all nine quality criteria and their maxPoints exactly as provided. Resolve all current score gaps that can be resolved by rewriting, especially criteria listed in improvementContext.scoreGaps and openCriteria. Preserve already fulfilled criteria, intent, scope, category/subcategory relevance, product level, solution neutrality, formatting that carries meaning, and all factual information. Do not turn it into a Software Requirement. Do not add acceptance criteria, Given/When/Then blocks, test steps, or implementation details. Never invent facts, thresholds, interfaces, responsibilities, platforms, or product behavior to reach 100/100, and never claim a binding score.",
               qualityDefinition,
               improvementContext,
               languageRules: preserveSourceLanguageInstruction(uiLanguage),
@@ -1569,7 +1613,7 @@ async function handleProductImprovement(requirement, improvementInstruction, imp
               missingInformationRules:
                 "Distinguish fixable wording/structure gaps from missing domain facts. If a needed threshold, response time, target platform, responsibility, error behavior, interface, or system state is absent from the provided context, mark it in missingInformation or as an open point in rewrittenRequirement when needed. Never fabricate it to reach the target score.",
               internalSelfCheck:
-                "Draft the improved requirement, check it against every qualityDefinition criterion, revise all partially fulfilled criteria, then return the optimized rewrittenRequirement plus structured diagnostics. qualityCheck is only a diagnostic prediction and is never the stored score.",
+                "Before returning, internally check the draft against every qualityDefinition criterion in order: clarity, completeness, testability, measurability, atomicity, consistency, solution_neutrality, feasibility, and format_and_semantic_structure. Revise any criterion that is partial or missing, then check the complete draft again. Protect criteria that are already fulfilled from regression. Return the optimized rewrittenRequirement plus structured diagnostics. qualityCheck is only a diagnostic prediction and is never the stored score.",
               improvementInstruction,
               improvementAttachments,
               requirement,

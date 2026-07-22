@@ -169,6 +169,7 @@ const LEGACY_PR_ANALYSIS_TIMING_STORAGE_KEY = "mieleDevPilot.prAnalysisTiming";
 const PROGRESS_TIMING_STORAGE_KEY = "mieleDevPilot.progressTiming";
 const AI_OPERATION_TIMING_STORAGE_KEY = "mieleDevPilot.aiOperationRuntimeStats.v1";
 const AI_OPERATION_PROMPT_VERSION = "2026-07-16-product-quality-v1";
+const PRODUCT_IMPROVEMENT_MAX_ATTEMPTS = 3;
 const LANGUAGE_STORAGE_KEY = "mieleDevPilot.language";
 const FEEDBACK_TRANSLATION_BATCH_SIZE = 10;
 const FEEDBACK_TRANSLATION_MAX_ATTEMPTS = 3;
@@ -373,6 +374,27 @@ const UI_TRANSLATIONS = {
     "geschätzt": "estimated",
     "weniger als 1s": "less than 1s",
     "AI Suggestion wird verbessert": "Improving AI suggestion",
+    "Verbesserung wird erstellt": "Creating improvement",
+    "Qualitätskriterien werden überprüft": "Checking quality criteria",
+    "Score wird neu berechnet": "Recalculating score",
+    "Verbleibende Qualitätsdefizite werden optimiert": "Optimizing remaining quality deficits",
+    "Qualitätskriterien wurden überprüft.": "Quality criteria have been checked.",
+    "Ziel: fachlich korrektes Product Requirement mit tatsächlichem Score 100/100 in der unabhängigen Bewertung.": "Target: factually correct Product Requirement with an actual score of 100/100 in the independent assessment.",
+    "Aktueller Score": "Current score",
+    "Noch offene Qualitätsdefizite": "Remaining quality deficits",
+    "Keine verbleibenden Punktabzüge bekannt.": "No remaining point deductions known.",
+    "Aktuelle Issues": "Current issues",
+    "Verbesserungsversuch": "Improvement attempt",
+    "Verbessere ausschließlich fachlich ableitbare Defizite, erhalte vollständig erfüllte Kriterien und erfinde keine fachlichen Informationen.": "Improve only deficits that can be derived from the available context, preserve fully met criteria, and do not invent factual information.",
+    "Erreichter Score: {{score}} / 100.": "Achieved score: {{score}} / 100.",
+    "Verbleibende Punktabzüge:": "Remaining point deductions:",
+    "Die bestmögliche fachlich valide Verbesserung wurde übernommen, erreicht aber noch keine 100 Punkte.": "The best factually valid improvement has been accepted, but it has not reached 100 points yet.",
+    "Ein Verbesserungsversuch ist fehlgeschlagen. Der beste bisher bewertete Vorschlag bleibt erhalten.": "One improvement attempt failed. The best assessed suggestion so far remains in place.",
+    "In Bearbeitung übernehmen": "Use for editing",
+    "Die Verbesserung wurde in den Bearbeitungsstand übernommen und kann weiter angepasst werden.": "The improvement was copied into the editing draft and can be adjusted further.",
+    "Der aktuelle Bearbeitungsstand enthält Änderungen. Soll er durch die Verbesserung ersetzt werden?": "The current editing draft contains changes. Should it be replaced by the improvement?",
+    "Bearbeitungsstand ersetzen?": "Replace editing draft?",
+    "Ersetzen": "Replace",
     "AI-Vorschlag übernehmen": "Accept AI suggestion",
     "AI-Vorschlag übernehmen?": "Accept AI suggestion?",
     "Übernehmen": "Accept",
@@ -7885,6 +7907,180 @@ function handleProductImprovementInstructionKeydown(event) {
   void improveProductRequirementWithAi();
 }
 
+function productImprovementBaseText(item, result, rowNumber) {
+  const editorText = Number(state.activeSelectionRow) === Number(rowNumber)
+    ? String(els.productReviewFinalText?.value || "").trim()
+    : "";
+  if (editorText) return { text: editorText, source: "editing" };
+
+  const selection = state.finalSelections.get(Number(rowNumber));
+  const selectionText = String(selection?.text || "").trim();
+  if (selectionText) return { text: selectionText, source: "editing" };
+
+  const aiText = richTextToPlainText(aiSuggestionContentForResult(result)).trim();
+  if (aiText) return { text: aiText, source: "ai-suggestion" };
+
+  return { text: String(item?.text || "").trim(), source: "original" };
+}
+
+function productImprovementProgressSteps() {
+  return [
+    "Verbesserung wird erstellt",
+    "Qualitätskriterien werden überprüft",
+    "Score wird neu berechnet",
+    "Verbleibende Qualitätsdefizite werden optimiert",
+  ];
+}
+
+function currentProductScoreBreakdownForImprovement(result, selection) {
+  if (selection?.finalRequirementAnalysisStatus === "COMPLETED" && selection.finalRequirementAnalysisScoreBreakdown) {
+    return normalizeScoreBreakdown(selection.finalRequirementAnalysisScoreBreakdown);
+  }
+  return normalizeScoreBreakdown(result?.scoreBreakdown) || normalizeScoreBreakdown(result?.originalScoreBreakdown);
+}
+
+function productScoreGapsFromBreakdown(scoreBreakdown) {
+  const breakdown = normalizeScoreBreakdown(scoreBreakdown);
+  if (!breakdown) return [];
+  return QUALITY_SCORE_CRITERION_IDS
+    .map((id) => {
+      const entry = breakdown[id];
+      const missingPoints = Math.max(0, Number(entry.maxPoints) - Number(entry.points));
+      return {
+        criterion: id,
+        label: QUALITY_SCORE_CRITERION_LABELS[id] || id,
+        points: Number(entry.points),
+        maxPoints: Number(entry.maxPoints),
+        missingPoints,
+      };
+    })
+    .filter((entry) => entry.missingPoints > 0);
+}
+
+function productImprovementDeficitInstruction({ score, scoreBreakdown, issues, attempt, maxAttempts }) {
+  const gaps = productScoreGapsFromBreakdown(scoreBreakdown);
+  const gapText = gaps.length
+    ? gaps.map((gap) => `${translateUiText(gap.label)}: ${formatScorePoint(gap.points)} / ${formatScorePoint(gap.maxPoints)} (-${formatScorePoint(gap.missingPoints)})`).join("; ")
+    : translateUiText("Keine verbleibenden Punktabzüge bekannt.");
+  const issueText = (Array.isArray(issues) ? issues : [])
+    .map((issue) => `${translateUiText(ISSUE_CRITERION_LABELS[normalizeIssueCriterionKey(issue.criterion)] || issue.criterion || "Hinweis")}: ${issue.explanation || ""} ${issue.suggestion || ""}`.trim())
+    .filter(Boolean)
+    .join(" | ");
+
+  return [
+    translateUiText("Ziel: fachlich korrektes Product Requirement mit tatsächlichem Score 100/100 in der unabhängigen Bewertung."),
+    `${translateUiText("Aktueller Score")}: ${Number.isFinite(Number(score)) ? score : "-"} / 100.`,
+    `${translateUiText("Noch offene Qualitätsdefizite")}: ${gapText}`,
+    issueText ? `${translateUiText("Aktuelle Issues")}: ${issueText}` : "",
+    `${translateUiText("Verbesserungsversuch")}: ${attempt} / ${maxAttempts}.`,
+    translateUiText("Verbessere ausschließlich fachlich ableitbare Defizite, erhalte vollständig erfüllte Kriterien und erfinde keine fachlichen Informationen."),
+  ].filter(Boolean).join("\n");
+}
+
+function productImprovementScoreSummary(score, scoreBreakdown) {
+  const gaps = productScoreGapsFromBreakdown(scoreBreakdown);
+  if (!gaps.length) return translateUiTemplate("Erreichter Score: {{score}} / 100.", { score: Number.isFinite(Number(score)) ? score : "-" });
+  return [
+    translateUiTemplate("Erreichter Score: {{score}} / 100.", { score: Number.isFinite(Number(score)) ? score : "-" }),
+    translateUiText("Verbleibende Punktabzüge:"),
+    ...gaps.map((gap) => `- ${translateUiText(gap.label)}: ${formatScorePoint(gap.points)} / ${formatScorePoint(gap.maxPoints)}`),
+  ].join("\n");
+}
+
+function productReviewFinalDraftChangedSinceImprovement(pending) {
+  const draftText = String(els.productReviewFinalText?.value || "").trim();
+  if (!draftText) return false;
+  return draftText !== String(pending?.previousText || "").trim();
+}
+
+function applyProductImprovementToEditingDraft(pending, item, rowNumber) {
+  const improvedText = String(pending?.improved?.rewrittenRequirement || "").trim();
+  if (!improvedText) return null;
+
+  const selection = ensureActiveProductSelection("manual");
+  if (!selection) return null;
+
+  applyRichTextToFinalSelection(selection, richTextFromPlainText(improvedText), "manual");
+  selection.choice = "manual";
+  selection.selectedSource = "MANUAL_EDIT";
+  selection.needsFinalAssessment = true;
+  selection.finalRequirementAnalysisStatus = "STALE";
+  selection.finalRequirementAnalysisStartedAt = "";
+  selection.finalRequirementAnalysisCompletedAt = "";
+  selection.finalRequirementAnalysisError = "";
+  selection.finalRequirementAnalysisHash = "";
+  selection.finalRequirementAnalysisOperationId = "";
+  selection.finalRequirementAnalysisScore = null;
+  selection.finalRequirementAnalysisScoreBreakdown = null;
+  selection.finalRequirementAnalysisIssues = [];
+  selection.finalizedAt = "";
+  selection.finalizedBy = "";
+  selection.finalizedById = "";
+  selection.finalizedContentHash = "";
+  invalidateProductRequirementAfterChange(rowNumber, { clearApproval: false });
+  els.productReviewFinalText.value = improvedText;
+  els.productReviewFinalScoreStatus.textContent = translateUiText("STALE");
+  els.productReviewFinalScoreStatus.className = "quality-badge missing";
+  els.productReviewFinalScoreHint.textContent = translateUiText("Die Verbesserung wurde in den Bearbeitungsstand übernommen und kann weiter angepasst werden.");
+  setProjectRevisionAction(projectRevisionActionFor("AI-Verbesserung in Bearbeitungsstand uebernommen", item, "PR"));
+  return selection;
+}
+
+async function requestProductRequirementImprovement({
+  endpoint,
+  item,
+  result,
+  rowNumber,
+  text,
+  instruction,
+  improvementAttachments = [],
+  iterationAttempt = 1,
+  maxAttempts = PRODUCT_IMPROVEMENT_MAX_ATTEMPTS,
+}) {
+  const selection = state.finalSelections.get(Number(rowNumber));
+  const finalScore = productFinalScore(result, selection);
+  const finalScoreStatus = productFinalScoreStatus(result, selection, state.finalScoreUpdates.has(Number(rowNumber)));
+  const activeScoreBreakdown = currentProductScoreBreakdownForImprovement(result, selection);
+  return fetchAiJsonWithStatus(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projectId: state.projectId,
+      requirementType: "product-improvement",
+      uiLanguage: selectedUiLanguage(),
+      improvementInstruction: instruction,
+      improvementAttachments,
+      iterationAttempt,
+      maxAttempts,
+      requirements: [
+        {
+          ...item,
+          text,
+          score: Number.isFinite(Number(finalScore)) ? finalScore : result?.score,
+          finalScore,
+          finalScoreStatus,
+          scoreBreakdown: activeScoreBreakdown || result?.scoreBreakdown || null,
+          originalScoreBreakdown: result?.originalScoreBreakdown || null,
+          finalScoreBreakdown: selection?.finalRequirementAnalysisScoreBreakdown || null,
+          issues: displayProductIssues(result, selection),
+          originalIssues: result?.originalIssues || [],
+        },
+      ],
+    }),
+  }, {
+    operationType: "product-improvement",
+    title: iterationAttempt > 1 ? "Verbleibende Qualitätsdefizite werden optimiert" : "AI Suggestion wird verbessert",
+    total: 1,
+    requirements: [{ ...item, text }],
+    steps: productImprovementProgressSteps(),
+    attachmentCount: improvementAttachments.length,
+    processingMessage: iterationAttempt > 1 ? "Verbleibende Qualitätsdefizite werden optimiert" : "Verbesserung wird erstellt",
+    successMessage: "Qualitätskriterien wurden überprüft.",
+    autoCloseMs: iterationAttempt > 1 ? 250 : undefined,
+    errorMessage: "Product Requirement konnte nicht verbessert werden",
+  });
+}
+
 function markProductReviewFinalTextStale() {
   const selection = ensureActiveProductSelection("manual");
   if (!selection || !canModifyProductRequirements()) return;
@@ -7895,6 +8091,11 @@ function markProductReviewFinalTextStale() {
   selection.needsFinalAssessment = true;
   selection.finalRequirementAnalysisStatus = "STALE";
   selection.finalRequirementAnalysisError = "";
+  selection.finalRequirementAnalysisHash = "";
+  selection.finalRequirementAnalysisOperationId = "";
+  selection.finalRequirementAnalysisScore = null;
+  selection.finalRequirementAnalysisScoreBreakdown = null;
+  selection.finalRequirementAnalysisIssues = [];
   selection.finalizedAt = "";
   els.productReviewFinalScoreStatus.textContent = translateUiText("STALE");
   els.productReviewFinalScoreStatus.className = "quality-badge missing";
@@ -9242,19 +9443,15 @@ async function improveProductRequirementWithAi() {
     alert(translateUiText("Bitte beschreibe, was die AI am Product Requirement verbessern soll."));
     return;
   }
-  if (result?.aiSuggestionEdited) {
+  const improvementBase = productImprovementBaseText(item, result, rowNumber);
+  if (result?.aiSuggestionEdited && improvementBase.source === "ai-suggestion") {
     const confirmed = await showQuestionDialog("Die AI Suggestion wurde manuell bearbeitet. Bei einer Neugenerierung werden diese Änderungen ersetzt. Möchtest du fortfahren?", {
       confirmLabel: "Bestätigen",
     });
     if (!confirmed) return;
   }
 
-  const currentText = result?.aiSuggestionPlainText || result?.rewrittenRequirement || item.text;
-  const previousVisibleScore = result ? productVisibleScore(
-    result,
-    state.finalSelections.get(Number(rowNumber)),
-    state.finalScoreUpdates.has(Number(rowNumber)),
-  ) : null;
+  const currentText = improvementBase.text;
   const previousStatus = els.prImproveButton.textContent;
   els.prImproveButton.disabled = true;
   els.selectAiButton.disabled = true;
@@ -9262,38 +9459,16 @@ async function improveProductRequirementWithAi() {
 
   try {
     const improvementAttachments = await readImprovementAttachments(els.prImprovementAttachments);
-    const data = await fetchAiJsonWithStatus(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        projectId: state.projectId,
-        requirementType: "product-improvement",
-        uiLanguage: selectedUiLanguage(),
-        improvementInstruction: instruction,
-        improvementAttachments,
-        requirements: [
-          {
-            ...item,
-            text: currentText,
-            score: result?.score,
-            finalScore: productFinalScore(result, state.finalSelections.get(Number(rowNumber))),
-            finalScoreStatus: productFinalScoreStatus(
-              result,
-              state.finalSelections.get(Number(rowNumber)),
-              state.finalScoreUpdates.has(Number(rowNumber)),
-            ),
-            issues: displayProductIssues(result, state.finalSelections.get(Number(rowNumber))),
-            originalIssues: result?.originalIssues || [],
-          },
-        ],
-      }),
-    }, {
-      operationType: "product-improvement",
-      title: "AI Suggestion wird verbessert",
-      total: 1,
-      requirements: [{ ...item, text: currentText }],
-      attachmentCount: improvementAttachments.length,
-      errorMessage: "Product Requirement konnte nicht verbessert werden",
+    const data = await requestProductRequirementImprovement({
+      endpoint,
+      item,
+      result,
+      rowNumber,
+      text: currentText,
+      instruction,
+      improvementAttachments,
+      iterationAttempt: 1,
+      maxAttempts: PRODUCT_IMPROVEMENT_MAX_ATTEMPTS,
     });
 
     addOpenAiUsage(data.openAiUsage);
@@ -9312,6 +9487,8 @@ async function improveProductRequirementWithAi() {
         originalIssues: result?.originalIssues || improved.originalIssues || [],
       },
       previousText: currentText,
+      instruction,
+      improvementAttachments,
     };
     renderPendingProductImprovement();
     els.selectAiButton.disabled = false;
@@ -9339,7 +9516,7 @@ function renderPendingProductImprovement() {
     <div class="ai-improvement-result-header">
       <h4>${escapeHtml(translateUiText("Verbesserter Vorschlag"))}</h4>
       <div class="ai-improvement-result-actions">
-        <button type="button" data-product-improvement-action="accept" class="primary">${escapeHtml(translateUiText("Verbesserung übernehmen"))}</button>
+        <button type="button" data-product-improvement-action="accept" class="primary">${escapeHtml(translateUiText("In Bearbeitung übernehmen"))}</button>
         <button type="button" data-product-improvement-action="retry">${escapeHtml(translateUiText("Erneut verbessern"))}</button>
         <button type="button" data-product-improvement-action="discard">${escapeHtml(translateUiText("Verwerfen"))}</button>
       </div>
@@ -9406,36 +9583,35 @@ async function handlePendingProductImprovementAction(event) {
   const rowNumber = Number(state.activeSelectionRow);
   if (!pending || Number(pending.rowNumber) !== rowNumber) return;
   const item = state.requirements.find((requirement) => Number(requirement.rowNumber) === rowNumber);
-  const changeComment = await requestApprovedProductRequirementChangeComment(rowNumber, "AI-unterstützte Änderung");
-  if (changeComment === null) return;
-
-  upsertResult(pending.improved);
-  const selection = ensureActiveProductSelection("ai");
-  if (selection) {
-    selection.choice = "ai";
-    selection.selectedSource = "AI_ASSISTED_EDIT";
-    applyRichTextToFinalSelection(selection, aiSuggestionContentForResult(state.results.find((entry) => Number(entry.rowNumber) === rowNumber)), "ai");
-    selection.needsFinalAssessment = true;
-    selection.finalRequirementAnalysisStatus = "STALE";
-    selection.finalRequirementAnalysisError = "";
-    selection.finalizedAt = "";
-    addProductReviewHistory(
-      selection,
-      productChangeHistoryReason("AI-unterstützte Änderung", changeComment),
-      selection.text,
+  if (!item) return;
+  if (productReviewFinalDraftChangedSinceImprovement(pending)) {
+    const confirmed = await showQuestionDialog(
+      "Der aktuelle Bearbeitungsstand enthält Änderungen. Soll er durch die Verbesserung ersetzt werden?",
+      {
+        title: "Bearbeitungsstand ersetzen?",
+        confirmLabel: "Ersetzen",
+        cancelLabel: "Abbrechen",
+      },
     );
-    invalidateProductRequirementAfterChange(rowNumber);
+    if (!confirmed) return;
   }
-  clearPendingProductImprovement();
+
+  const selection = applyProductImprovementToEditingDraft(pending, item, rowNumber);
+  if (!selection) return;
   els.prImprovementInstruction.value = "";
   els.prImprovementAttachments.value = "";
   renderImprovementAttachmentList(els.prImprovementAttachments, els.prImprovementAttachmentList);
-  renderAiSuggestionPreview(state.results.find((entry) => Number(entry.rowNumber) === rowNumber));
+  clearPendingProductImprovement();
   renderTable();
   renderProductApprovalPanel();
+  els.productReviewFinalScoreHint.textContent = translateUiText("Die Verbesserung wurde in den Bearbeitungsstand übernommen und kann weiter angepasst werden.");
   renderMetrics();
-  setProjectRevisionAction(projectRevisionActionFor("AI-Vorschlag fuer PR erstellt", item, "PR"));
   updateProjectActions();
+  window.setTimeout(() => {
+    els.productReviewFinalText?.focus();
+    const length = els.productReviewFinalText?.value?.length || 0;
+    els.productReviewFinalText?.setSelectionRange(length, length);
+  }, 0);
 }
 
 async function selectFinalText(choice) {
