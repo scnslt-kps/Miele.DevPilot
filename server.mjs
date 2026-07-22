@@ -209,6 +209,24 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (pathname === "/api/workspace-state") {
+      const session = await requireSession(req, res);
+      if (!session) return;
+
+      if (req.method === "GET") {
+        await handleGetWorkspaceState(res, session.user);
+        return;
+      }
+
+      if (req.method === "PUT") {
+        await handleSaveWorkspaceState(req, res, session.user);
+        return;
+      }
+
+      sendJson(res, 405, { error: "Method not allowed" });
+      return;
+    }
+
     if (pathname.startsWith("/api/projects")) {
       const session = await requireSession(req, res);
       if (!session) return;
@@ -429,6 +447,93 @@ async function handleListUsersByRole(res, role) {
       .filter((user) => user.active !== false && userHasRole(user, userRole))
       .map(publicUser),
   });
+}
+
+async function handleGetWorkspaceState(res, user) {
+  const states = await prisma.userWorkspaceState.findMany({
+    where: { userId: user.id },
+    orderBy: { updatedAt: "desc" },
+  });
+  const globalState = states.find((entry) => entry.scopeKey === "global" && !entry.projectId) || null;
+  const globalLastProjectId = String(globalState?.activeFilters?.lastProjectId || "");
+  const projectIds = [
+    ...states.map((entry) => entry.projectId).filter(Boolean),
+    globalLastProjectId,
+  ].filter(Boolean);
+  const accessibleProjects = projectIds.length
+    ? await prisma.project.findMany({
+        where: {
+          id: { in: projectIds },
+          ...projectAccessWhere(user),
+        },
+        select: { id: true },
+      })
+    : [];
+  const accessibleProjectIds = new Set(accessibleProjects.map((project) => project.id));
+  const projectStates = states
+    .filter((entry) => entry.projectId && accessibleProjectIds.has(entry.projectId))
+    .map(workspaceStateSummary);
+  const lastProjectId = String(globalState?.activeFilters?.lastProjectId || "");
+  const lastProjectStillAccessible = lastProjectId && accessibleProjectIds.has(lastProjectId);
+
+  sendJson(res, 200, {
+    global: globalState
+      ? {
+          ...workspaceStateSummary(globalState),
+          lastProjectId: lastProjectStillAccessible ? lastProjectId : "",
+        }
+      : null,
+    projects: projectStates,
+  });
+}
+
+async function handleSaveWorkspaceState(req, res, user) {
+  const body = await readJsonBody(req, 100_000);
+  const normalized = normalizeWorkspaceStateInput(body);
+  const projectId = normalized.projectId;
+  if (projectId) {
+    const project = await findAccessibleProject(user, projectId);
+    if (!project) {
+      sendJson(res, 404, { error: "Project not found." });
+      return;
+    }
+  }
+
+  const scopeKey = projectId ? `project:${projectId}` : "global";
+  const saved = await prisma.userWorkspaceState.upsert({
+    where: {
+      userId_scopeKey: {
+        userId: user.id,
+        scopeKey,
+      },
+    },
+    update: {
+      projectId: projectId || null,
+      selectedStatus: normalized.selectedStatus,
+      selectedCategory: normalized.selectedCategory,
+      selectedSubcategory: normalized.selectedSubcategory,
+      activeFilters: normalized.activeFilters,
+      sortField: normalized.sortField,
+      sortDirection: normalized.sortDirection,
+      lastRequirementId: normalized.lastRequirementId || null,
+      projectClosedAt: normalized.projectClosedAt,
+    },
+    create: {
+      userId: user.id,
+      projectId: projectId || null,
+      scopeKey,
+      selectedStatus: normalized.selectedStatus,
+      selectedCategory: normalized.selectedCategory,
+      selectedSubcategory: normalized.selectedSubcategory,
+      activeFilters: normalized.activeFilters,
+      sortField: normalized.sortField,
+      sortDirection: normalized.sortDirection,
+      lastRequirementId: normalized.lastRequirementId || null,
+      projectClosedAt: normalized.projectClosedAt,
+    },
+  });
+
+  sendJson(res, 200, { state: workspaceStateSummary(saved) });
 }
 
 async function handleChangePassword(req, res, userId) {
@@ -2677,6 +2782,61 @@ function projectSummary(project) {
     ownerId: project.ownerId,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
+  };
+}
+
+function normalizeWorkspaceStateInput(body = {}) {
+  const activeFilters = body.activeFilters && typeof body.activeFilters === "object" && !Array.isArray(body.activeFilters)
+    ? body.activeFilters
+    : {};
+  const projectClosedAt = body.projectClosed === true
+    ? new Date()
+    : body.projectClosedAt
+      ? new Date(body.projectClosedAt)
+      : null;
+  return {
+    projectId: String(body.projectId || "").trim().slice(0, 200),
+    selectedStatus: normalizeWorkspaceToken(body.selectedStatus || "all", 80) || "all",
+    selectedCategory: String(body.selectedCategory || "").trim().slice(0, 500),
+    selectedSubcategory: String(body.selectedSubcategory || "").trim().slice(0, 500),
+    activeFilters: normalizeWorkspaceActiveFilters(activeFilters),
+    sortField: normalizeWorkspaceToken(body.sortField || "", 80),
+    sortDirection: ["asc", "desc"].includes(body.sortDirection) ? body.sortDirection : "",
+    lastRequirementId: String(body.lastRequirementId || "").trim().slice(0, 500),
+    projectClosedAt: projectClosedAt && Number.isFinite(projectClosedAt.getTime()) ? projectClosedAt : null,
+  };
+}
+
+function normalizeWorkspaceActiveFilters(activeFilters) {
+  return {
+    search: String(activeFilters.search || "").trim().slice(0, 500),
+    scoreFilterActive: activeFilters.scoreFilterActive === true,
+    activeProcessStep: normalizeWorkspaceToken(activeFilters.activeProcessStep || "product", 80) || "product",
+    productReviewActiveTab: normalizeWorkspaceToken(activeFilters.productReviewActiveTab || "final", 80) || "final",
+    lastProjectId: String(activeFilters.lastProjectId || "").trim().slice(0, 200),
+    projectOpen: activeFilters.projectOpen === true,
+  };
+}
+
+function normalizeWorkspaceToken(value, maxLength) {
+  return String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_.:-]/g, "")
+    .slice(0, maxLength);
+}
+
+function workspaceStateSummary(entry) {
+  return {
+    projectId: entry.projectId || "",
+    selectedStatus: entry.selectedStatus || "all",
+    selectedCategory: entry.selectedCategory || "",
+    selectedSubcategory: entry.selectedSubcategory || "",
+    activeFilters: entry.activeFilters && typeof entry.activeFilters === "object" ? entry.activeFilters : {},
+    sortField: entry.sortField || "",
+    sortDirection: entry.sortDirection || "",
+    lastRequirementId: entry.lastRequirementId || "",
+    projectClosedAt: entry.projectClosedAt || null,
+    updatedAt: entry.updatedAt,
   };
 }
 

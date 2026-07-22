@@ -215,7 +215,8 @@ test("saving or cancelling AI suggestion editing restores preview actions", () =
   assert.match(app, /els\.aiSuggestionSaveButton\.disabled = true/);
   assert.match(app, /els\.selectAiButton\.hidden = editing/);
   assert.match(app, /els\.selectAiHint\.hidden = editing/);
-  assert.match(app, /if \(Number\(state\.aiSuggestionEditingRow\) === Number\(rowNumber\)\) return/);
+  assert.match(app, /function currentAiSuggestionContentForAcceptance/);
+  assert.match(app, /richTextFromEditorElement\(els\.aiSuggestionEditor\)/);
   assert.match(app, /els\.selectAiButton\.hidden = false/);
   assert.doesNotMatch(app.match(/async function saveAiSuggestionEdit[\s\S]*?async function cancelAiSuggestionEdit/)?.[0] || "", /recalculateFinalScore/);
 });

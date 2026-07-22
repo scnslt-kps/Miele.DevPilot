@@ -93,12 +93,13 @@ test("product improvement prompt receives current score gaps without trusting ge
   assert.match(server, /qualityCheck is only a diagnostic prediction and is never the stored score/);
 });
 
-test("using a product improvement changes only the editable draft", () => {
+test("using a product improvement changes only the editable AI suggestion", () => {
   const acceptImprovementSource = app.match(/async function handlePendingProductImprovementAction[\s\S]*?async function selectFinalText/)?.[0] || "";
 
-  assert.match(app, /data-product-improvement-action="accept" class="primary">\$\{escapeHtml\(translateUiText\("In Bearbeitung übernehmen"\)\)\}/);
-  assert.match(acceptImprovementSource, /applyProductImprovementToEditingDraft\(pending, item, rowNumber\)/);
-  assert.match(acceptImprovementSource, /els\.productReviewFinalText\?\.focus\(\)/);
+  assert.match(app, /data-product-improvement-action="accept" class="primary">\$\{escapeHtml\(translateUiText\("Übernehmen"\)\)\}/);
+  assert.match(acceptImprovementSource, /applyProductImprovementToAiSuggestion\(pending, result, rowNumber\)/);
+  assert.match(acceptImprovementSource, /startAiSuggestionEdit\(\)/);
+  assert.match(acceptImprovementSource, /els\.aiSuggestionEditorStatus\.textContent = translateUiText\("Die Verbesserung wurde in den Bearbeitungsstand übernommen und kann weiter angepasst werden\."\)/);
   assert.doesNotMatch(acceptImprovementSource, /upsertResult\(activeImprovement\)/);
   assert.doesNotMatch(acceptImprovementSource, /await recalculateFinalScore/);
   assert.doesNotMatch(acceptImprovementSource, /requestApprovedProductRequirementChangeComment/);
@@ -106,61 +107,90 @@ test("using a product improvement changes only the editable draft", () => {
   assert.doesNotMatch(acceptImprovementSource, /finalRequirementAnalysisScore\s*=\s*100/);
 });
 
-test("product improvement draft transfer keeps the original AI suggestion as a separate reference", () => {
-  const transferSource = app.match(/function applyProductImprovementToEditingDraft[\s\S]*?async function requestProductRequirementImprovement/)?.[0] || "";
+test("product improvement transfer does not touch final selections or approval state", () => {
+  const transferSource = app.match(/function applyProductImprovementToAiSuggestion[\s\S]*?async function requestProductRequirementImprovement/)?.[0] || "";
 
-  assert.match(transferSource, /applyRichTextToFinalSelection\(selection, richTextFromPlainText\(improvedText\), "manual"\)/);
-  assert.match(transferSource, /selectedSource = "MANUAL_EDIT"/);
+  assert.match(transferSource, /result\.aiSuggestionContent = content/);
+  assert.match(transferSource, /result\.aiSuggestionExpectedScore = Number\.isFinite\(Number\(pending\.expectedScore\)\)/);
+  assert.match(transferSource, /result\.aiSuggestionExpectedScoreStatus = "CURRENT"/);
   assert.doesNotMatch(transferSource, /upsertResult/);
-  assert.doesNotMatch(transferSource, /aiSuggestionContentForResult/);
+  assert.doesNotMatch(transferSource, /state\.finalSelections\.set/);
+  assert.doesNotMatch(transferSource, /selectedSource = "MANUAL_EDIT"/);
+  assert.doesNotMatch(transferSource, /submittedForApprovalAt/);
 });
 
-test("draft transfer marks score as stale and clears old final score data", () => {
-  const transferSource = app.match(/function applyProductImprovementToEditingDraft[\s\S]*?async function requestProductRequirementImprovement/)?.[0] || "";
+test("manual AI suggestion edits mark the expected improvement score stale", () => {
+  const dirtySource = app.match(/function markAiSuggestionEditorDirty[\s\S]*?function handleAiSuggestionToolbarClick/)?.[0] || "";
+  const saveSource = app.match(/async function saveAiSuggestionEdit[\s\S]*?async function cancelAiSuggestionEdit/)?.[0] || "";
 
-  assert.match(transferSource, /needsFinalAssessment = true/);
-  assert.match(transferSource, /finalRequirementAnalysisStatus = "STALE"/);
-  assert.match(transferSource, /finalRequirementAnalysisHash = ""/);
-  assert.match(transferSource, /finalRequirementAnalysisScore = null/);
-  assert.match(transferSource, /finalRequirementAnalysisScoreBreakdown = null/);
-  assert.match(transferSource, /finalizedAt = ""/);
+  assert.match(dirtySource, /result\.aiSuggestionExpectedScoreStatus = "STALE"/);
+  assert.match(dirtySource, /Der voraussichtliche Score kann nach manueller Änderung veraltet sein/);
+  assert.match(saveSource, /result\.aiSuggestionExpectedScoreHash !== semanticContentHash\(plainText\)/);
+  assert.match(saveSource, /result\.aiSuggestionExpectedScoreStatus = "STALE"/);
 });
 
-test("new product improvements prefer the current editable draft as source text", () => {
+test("new product improvements use the currently visible AI suggestion as source text", () => {
   const improvementSource = app.match(/async function improveProductRequirementWithAi[\s\S]*?function renderPendingProductImprovement/)?.[0] || "";
 
   assert.match(app, /function productImprovementBaseText/);
-  assert.match(app, /return \{ text: editorText, source: "editing" \}/);
+  assert.match(app, /richTextFromEditorElement\(els\.aiSuggestionEditor\)/);
+  assert.match(app, /return \{ text: editorText, source: "editable-ai-suggestion" \}/);
   assert.match(improvementSource, /const improvementBase = productImprovementBaseText\(item, result, rowNumber\)/);
   assert.match(improvementSource, /text: currentText/);
 });
 
-test("product improvement status dialog exposes generation, check, rescore, and optimization steps", () => {
-  assert.match(app, /function productImprovementProgressSteps/);
-  assert.match(app, /"Verbesserung wird erstellt"/);
-  assert.match(app, /"Qualitätskriterien werden überprüft"/);
-  assert.match(app, /"Score wird neu berechnet"/);
-  assert.match(app, /"Verbleibende Qualitätsdefizite werden optimiert"/);
+test("product improvement preview is scored independently against the displayed text", () => {
+  const scoringSource = app.match(/async function scoreProductImprovementPreview[\s\S]*?function markProductReviewFinalTextStale/)?.[0] || "";
+
+  assert.match(app, /expectedScore: expected\.score/);
+  assert.match(app, /expectedScoreBreakdown: expected\.scoreBreakdown/);
+  assert.match(app, /expectedAssessmentHash: expected\.assessmentHash/);
+  assert.match(scoringSource, /analysisMode: "final"/);
+  assert.match(scoringSource, /contentVersion: assessmentHash/);
+  assert.match(scoringSource, /text: improvedText/);
+  assert.match(scoringSource, /scoreBreakdown: normalizeScoreBreakdown\(assessed\.scoreBreakdown\)/);
 });
 
-test("manual draft changes are confirmed before a preview replaces the editor", () => {
+test("product improvement status dialog exposes generation, check, expected score, and optimization steps", () => {
+  assert.match(app, /function productImprovementProgressSteps/);
+  assert.match(app, /"Verbesserung wird erstellt"/);
+  assert.match(app, /"Qualitätskriterien werden geprüft"/);
+  assert.match(app, /"Voraussichtlicher Score wird berechnet"/);
+  assert.match(app, /"Verbesserung wird weiter optimiert"/);
+});
+
+test("further optimization uses the current preview and preserves it on errors", () => {
   const acceptImprovementSource = app.match(/async function handlePendingProductImprovementAction[\s\S]*?async function selectFinalText/)?.[0] || "";
 
-  assert.match(app, /function productReviewFinalDraftChangedSinceImprovement/);
-  assert.match(acceptImprovementSource, /productReviewFinalDraftChangedSinceImprovement\(pending\)/);
-  assert.match(acceptImprovementSource, /Der aktuelle Bearbeitungsstand enthält Änderungen/);
-  assert.match(acceptImprovementSource, /Bearbeitungsstand ersetzen\?/);
+  assert.match(acceptImprovementSource, /const currentImprovementText = String\(pending\.improved\?\.rewrittenRequirement \|\| ""\)\.trim\(\)/);
+  assert.match(acceptImprovementSource, /text: currentImprovementText/);
+  assert.match(acceptImprovementSource, /nextAttempt > PRODUCT_IMPROVEMENT_MAX_ATTEMPTS/);
+  assert.match(acceptImprovementSource, /state\.pendingProductImprovement = \{/);
+  assert.match(acceptImprovementSource, /catch \(error\)[\s\S]*renderPendingProductImprovement\(\)/);
 });
 
 test("new product improvement translation keys are present", () => {
   assert.match(app, /"Verbesserung wird erstellt": "Creating improvement"/);
+  assert.match(app, /"Qualitätskriterien werden geprüft": "Checking quality criteria"/);
   assert.match(app, /"Qualitätskriterien werden überprüft": "Checking quality criteria"/);
-  assert.match(app, /"Score wird neu berechnet": "Recalculating score"/);
+  assert.match(app, /"Voraussichtlicher Score wird berechnet": "Calculating expected score"/);
+  assert.match(app, /"Voraussichtlicher Score": "Expected score"/);
+  assert.match(app, /"Verteilung des voraussichtlichen Scores": "Expected score distribution"/);
+  assert.match(app, /"Weiter optimieren": "Optimize further"/);
   assert.match(app, /"Verbleibende Qualitätsdefizite werden optimiert": "Optimizing remaining quality deficits"/);
   assert.match(app, /"Verbleibende Punktabzüge:": "Remaining point deductions:"/);
   assert.match(app, /"In Bearbeitung übernehmen": "Use for editing"/);
   assert.match(app, /"Die Verbesserung wurde in den Bearbeitungsstand übernommen und kann weiter angepasst werden\.": "The improvement was copied into the editing draft and can be adjusted further\."/);
-  assert.match(app, /"Bearbeitungsstand ersetzen\?": "Replace editing draft\?"/);
+  assert.match(app, /"Der aktuelle AI-Vorschlag wird als Requirement-Inhalt übernommen und neu bewertet\. Offene Editor-Änderungen werden dabei berücksichtigt\.": "The current AI suggestion will be accepted as the requirement content and reassessed\. Open editor changes are included\."/);
+});
+
+test("accepting the final AI suggestion uses the current editor content", () => {
+  const acceptSource = app.match(/async function selectFinalText[\s\S]*?function productApprovalSubmissionBlockReason/)?.[0] || "";
+
+  assert.match(app, /function currentAiSuggestionContentForAcceptance/);
+  assert.match(acceptSource, /currentAiSuggestionContentForAcceptance\(result, rowNumber, \{ updateResult: true \}\)/);
+  assert.doesNotMatch(acceptSource, /Number\(state\.aiSuggestionEditingRow\) === Number\(rowNumber\)\) return/);
+  assert.match(acceptSource, /await recalculateFinalScore\(item, text, choice, \{ contentHash: analysisHash, operationId \}\)/);
 });
 
 test("local product quality assessment penalizes missing facts instead of pretending maximum quality", () => {
