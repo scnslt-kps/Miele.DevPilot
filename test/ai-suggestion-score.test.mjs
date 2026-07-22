@@ -98,8 +98,8 @@ test("using a product improvement changes only the editable AI suggestion", () =
 
   assert.match(app, /data-product-improvement-action="accept" class="primary">\$\{escapeHtml\(translateUiText\("Übernehmen"\)\)\}/);
   assert.match(acceptImprovementSource, /applyProductImprovementToAiSuggestion\(pending, result, rowNumber\)/);
-  assert.match(acceptImprovementSource, /startAiSuggestionEdit\(\)/);
-  assert.match(acceptImprovementSource, /els\.aiSuggestionEditorStatus\.textContent = translateUiText\("Die Verbesserung wurde in den Bearbeitungsstand übernommen und kann weiter angepasst werden\."\)/);
+  assert.doesNotMatch(acceptImprovementSource, /startAiSuggestionEdit\(\)/);
+  assert.doesNotMatch(acceptImprovementSource, /aiSuggestionEditor\.focus\(\)/);
   assert.doesNotMatch(acceptImprovementSource, /upsertResult\(activeImprovement\)/);
   assert.doesNotMatch(acceptImprovementSource, /await recalculateFinalScore/);
   assert.doesNotMatch(acceptImprovementSource, /requestApprovedProductRequirementChangeComment/);
@@ -141,6 +141,7 @@ test("new product improvements use the currently visible AI suggestion as source
 
 test("product improvement preview is scored independently against the displayed text", () => {
   const scoringSource = app.match(/async function scoreProductImprovementPreview[\s\S]*?function markProductReviewFinalTextStale/)?.[0] || "";
+  const renderSource = app.match(/function renderPendingProductImprovement[\s\S]*?function clearPendingProductImprovement/)?.[0] || "";
 
   assert.match(app, /expectedScore: expected\.score/);
   assert.match(app, /expectedScoreBreakdown: expected\.scoreBreakdown/);
@@ -149,6 +150,8 @@ test("product improvement preview is scored independently against the displayed 
   assert.match(scoringSource, /contentVersion: assessmentHash/);
   assert.match(scoringSource, /text: improvedText/);
   assert.match(scoringSource, /scoreBreakdown: normalizeScoreBreakdown\(assessed\.scoreBreakdown\)/);
+  assert.doesNotMatch(renderSource, /renderIssues\(pending\.expectedIssues/);
+  assert.doesNotMatch(renderSource, /Voraussichtliche Bewertung/);
 });
 
 test("product improvement status dialog exposes generation, check, expected score, and optimization steps", () => {
@@ -176,12 +179,23 @@ test("new product improvement translation keys are present", () => {
   assert.match(app, /"Voraussichtlicher Score wird berechnet": "Calculating expected score"/);
   assert.match(app, /"Voraussichtlicher Score": "Expected score"/);
   assert.match(app, /"Verteilung des voraussichtlichen Scores": "Expected score distribution"/);
+  assert.match(app, /"Optimieren": "Optimize"/);
   assert.match(app, /"Weiter optimieren": "Optimize further"/);
   assert.match(app, /"Verbleibende Qualitätsdefizite werden optimiert": "Optimizing remaining quality deficits"/);
   assert.match(app, /"Verbleibende Punktabzüge:": "Remaining point deductions:"/);
   assert.match(app, /"In Bearbeitung übernehmen": "Use for editing"/);
   assert.match(app, /"Die Verbesserung wurde in den Bearbeitungsstand übernommen und kann weiter angepasst werden\.": "The improvement was copied into the editing draft and can be adjusted further\."/);
   assert.match(app, /"Der aktuelle AI-Vorschlag wird als Requirement-Inhalt übernommen und neu bewertet\. Offene Editor-Änderungen werden dabei berücksichtigt\.": "The current AI suggestion will be accepted as the requirement content and reassessed\. Open editor changes are included\."/);
+});
+
+test("product improvement text is sanitized and never carries visible diagnostics", () => {
+  assert.match(app, /function cleanGeneratedImprovementText/);
+  assert.match(app, /forbiddenHeadingPattern/);
+  assert.match(app, /cleanGeneratedImprovementText\(improved\.rewrittenRequirement \|\| currentText\)/);
+  assert.match(server, /function sanitizeProductImprovementRequirementText/);
+  assert.match(server, /parsed\.result\.rewrittenRequirement = sanitizeProductImprovementRequirementText\(parsed\.result\.rewrittenRequirement\)/);
+  assert.match(server, /The result\.rewrittenRequirement field must contain only the optimized Product Requirement text itself/);
+  assert.match(server, /Never include qualityCheck, score, issues, missingInformation, assumptions, or explanatory labels inside rewrittenRequirement/);
 });
 
 test("accepting the final AI suggestion uses the current editor content", () => {

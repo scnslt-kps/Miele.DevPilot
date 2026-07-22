@@ -1,5 +1,21 @@
 export const AI_USAGE_CAPTURE_STARTED_AT = "2026-07-16";
-export const AI_USAGE_PRICING_VERSION = "env-2026-07-16";
+export const AI_USAGE_PRICING_VERSION = "openai-api-pricing-2026-07-22";
+
+export const AI_MODEL_PRICING = Object.freeze([
+  {
+    canonicalModel: "gpt-5.5",
+    aliases: ["gpt-5.5"],
+    prefixes: ["gpt-5.5-"],
+    inputUsdPer1m: "2.50",
+    cachedInputUsdPer1m: "0.25",
+    outputUsdPer1m: "15.00",
+    currency: "USD",
+    effectiveFrom: "2026-07-16",
+    effectiveUntil: "",
+    source: "OpenAI API pricing page checked 2026-07-22",
+    version: AI_USAGE_PRICING_VERSION,
+  },
+]);
 
 export const AI_USAGE_ACTIONS = {
   PRODUCT_REQUIREMENT_ANALYSIS: "product_requirement_analysis",
@@ -49,12 +65,19 @@ export function extractOpenAiUsage(payload = {}) {
   };
 }
 
-export function resolvePricing(model, env = process.env) {
+export function resolvePricing(model, env = process.env, usageDate = new Date()) {
   const normalizedModel = String(model || "").trim();
   const configured = parsePricingJson(env.OPENAI_MODEL_PRICING_JSON);
   if (normalizedModel && configured[normalizedModel]) {
-    return normalizePricing(configured[normalizedModel], env.OPENAI_PRICING_VERSION || AI_USAGE_PRICING_VERSION);
+    const pricing = normalizePricing(configured[normalizedModel], env.OPENAI_PRICING_VERSION || AI_USAGE_PRICING_VERSION, normalizedModel);
+    if (pricing && pricingAppliesAt(pricing, usageDate)) return pricing;
   }
+
+  const configuredPricing = resolvePricingFromConfiguredEntries(normalizedModel, configured, env.OPENAI_PRICING_VERSION, usageDate);
+  if (configuredPricing) return configuredPricing;
+
+  const centralPricing = resolvePricingFromConfiguredEntries(normalizedModel, AI_MODEL_PRICING, AI_USAGE_PRICING_VERSION, usageDate);
+  if (centralPricing) return centralPricing;
 
   const envModel = String(env.OPENAI_MODEL || "").trim();
   if (normalizedModel && envModel && normalizedModel === envModel) {
@@ -62,14 +85,16 @@ export function resolvePricing(model, env = process.env) {
     const cachedInputUsdPer1m = envNumber(env.OPENAI_CACHED_INPUT_USD_PER_1M_TOKENS);
     const outputUsdPer1m = envNumber(env.OPENAI_OUTPUT_USD_PER_1M_TOKENS);
     if ([inputUsdPer1m, cachedInputUsdPer1m, outputUsdPer1m].some(Number.isFinite)) {
-      return normalizePricing(
+      const pricing = normalizePricing(
         {
           inputUsdPer1m,
           cachedInputUsdPer1m: Number.isFinite(cachedInputUsdPer1m) ? cachedInputUsdPer1m : inputUsdPer1m,
           outputUsdPer1m,
         },
         env.OPENAI_PRICING_VERSION || AI_USAGE_PRICING_VERSION,
+        normalizedModel,
       );
+      if (pricing && pricingAppliesAt(pricing, usageDate)) return pricing;
     }
   }
 
@@ -106,7 +131,7 @@ export function calculateAiUsageCost(usage, pricing) {
   const inputCost = moneyFromTokens(billableInputTokens, pricing.inputUsdPer1m);
   const cachedInputCost = moneyFromTokens(cachedInputTokens, pricing.cachedInputUsdPer1m);
   const outputCost = moneyFromTokens(usage.outputTokens || 0, pricing.outputUsdPer1m);
-  const totalCost = formatMoney(Number(inputCost) + Number(cachedInputCost) + Number(outputCost));
+  const totalCost = addMoney(inputCost, cachedInputCost, outputCost);
 
   return {
     status: AI_USAGE_STATUS.CAPTURED,
@@ -116,6 +141,13 @@ export function calculateAiUsageCost(usage, pricing) {
     totalCost,
     pricingVersion: pricing.version,
     pricingAvailable: true,
+    resolvedModel: pricing.canonicalModel || pricing.model || "",
+    inputUsdPer1m: pricing.inputUsdPer1m,
+    cachedInputUsdPer1m: pricing.cachedInputUsdPer1m,
+    outputUsdPer1m: pricing.outputUsdPer1m,
+    pricingSource: pricing.source || "",
+    pricingEffectiveFrom: pricing.effectiveFrom || "",
+    pricingEffectiveUntil: pricing.effectiveUntil || "",
   };
 }
 
@@ -143,8 +175,15 @@ export function buildAiUsageRecord({ payload, action, projectId, userId = "", en
     currency: "USD",
     providerRequestId,
     status: cost.status,
-    errorType: usage.hasUsage ? null : "missing_usage",
+    errorType: usage.hasUsage ? (pricing ? null : "pricing_model_not_found") : "missing_usage",
     pricingVersion: cost.pricingVersion,
+    resolvedModel: cost.resolvedModel || "",
+    inputPriceUsdPer1m: cost.inputUsdPer1m || "0.00000000",
+    cachedInputPriceUsdPer1m: cost.cachedInputUsdPer1m || "0.00000000",
+    outputPriceUsdPer1m: cost.outputUsdPer1m || "0.00000000",
+    pricingSource: cost.pricingSource || "",
+    pricingEffectiveFrom: cost.pricingEffectiveFrom ? new Date(cost.pricingEffectiveFrom) : null,
+    pricingEffectiveUntil: cost.pricingEffectiveUntil ? new Date(cost.pricingEffectiveUntil) : null,
   };
 }
 
@@ -158,12 +197,47 @@ function parsePricingJson(value) {
   }
 }
 
-function normalizePricing(value, fallbackVersion) {
+function resolvePricingFromConfiguredEntries(model, entries, fallbackVersion = AI_USAGE_PRICING_VERSION, usageDate = new Date()) {
+  const normalizedModel = normalizeModelSnapshotName(model);
+  const list = Array.isArray(entries)
+    ? entries
+    : Object.entries(entries || {}).map(([key, value]) => ({ canonicalModel: key, aliases: [key], ...value }));
+  return list
+    .map((entry) => normalizePricing(entry, fallbackVersion, entry.canonicalModel || entry.model || ""))
+    .find((entry) => pricingMatchesModel(model, normalizedModel, entry) && pricingAppliesAt(entry, usageDate)) || null;
+}
+
+export function normalizeModelSnapshotName(model) {
+  return String(model || "")
+    .trim()
+    .replace(/-\d{4}-\d{2}-\d{2}$/u, "");
+}
+
+function pricingMatchesModel(rawModel, normalizedModel, pricing) {
+  if (!pricing) return false;
+  const model = String(rawModel || "");
+  const canonical = String(pricing.canonicalModel || "");
+  if (model === canonical || normalizedModel === canonical) return true;
+  if ((pricing.aliases || []).some((alias) => model === alias || normalizedModel === alias)) return true;
+  return (pricing.prefixes || []).some((prefix) => model.startsWith(prefix));
+}
+
+function pricingAppliesAt(pricing, usageDate) {
+  const timestamp = usageDate instanceof Date ? usageDate.getTime() : new Date(usageDate || Date.now()).getTime();
+  if (!Number.isFinite(timestamp)) return true;
+  const from = pricing.effectiveFrom ? new Date(pricing.effectiveFrom).getTime() : NaN;
+  const until = pricing.effectiveUntil ? new Date(pricing.effectiveUntil).getTime() : NaN;
+  if (Number.isFinite(from) && timestamp < from) return false;
+  if (Number.isFinite(until) && timestamp >= until) return false;
+  return true;
+}
+
+function normalizePricing(value, fallbackVersion, fallbackModel = "") {
   const pricing = value && typeof value === "object" ? value : {};
-  const inputUsdPer1m = envNumber(pricing.inputUsdPer1m);
-  const cachedInputUsdPer1m = envNumber(pricing.cachedInputUsdPer1m);
-  const outputUsdPer1m = envNumber(pricing.outputUsdPer1m);
-  if (!Number.isFinite(inputUsdPer1m) || !Number.isFinite(cachedInputUsdPer1m) || !Number.isFinite(outputUsdPer1m)) {
+  const inputUsdPer1m = normalizeDecimalString(pricing.inputUsdPer1m);
+  const cachedInputUsdPer1m = normalizeDecimalString(pricing.cachedInputUsdPer1m);
+  const outputUsdPer1m = normalizeDecimalString(pricing.outputUsdPer1m);
+  if (!inputUsdPer1m || !cachedInputUsdPer1m || !outputUsdPer1m) {
     return null;
   }
 
@@ -172,15 +246,51 @@ function normalizePricing(value, fallbackVersion) {
     cachedInputUsdPer1m,
     outputUsdPer1m,
     version: String(pricing.version || fallbackVersion || AI_USAGE_PRICING_VERSION),
+    canonicalModel: String(pricing.canonicalModel || pricing.model || fallbackModel || ""),
+    aliases: Array.isArray(pricing.aliases) ? pricing.aliases.map(String) : [],
+    prefixes: Array.isArray(pricing.prefixes) ? pricing.prefixes.map(String) : [],
+    currency: String(pricing.currency || "USD"),
+    effectiveFrom: String(pricing.effectiveFrom || ""),
+    effectiveUntil: String(pricing.effectiveUntil || ""),
+    source: String(pricing.source || ""),
   };
 }
 
 function moneyFromTokens(tokens, usdPer1m) {
-  return formatMoney((positiveInteger(tokens) / 1_000_000) * Number(usdPer1m));
+  const tokenCount = BigInt(positiveInteger(tokens));
+  const priceScale = decimalToScale(usdPer1m, 8);
+  const scaledCost = (tokenCount * priceScale + 500_000n) / 1_000_000n;
+  return formatScaledMoney(scaledCost);
 }
 
-function formatMoney(value) {
-  return (Number.isFinite(value) ? value : 0).toFixed(8);
+function addMoney(...values) {
+  const sum = values.reduce((total, value) => total + decimalToScale(value, 8), 0n);
+  return formatScaledMoney(sum);
+}
+
+function formatScaledMoney(value) {
+  const sign = value < 0n ? "-" : "";
+  const absolute = value < 0n ? -value : value;
+  const whole = absolute / 100_000_000n;
+  const fraction = String(absolute % 100_000_000n).padStart(8, "0");
+  return `${sign}${whole}.${fraction}`;
+}
+
+function normalizeDecimalString(value) {
+  try {
+    return formatScaledMoney(decimalToScale(value, 8));
+  } catch {
+    return "";
+  }
+}
+
+function decimalToScale(value, scale) {
+  const text = String(value ?? "").trim();
+  if (!/^\d+(\.\d+)?$/u.test(text)) return 0n;
+  const [whole, fraction = ""] = text.split(".");
+  const padded = `${fraction}${"0".repeat(scale)}`.slice(0, scale);
+  const nextDigit = Number(fraction[scale] || 0);
+  return BigInt(whole || "0") * (10n ** BigInt(scale)) + BigInt(padded || "0") + (nextDigit >= 5 ? 1n : 0n);
 }
 
 function positiveInteger(value) {

@@ -402,6 +402,7 @@ const UI_TRANSLATIONS = {
     "Ein Verbesserungsversuch ist fehlgeschlagen. Der beste bisher bewertete Vorschlag bleibt erhalten.": "One improvement attempt failed. The best assessed suggestion so far remains in place.",
     "In Bearbeitung übernehmen": "Use for editing",
     "Weiter optimieren": "Optimize further",
+    "Optimieren": "Optimize",
     "Erzeugte Verbesserung": "Generated improvement",
     "Voraussichtliche Bewertung": "Expected assessment",
     "Der voraussichtliche Score bezieht sich exakt auf den angezeigten Verbesserungstext und ist noch kein Requirement-Score.": "The expected score refers exactly to the displayed improvement text and is not yet a requirement score.",
@@ -417,6 +418,7 @@ const UI_TRANSLATIONS = {
     "Der gespeicherte AI-Vorschlag wird als aktueller Requirement-Inhalt übernommen und neu bewertet.": "The saved AI suggestion will be accepted as the current requirement content and reassessed.",
     "Der aktuelle AI-Vorschlag wird als Requirement-Inhalt übernommen und neu bewertet. Offene Editor-Änderungen werden dabei berücksichtigt.": "The current AI suggestion will be accepted as the requirement content and reassessed. Open editor changes are included.",
     "Übernimmt den gespeicherten AI-Vorschlag als aktuellen Requirement-Inhalt und berechnet den Score neu.": "Accepts the saved AI suggestion as the current requirement content and recalculates the score.",
+    "Dieser AI-Vorschlag wurde bereits übernommen.": "This AI suggestion has already been accepted.",
     "Wird als aktueller Requirement-Inhalt übernommen": "Will be accepted as the current requirement content",
     "Noch nicht übernommen": "Not accepted yet",
     "Als Requirement übernommen": "Accepted as requirement",
@@ -638,7 +640,6 @@ const UI_TRANSLATIONS = {
     "Ungespeicherte Änderungen": "Unsaved changes",
     "Änderungen verwerfen": "Discard changes",
     "AI Suggestion – manuell bearbeitet": "AI suggestion - manually edited",
-    "AI Suggestion wurde gespeichert.": "AI suggestion has been saved.",
     "AI-Vorschlag darf nicht leer sein.": "AI suggestion must not be empty.",
     "AI-Vorschlag": "AI suggestion",
     "Requirement Review": "Requirement review",
@@ -713,6 +714,7 @@ const UI_TRANSLATIONS = {
     "OpenAI-Aufrufe": "OpenAI calls",
     "Kosten im aktuellen Monat": "Costs in the current month",
     "Letzter API-Aufruf": "Last API call",
+    "Projektübersicht": "Project overview",
     "Projektkostenfilter": "Project cost filters",
     "Zeitraum von": "Period from",
     "Zeitraum bis": "Period to",
@@ -724,6 +726,7 @@ const UI_TRANSLATIONS = {
     "Nach Zeitraum": "By period",
     "Datum und Uhrzeit": "Date and time",
     "Input Tokens": "Input tokens",
+    "Cached Input Tokens": "Cached input tokens",
     "Output Tokens": "Output tokens",
     "Gesamttokens": "Total tokens",
     "Keine OpenAI-Nutzung erfasst.": "No OpenAI usage recorded.",
@@ -745,6 +748,18 @@ const UI_TRANSLATIONS = {
     "sonstige KI-Verarbeitung": "other AI processing",
     "Erfasst": "Captured",
     "Preis nicht verfügbar": "Price unavailable",
+    "Nicht berechenbar": "Not calculable",
+    "Kein Tarif für Modell gefunden": "No pricing found for model",
+    "Kostenaufschlüsselung": "Cost breakdown",
+    "Input-Kosten": "Input costs",
+    "Cached-Input-Kosten": "Cached input costs",
+    "Output-Kosten": "Output costs",
+    "Gesamtpreis": "Total price",
+    "Angewandter Tarif": "Applied pricing",
+    "Tarifmodell": "Pricing model",
+    "Preisstand": "Pricing date",
+    "Nachberechnet": "Backfilled",
+    "{{count}} Verbrauchsdatensätze wurden nachberechnet.": "{{count}} usage records were backfilled.",
     "Usage-Daten fehlen": "Usage data missing",
     "OpenAI-Kosten schließen": "Close OpenAI costs",
     "Hinweis": "Info",
@@ -4955,10 +4970,10 @@ function closeOpenAiCostDialog() {
 }
 
 function renderProjectAiUsageLoading() {
-  els.openAiCostTotal.textContent = "$0.00000000";
+  els.openAiCostTotal.textContent = formatUsdDisplay(0, { summary: true });
   els.openAiCostDetail.textContent = translateUiText("Projektkosten werden geladen...");
   els.projectAiUsageCalls.textContent = "-";
-  els.projectAiUsageMonthCost.textContent = "$0.00000000";
+  els.projectAiUsageMonthCost.textContent = formatUsdDisplay(0, { summary: true });
   els.projectAiUsageLastCall.textContent = "-";
   els.projectAiUsageBody.innerHTML = `<tr><td colspan="8">${escapeHtml(translateUiText("Projektkosten werden geladen..."))}</td></tr>`;
 }
@@ -4989,22 +5004,32 @@ function renderProjectAiUsage(data) {
   const summary = data?.summary || {};
   const totalTokens = Number(summary.totalTokens) || 0;
   const inputTokens = Number(summary.inputTokens) || 0;
+  const cachedInputTokens = Number(summary.cachedInputTokens) || 0;
   const outputTokens = Number(summary.outputTokens) || 0;
 
-  els.openAiCostTotal.textContent = formatUsdPrecise(summary.totalCost);
-  els.openAiCostDetail.textContent = `${formatInteger(totalTokens)} ${translateUiText("Gesamttokens")} · ${formatInteger(inputTokens)} ${translateUiText("Input Tokens")} · ${formatInteger(outputTokens)} ${translateUiText("Output Tokens")}`;
+  els.openAiCostTotal.textContent = formatUsdDisplay(summary.totalCost, { summary: true });
+  els.openAiCostTotal.title = costBreakdownTitle(summary);
+  els.openAiCostDetail.innerHTML = `
+    <span>${escapeHtml(formatInteger(totalTokens))} ${escapeHtml(translateUiText("Gesamttokens"))}</span>
+    <span>${escapeHtml(formatInteger(inputTokens))} ${escapeHtml(translateUiText("Input Tokens"))}</span>
+    <span>${escapeHtml(formatInteger(cachedInputTokens))} ${escapeHtml(translateUiText("Cached Input Tokens"))}</span>
+    <span>${escapeHtml(formatInteger(outputTokens))} ${escapeHtml(translateUiText("Output Tokens"))}</span>
+  `;
   els.projectAiUsageCalls.textContent = formatInteger(summary.requestCount);
-  els.projectAiUsageMonthCost.textContent = formatUsdPrecise(summary.currentMonthCost);
+  els.projectAiUsageMonthCost.textContent = formatUsdDisplay(summary.currentMonthCost, { summary: true });
+  els.projectAiUsageMonthCost.title = costBreakdownTitle({ totalCost: summary.currentMonthCost });
   els.projectAiUsageLastCall.textContent = summary.lastCallAt ? formatProjectDate(summary.lastCallAt) : "-";
   els.projectAiUsageHint.textContent = translateUiTemplate("Die Kostenerfassung ist ab dem {{date}} verfügbar. Frühere API-Nutzungen sind nicht enthalten.", {
     date: data.captureStartedAt || "2026-07-16",
   });
 
   const incompleteCount = Number(summary.incompleteCount) || 0;
-  els.projectAiUsageWarning.hidden = incompleteCount === 0;
-  els.projectAiUsageWarning.textContent = incompleteCount
-    ? translateUiTemplate("{{count}} Verbrauchsdatensätze sind unvollständig oder nicht berechenbar.", { count: formatInteger(incompleteCount) })
-    : "";
+  const backfillCount = Number(data?.backfill?.recalculated) || 0;
+  els.projectAiUsageWarning.hidden = incompleteCount === 0 && backfillCount === 0;
+  els.projectAiUsageWarning.textContent = [
+    incompleteCount ? translateUiTemplate("{{count}} Verbrauchsdatensätze sind unvollständig oder nicht berechenbar.", { count: formatInteger(incompleteCount) }) : "",
+    backfillCount ? translateUiTemplate("{{count}} Verbrauchsdatensätze wurden nachberechnet.", { count: formatInteger(backfillCount) }) : "",
+  ].filter(Boolean).join(" ");
 
   renderProjectAiUsageFilterOptions(data.filters || {});
   renderProjectAiUsageBreakdown(els.projectAiUsageByAction, data.breakdowns?.byAction || [], translateAiUsageAction);
@@ -5040,7 +5065,7 @@ function renderProjectAiUsageBreakdown(host, rows, labelForKey) {
   host.innerHTML = rows.map((row) => `
     <div class="project-cost-breakdown-row">
       <span>${escapeHtml(labelForKey(row.key))}</span>
-      <strong>${escapeHtml(formatUsdPrecise(row.totalCost))}</strong>
+      <strong title="${escapeHtml(costBreakdownTitle(row))}">${escapeHtml(formatUsdDisplay(row.totalCost, { summary: true }))}</strong>
       <small>${escapeHtml(formatInteger(row.requestCount))} ${escapeHtml(translateUiText("Aufrufe"))} · ${escapeHtml(formatInteger(row.totalTokens))} ${escapeHtml(translateUiText("Tokens"))}</small>
     </div>
   `).join("");
@@ -5054,14 +5079,14 @@ function renderProjectAiUsageRecords(records) {
 
   els.projectAiUsageBody.innerHTML = records.map((record) => `
     <tr>
-      <td>${escapeHtml(formatProjectDate(record.createdAt))}</td>
-      <td>${escapeHtml(translateAiUsageAction(record.action))}</td>
-      <td>${escapeHtml(record.model || "-")}</td>
+      <td class="date-cell">${escapeHtml(formatProjectDate(record.createdAt))}</td>
+      <td class="action-cell">${escapeHtml(translateAiUsageAction(record.action))}</td>
+      <td class="model-cell" title="${escapeHtml(record.model || "-")}">${escapeHtml(record.model || "-")}</td>
       <td>${escapeHtml(formatInteger(record.inputTokens))}</td>
       <td>${escapeHtml(formatInteger(record.outputTokens))}</td>
       <td>${escapeHtml(formatInteger(record.totalTokens))}</td>
-      <td>${escapeHtml(record.status === "captured" ? formatUsdPrecise(record.totalCost) : translateAiUsageStatus(record.status))}</td>
-      <td>${escapeHtml(translateAiUsageStatus(record.status))}</td>
+      <td title="${escapeHtml(costBreakdownTitle(record))}">${escapeHtml(record.status === "captured" ? formatUsdDisplay(record.totalCost) : translateUiText("Nicht berechenbar"))}</td>
+      <td title="${escapeHtml(aiUsageStatusReason(record))}">${escapeHtml(translateAiUsageStatus(record.status))}</td>
     </tr>
   `).join("");
 }
@@ -6506,9 +6531,16 @@ function openSelectionDialog(rowNumber) {
     els.selectAiHint.textContent = translateUiText("Übernimmt den gespeicherten AI-Vorschlag als aktuellen Requirement-Inhalt und berechnet den Score neu.");
   }
   renderAiSuggestionEditorState(result, canEditProduct);
-  els.selectAiButton.title = isProductQualityGateBlockingScore(score)
-    ? "Dieser Vorschlag kann vorbereitet werden, blockiert den Approval-Start aber weiter, solange der Score 85 oder niedriger ist."
-    : "";
+  const finalAcceptBlockReason = productFinalAcceptBlockReason(item, result);
+  els.selectAiButton.disabled = Boolean(finalAcceptBlockReason);
+  els.selectAiButton.title = finalAcceptBlockReason
+    ? translateUiText(finalAcceptBlockReason)
+    : isProductQualityGateBlockingScore(score)
+      ? "Dieser Vorschlag kann vorbereitet werden, blockiert den Approval-Start aber weiter, solange der Score 85 oder niedriger ist."
+      : "";
+  if (els.selectAiHint && finalAcceptBlockReason) {
+    els.selectAiHint.textContent = translateUiText(finalAcceptBlockReason);
+  }
   els.excludeRequirementButton.disabled = !canEditProduct;
   els.excludeRequirementButton.textContent = translateUiText("PR ausschließen");
   els.prImproveButton.disabled = !canEditProduct;
@@ -7267,7 +7299,6 @@ async function saveAiSuggestionEdit() {
   renderProductReviewPanel();
   finishAiSuggestionEditMode(result);
   updateProjectActions();
-  await showAlertDialog("AI Suggestion wurde gespeichert.");
 }
 
 async function cancelAiSuggestionEdit() {
@@ -7613,6 +7644,11 @@ function semanticContentHash(value) {
     hash = Math.imul(hash, 16777619);
   }
   return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+function richTextContentHash(content) {
+  const normalized = normalizeRichTextContent(content);
+  return semanticContentHash(richTextToHtml(normalized));
 }
 
 function richTextToExcelPlainText(content) {
@@ -8185,8 +8221,19 @@ function productImprovementScoreSummary(score, scoreBreakdown) {
   ].join("\n");
 }
 
+function cleanGeneratedImprovementText(value) {
+  const forbiddenHeadingPattern = /^[-*]?\s*(verbesserungen|hinweise|begründung|begruendung|optimierungen|erwarteter score|expected score|score|qualitätskriterien|qualitaetskriterien|quality criteria|criteria|bewertung)\s*:/i;
+  return String(value || "")
+    .replace(/```[a-zA-Z0-9_-]*\n?/g, "")
+    .replace(/```/g, "")
+    .split(/\r?\n/)
+    .filter((line) => !forbiddenHeadingPattern.test(line.trim()))
+    .join("\n")
+    .trim();
+}
+
 function applyProductImprovementToAiSuggestion(pending, result, rowNumber) {
-  const improvedText = String(pending?.improved?.rewrittenRequirement || "").trim();
+  const improvedText = cleanGeneratedImprovementText(pending?.improved?.rewrittenRequirement);
   if (!improvedText || !result) return false;
 
   const content = richTextFromPlainText(improvedText);
@@ -8206,12 +8253,11 @@ function applyProductImprovementToAiSuggestion(pending, result, rowNumber) {
   result.rewrittenRequirement = improvedText;
 
   if (Number(state.aiSuggestionEditingRow) === Number(rowNumber)) {
-    const html = richTextToHtml(content);
-    els.aiSuggestionEditor.innerHTML = html;
-    state.aiSuggestionEditorInitialHtml = html;
-    state.aiSuggestionEditorDirty = false;
-    els.aiSuggestionSaveButton.disabled = true;
+    els.aiSuggestionEditor.innerHTML = richTextToHtml(content);
   }
+  state.aiSuggestionEditingRow = null;
+  state.aiSuggestionEditorInitialHtml = "";
+  state.aiSuggestionEditorDirty = false;
   setProjectRevisionAction(projectRevisionActionFor("AI-Verbesserung in AI-Vorschlag uebernommen", state.requirements.find((requirement) => Number(requirement.rowNumber) === Number(rowNumber)), "PR"));
   return true;
 }
@@ -9704,7 +9750,7 @@ async function improveProductRequirementWithAi() {
     const improved = data.result || data.results?.[0];
     if (!improved) return;
 
-    const improvedText = improved.rewrittenRequirement || currentText;
+    const improvedText = cleanGeneratedImprovementText(improved.rewrittenRequirement || currentText);
     const expected = await scoreProductImprovementPreview({
       endpoint,
       item,
@@ -9774,18 +9820,13 @@ function renderPendingProductImprovement() {
       </div>
       <div class="ai-improvement-result-actions">
         <button type="button" data-product-improvement-action="accept" class="primary">${escapeHtml(translateUiText("Übernehmen"))}</button>
-        <button type="button" data-product-improvement-action="optimize">${escapeHtml(translateUiText("Weiter optimieren"))}</button>
+        <button type="button" data-product-improvement-action="optimize">${escapeHtml(translateUiText("Optimieren"))}</button>
         <button type="button" data-product-improvement-action="discard">${escapeHtml(translateUiText("Verwerfen"))}</button>
       </div>
     </div>
-    <p class="muted">${escapeHtml(translateUiText("Der voraussichtliche Score bezieht sich exakt auf den angezeigten Verbesserungstext und ist noch kein Requirement-Score."))}</p>
     <article>
       <strong>${escapeHtml(translateUiText("Neuer Vorschlag"))}</strong>
       <p>${escapeHtml(improvedText)}</p>
-    </article>
-    <article>
-      <strong>${escapeHtml(translateUiText("Voraussichtliche Bewertung"))}</strong>
-      ${renderIssues(pending.expectedIssues || [])}
     </article>
   `;
 }
@@ -9806,6 +9847,7 @@ function productFinalAcceptBlockReason(item, result) {
   }
   if (els.prImproveButton?.disabled) return "Bitte warte, bis die AI-Verbesserung abgeschlossen ist.";
   if (state.finalScoreUpdates.has(Number(item.rowNumber))) return "Bitte warte, bis die laufende Qualitätsprüfung abgeschlossen ist.";
+  if (isCurrentAiSuggestionAlreadyAccepted(result, item.rowNumber)) return "Dieser AI-Vorschlag wurde bereits übernommen.";
   return "";
 }
 
@@ -9830,6 +9872,41 @@ function currentAiSuggestionContentForAcceptance(result, rowNumber, options = {}
     state.aiSuggestionEditorDirty = false;
   }
   return content;
+}
+
+function currentAiSuggestionAcceptanceHash(result, rowNumber) {
+  const content = Number(state.aiSuggestionEditingRow) === Number(rowNumber)
+    ? richTextFromEditorElement(els.aiSuggestionEditor)
+    : aiSuggestionContentForResult(result);
+  return richTextContentHash(content);
+}
+
+function lastAcceptedAiSuggestionHash(result, selection) {
+  if (result?.aiSuggestionAcceptedContentHash) return result.aiSuggestionAcceptedContentHash;
+  if (
+    selection?.finalizedAt &&
+    (selection.selectedSource === "AI_PROPOSAL" || selection.choice === "ai") &&
+    selection.finalRequirementContent
+  ) {
+    return richTextContentHash(selection.finalRequirementContent);
+  }
+  return "";
+}
+
+function isCurrentAiSuggestionAlreadyAccepted(result, rowNumber) {
+  if (!result) return false;
+  const selection = state.finalSelections.get(Number(rowNumber));
+  const acceptedHash = lastAcceptedAiSuggestionHash(result, selection);
+  if (!acceptedHash) return false;
+  return currentAiSuggestionAcceptanceHash(result, rowNumber) === acceptedHash;
+}
+
+function markAiSuggestionAccepted(result, rowNumber, contentHash) {
+  if (!result || !contentHash) return;
+  result.aiSuggestionAcceptedContentHash = contentHash;
+  result.aiSuggestionAcceptedAt = new Date().toISOString();
+  result.aiSuggestionAcceptedByUserId = state.currentUser?.id || "";
+  result.aiSuggestionAcceptedVersion = String(result.aiSuggestionEditedAt || result.aiSuggestionGeneratedAt || result.rewrittenAt || "");
 }
 
 async function confirmFinalAiSuggestionAcceptance() {
@@ -9890,7 +9967,7 @@ async function handlePendingProductImprovementAction(event) {
       addOpenAiUsage(data.openAiUsage);
       const improved = data.result || data.results?.[0];
       if (!improved) return;
-      const improvedText = improved.rewrittenRequirement || currentImprovementText;
+      const improvedText = cleanGeneratedImprovementText(improved.rewrittenRequirement || currentImprovementText);
       const expected = await scoreProductImprovementPreview({ endpoint, item, rowNumber, improvedText });
       state.pendingProductImprovement = {
         ...pending,
@@ -9935,16 +10012,6 @@ async function handlePendingProductImprovementAction(event) {
   renderProductApprovalPanel();
   renderMetrics();
   updateProjectActions();
-  window.setTimeout(() => {
-    startAiSuggestionEdit();
-    els.aiSuggestionEditorStatus.textContent = translateUiText("Die Verbesserung wurde in den Bearbeitungsstand übernommen und kann weiter angepasst werden.");
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(els.aiSuggestionEditor);
-    range.collapse(false);
-    selection.removeAllRanges();
-    selection.addRange(range);
-  }, 0);
 }
 
 async function selectFinalText(choice) {
@@ -9974,6 +10041,12 @@ async function selectFinalText(choice) {
 
   if (!text) return;
   const previousSelection = state.finalSelections.get(Number(rowNumber));
+  const previousAcceptedState = choice === "ai" && result ? {
+    aiSuggestionAcceptedContentHash: result.aiSuggestionAcceptedContentHash || "",
+    aiSuggestionAcceptedAt: result.aiSuggestionAcceptedAt || "",
+    aiSuggestionAcceptedByUserId: result.aiSuggestionAcceptedByUserId || "",
+    aiSuggestionAcceptedVersion: result.aiSuggestionAcceptedVersion || "",
+  } : null;
   const techTypes = currentOrPresetTechTypeSelection(item, previousSelection);
   if (state.techTypes.length && !techTypes.length) {
     alert(translateUiText("Bitte wähle mindestens einen TechType aus."));
@@ -10028,6 +10101,8 @@ async function selectFinalText(choice) {
   invalidateProductRequirementAfterChange(rowNumber, { clearApproval: false });
 
   if (choice === "ai") {
+    const acceptedSuggestionHash = richTextContentHash(richContent);
+    markAiSuggestionAccepted(result, rowNumber, acceptedSuggestionHash);
     const previousLabel = els.selectAiButton.textContent;
     els.selectAiButton.disabled = true;
     els.selectAiButton.textContent = translateUiText("Score wird berechnet...");
@@ -10035,6 +10110,17 @@ async function selectFinalText(choice) {
     const operationId = crypto.randomUUID();
     const saved = await persistCurrentProjectNow(projectRevisionActionFor("AI-Vorschlag uebernommen", item, "PR"));
     if (!saved) {
+      if (previousSelection) {
+        state.finalSelections.set(Number(rowNumber), previousSelection);
+      } else {
+        state.finalSelections.delete(Number(rowNumber));
+      }
+      if (previousAcceptedState && result) {
+        result.aiSuggestionAcceptedContentHash = previousAcceptedState.aiSuggestionAcceptedContentHash;
+        result.aiSuggestionAcceptedAt = previousAcceptedState.aiSuggestionAcceptedAt;
+        result.aiSuggestionAcceptedByUserId = previousAcceptedState.aiSuggestionAcceptedByUserId;
+        result.aiSuggestionAcceptedVersion = previousAcceptedState.aiSuggestionAcceptedVersion;
+      }
       hideFinalScoreDialog();
       await showAlertDialog("Projekt konnte nicht gespeichert werden.");
       els.selectAiButton.textContent = previousLabel;
@@ -10618,6 +10704,14 @@ function upsertResult(result) {
     if (!Array.isArray(result.originalIssues) && Array.isArray(previous?.originalIssues)) {
       result.originalIssues = previous.originalIssues;
     }
+    [
+      "aiSuggestionAcceptedContentHash",
+      "aiSuggestionAcceptedAt",
+      "aiSuggestionAcceptedByUserId",
+      "aiSuggestionAcceptedVersion",
+    ].forEach((key) => {
+      if (!result[key] && previous?.[key]) result[key] = previous[key];
+    });
     state.results[index] = result;
     return;
   }
@@ -15226,6 +15320,46 @@ function formatUsdPrecise(value) {
     minimumFractionDigits: 8,
     maximumFractionDigits: 8,
   }).format(amount);
+}
+
+function formatUsdDisplay(value, options = {}) {
+  const amount = Number(value) || 0;
+  if (amount > 0 && amount < 0.0001) return "< $0.0001";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: options.summary ? 4 : 4,
+    maximumFractionDigits: options.summary ? 4 : 6,
+  }).format(amount);
+}
+
+function costBreakdownTitle(record = {}) {
+  const status = String(record.status || "captured");
+  if (status && status !== "captured") {
+    return `${translateUiText("Nicht berechenbar")}: ${aiUsageStatusReason(record)}`;
+  }
+  return [
+    translateUiText("Kostenaufschlüsselung"),
+    `${translateUiText("Input-Kosten")}: ${formatUsdDisplay(record.inputCost || 0)}`,
+    `${translateUiText("Cached-Input-Kosten")}: ${formatUsdDisplay(record.cachedInputCost || 0)}`,
+    `${translateUiText("Output-Kosten")}: ${formatUsdDisplay(record.outputCost || 0)}`,
+    `${translateUiText("Gesamtpreis")}: ${formatUsdDisplay(record.totalCost || 0)}`,
+    `${translateUiText("Tarifmodell")}: ${record.resolvedModel || record.key || "-"}`,
+    `${translateUiText("Angewandter Tarif")}: ${pricingRateText(record)}`,
+  ].join("\n");
+}
+
+function pricingRateText(record = {}) {
+  const input = formatUsdDisplay(Number(record.inputPriceUsdPer1m) || 0, { summary: true });
+  const cached = formatUsdDisplay(Number(record.cachedInputPriceUsdPer1m) || 0, { summary: true });
+  const output = formatUsdDisplay(Number(record.outputPriceUsdPer1m) || 0, { summary: true });
+  return `${record.pricingVersion || "-"} · ${input}/${cached}/${output} per 1M`;
+}
+
+function aiUsageStatusReason(record = {}) {
+  if (record.errorType === "pricing_model_not_found") return translateUiText("Kein Tarif für Modell gefunden");
+  if (record.errorType === "missing_usage") return translateUiText("Usage-Daten fehlen");
+  return translateAiUsageStatus(record.status);
 }
 
 function translateUiTemplate(template, replacements) {

@@ -20,6 +20,8 @@ import {
   AI_USAGE_CAPTURE_STARTED_AT,
   AI_USAGE_PRICING_VERSION,
   buildAiUsageRecord,
+  calculateAiUsageCost,
+  resolvePricing,
 } from "./src/lib/ai-usage.mjs";
 import { normalizeProjectRichTextPayload } from "./src/lib/rich-text.mjs";
 import {
@@ -1603,8 +1605,7 @@ async function handleProductImprovement(requirement, improvementInstruction, imp
   }
 
   if (process.env.OPENAI_MOCK === "true") {
-    const attachmentSuffix = improvementAttachments.length ? ` Anhänge berücksichtigt: ${improvementAttachments.map((item) => item.name).join(", ")}` : "";
-    const rewrittenRequirement = `${requirement.text}\n\nVerbesserungsfokus:\n- ${improvementInstruction}.${attachmentSuffix ? `\n- ${attachmentSuffix.trim()}` : ""}`;
+    const rewrittenRequirement = sanitizeProductImprovementRequirementText(`${requirement.text}\n\n${improvementInstruction}.`);
     const originalAssessment = assessProductRequirementQuality(requirement.text);
     const assessment = assessProductRequirementQuality(rewrittenRequirement);
     sendJson(res, 200, {
@@ -1709,7 +1710,7 @@ async function handleProductImprovement(requirement, improvementInstruction, imp
             role: "user",
             content: JSON.stringify({
               task:
-                "Improve the Product Requirement according to the improvement instruction, improvementContext, and every criterion in qualityDefinition. The explicit optimization target is a fachlich korrektes Requirement that should independently score 100/100. Use all nine quality criteria and their maxPoints exactly as provided. Resolve all current score gaps that can be resolved by rewriting, especially criteria listed in improvementContext.scoreGaps and openCriteria. Preserve already fulfilled criteria, intent, scope, category/subcategory relevance, product level, solution neutrality, formatting that carries meaning, and all factual information. Do not turn it into a Software Requirement. Do not add acceptance criteria, Given/When/Then blocks, test steps, or implementation details. Never invent facts, thresholds, interfaces, responsibilities, platforms, or product behavior to reach 100/100, and never claim a binding score.",
+                "Improve the Product Requirement according to the improvement instruction, improvementContext, and every criterion in qualityDefinition. The explicit optimization target is a fachlich korrektes Requirement that should independently score 100/100. Use all nine quality criteria and their maxPoints exactly as provided. Resolve all current score gaps that can be resolved by rewriting, especially criteria listed in improvementContext.scoreGaps and openCriteria. Preserve already fulfilled criteria, intent, scope, category/subcategory relevance, product level, solution neutrality, formatting that carries meaning, and all factual information. Do not turn it into a Software Requirement. Do not add acceptance criteria, Given/When/Then blocks, test steps, or implementation details. Never invent facts, thresholds, interfaces, responsibilities, platforms, or product behavior to reach 100/100, and never claim a binding score. The result.rewrittenRequirement field must contain only the optimized Product Requirement text itself. It must not contain headings or sections such as Verbesserungen, Hinweise, Begründung, Optimierungen, Erwarteter Score, Score, Qualitätskriterien, criteria, markdown code fences, introductory comments, closing comments, quality explanations, score explanations, issue lists, or single-criterion ratings. Put diagnostics only into the structured diagnostic fields.",
               qualityDefinition,
               improvementContext,
               languageRules: preserveSourceLanguageInstruction(uiLanguage),
@@ -1718,7 +1719,7 @@ async function handleProductImprovement(requirement, improvementInstruction, imp
               missingInformationRules:
                 "Distinguish fixable wording/structure gaps from missing domain facts. If a needed threshold, response time, target platform, responsibility, error behavior, interface, or system state is absent from the provided context, mark it in missingInformation or as an open point in rewrittenRequirement when needed. Never fabricate it to reach the target score.",
               internalSelfCheck:
-                "Before returning, internally check the draft against every qualityDefinition criterion in order: clarity, completeness, testability, measurability, atomicity, consistency, solution_neutrality, feasibility, and format_and_semantic_structure. Revise any criterion that is partial or missing, then check the complete draft again. Protect criteria that are already fulfilled from regression. Return the optimized rewrittenRequirement plus structured diagnostics. qualityCheck is only a diagnostic prediction and is never the stored score.",
+                "Before returning, internally check the draft against every qualityDefinition criterion in order: clarity, completeness, testability, measurability, atomicity, consistency, solution_neutrality, feasibility, and format_and_semantic_structure. Revise any criterion that is partial or missing, then check the complete draft again. Protect criteria that are already fulfilled from regression. Return the optimized rewrittenRequirement plus structured diagnostics. qualityCheck is only a diagnostic prediction and is never the stored score. Never include qualityCheck, score, issues, missingInformation, assumptions, or explanatory labels inside rewrittenRequirement.",
               improvementInstruction,
               improvementAttachments,
               requirement,
@@ -1765,6 +1766,7 @@ async function handleProductImprovement(requirement, improvementInstruction, imp
     const parsed = JSON.parse(outputText);
     if (parsed.result) {
       parsed.result = normalizeProductRequirementQualityResult(parsed.result);
+      parsed.result.rewrittenRequirement = sanitizeProductImprovementRequirementText(parsed.result.rewrittenRequirement);
       enforceProductRequirementScoreBreakdownRules({ results: [parsed.result] });
     }
     await recordProjectAiUsage(aiUsageContext, payload, AI_USAGE_ACTIONS.IMPROVEMENT_SUGGESTION);
@@ -1776,6 +1778,17 @@ async function handleProductImprovement(requirement, improvementInstruction, imp
     console.error("Could not parse OpenAI product improvement output:", outputText, error);
     sendJson(res, 502, { error: "OpenAI returned invalid JSON." });
   }
+}
+
+function sanitizeProductImprovementRequirementText(value) {
+  const forbiddenHeadingPattern = /^[-*]?\s*(verbesserungen|hinweise|begründung|begruendung|optimierungen|erwarteter score|expected score|score|qualitätskriterien|qualitaetskriterien|quality criteria|criteria|bewertung)\s*:/i;
+  return String(value || "")
+    .replace(/```[a-zA-Z0-9_-]*\n?/g, "")
+    .replace(/```/g, "")
+    .split(/\r?\n/)
+    .filter((line) => !forbiddenHeadingPattern.test(line.trim()))
+    .join("\n")
+    .trim();
 }
 
 function issueSchema() {
@@ -1976,6 +1989,7 @@ async function handleProjectAiUsage(res, user, projectId, searchParams) {
     return;
   }
 
+  const backfill = await backfillProjectAiUsageCosts(projectId);
   const filters = projectAiUsageFilters(projectId, searchParams);
   const page = Math.max(Number(searchParams.get("page")) || 1, 1);
   const pageSize = Math.min(Math.max(Number(searchParams.get("pageSize")) || 25, 1), 100);
@@ -1989,8 +2003,12 @@ async function handleProjectAiUsage(res, user, projectId, searchParams) {
       _count: { _all: true },
       _sum: {
         inputTokens: true,
+        cachedInputTokens: true,
         outputTokens: true,
         totalTokens: true,
+        inputCost: true,
+        outputCost: true,
+        cachedInputCost: true,
         totalCost: true,
       },
       _max: { createdAt: true },
@@ -2010,6 +2028,9 @@ async function handleProjectAiUsage(res, user, projectId, searchParams) {
         inputTokens: true,
         outputTokens: true,
         totalTokens: true,
+        inputCost: true,
+        outputCost: true,
+        cachedInputCost: true,
         totalCost: true,
       },
       orderBy: { _sum: { totalCost: "desc" } },
@@ -2032,6 +2053,9 @@ async function handleProjectAiUsage(res, user, projectId, searchParams) {
              coalesce(sum("inputTokens"), 0)::int AS "inputTokens",
              coalesce(sum("outputTokens"), 0)::int AS "outputTokens",
              coalesce(sum("totalTokens"), 0)::int AS "totalTokens",
+             coalesce(sum("inputCost"), 0)::text AS "inputCost",
+             coalesce(sum("outputCost"), 0)::text AS "outputCost",
+             coalesce(sum("cachedInputCost"), 0)::text AS "cachedInputCost",
              coalesce(sum("totalCost"), 0)::text AS "totalCost"
       FROM "ProjectAiUsage"
       WHERE "projectId" = ${projectId}
@@ -2058,9 +2082,11 @@ async function handleProjectAiUsage(res, user, projectId, searchParams) {
     captureStartedAt: AI_USAGE_CAPTURE_STARTED_AT,
     currency: "USD",
     pricingVersion: AI_USAGE_PRICING_VERSION,
+    backfill,
     summary: {
       requestCount: summaryRows._count._all,
       inputTokens: summaryRows._sum.inputTokens || 0,
+      cachedInputTokens: summaryRows._sum.cachedInputTokens || 0,
       outputTokens: summaryRows._sum.outputTokens || 0,
       totalTokens: summaryRows._sum.totalTokens || 0,
       totalCost: decimalToString(summaryRows._sum.totalCost),
@@ -2079,6 +2105,9 @@ async function handleProjectAiUsage(res, user, projectId, searchParams) {
         inputTokens: Number(row.inputTokens) || 0,
         outputTokens: Number(row.outputTokens) || 0,
         totalTokens: Number(row.totalTokens) || 0,
+        inputCost: decimalToString(row.inputCost),
+        outputCost: decimalToString(row.outputCost),
+        cachedInputCost: decimalToString(row.cachedInputCost),
         totalCost: decimalToString(row.totalCost),
       })),
     },
@@ -2876,8 +2905,95 @@ function projectAiUsageGroupSummary(keyName) {
     inputTokens: row._sum.inputTokens || 0,
     outputTokens: row._sum.outputTokens || 0,
     totalTokens: row._sum.totalTokens || 0,
+    inputCost: decimalToString(row._sum.inputCost),
+    outputCost: decimalToString(row._sum.outputCost),
+    cachedInputCost: decimalToString(row._sum.cachedInputCost),
     totalCost: decimalToString(row._sum.totalCost),
   });
+}
+
+async function backfillProjectAiUsageCosts(projectId) {
+  const records = await prisma.projectAiUsage.findMany({
+    where: {
+      projectId,
+      OR: [
+        { status: "price_unavailable" },
+        { resolvedModel: "" },
+      ],
+    },
+    take: 500,
+  });
+  const summary = {
+    checked: records.length,
+    recalculated: 0,
+    notCalculable: 0,
+    reasons: {},
+  };
+
+  for (const record of records) {
+    const hasUsage = Number(record.inputTokens) > 0 || Number(record.outputTokens) > 0 || Number(record.totalTokens) > 0;
+    if (!hasUsage) {
+      summary.notCalculable += 1;
+      summary.reasons.missing_usage = (summary.reasons.missing_usage || 0) + 1;
+      await prisma.projectAiUsage.update({
+        where: { id: record.id },
+        data: { status: "missing_usage", errorType: "missing_usage" },
+      });
+      continue;
+    }
+
+    const usage = {
+      hasUsage: true,
+      inputTokens: Number(record.inputTokens) || 0,
+      outputTokens: Number(record.outputTokens) || 0,
+      cachedInputTokens: Number(record.cachedInputTokens) || 0,
+      totalTokens: Number(record.totalTokens) || (Number(record.inputTokens) || 0) + (Number(record.outputTokens) || 0),
+    };
+    const pricing = resolvePricing(record.model, process.env, record.createdAt);
+    const cost = calculateAiUsageCost(usage, pricing);
+    if (cost.status !== "captured") {
+      const reason = pricing ? "cost_calculation_failed" : "pricing_model_not_found";
+      summary.notCalculable += 1;
+      summary.reasons[reason] = (summary.reasons[reason] || 0) + 1;
+      await prisma.projectAiUsage.update({
+        where: { id: record.id },
+        data: {
+          status: "price_unavailable",
+          errorType: reason,
+          pricingVersion: cost.pricingVersion || AI_USAGE_PRICING_VERSION,
+        },
+      });
+      continue;
+    }
+
+    await prisma.projectAiUsage.update({
+      where: { id: record.id },
+      data: aiUsageCostUpdateData(cost),
+    });
+    summary.recalculated += 1;
+  }
+
+  return summary;
+}
+
+function aiUsageCostUpdateData(cost) {
+  return {
+    inputCost: cost.inputCost,
+    outputCost: cost.outputCost,
+    cachedInputCost: cost.cachedInputCost,
+    totalCost: cost.totalCost,
+    currency: "USD",
+    status: "captured",
+    errorType: null,
+    pricingVersion: cost.pricingVersion || AI_USAGE_PRICING_VERSION,
+    resolvedModel: cost.resolvedModel || "",
+    inputPriceUsdPer1m: cost.inputUsdPer1m || "0.00000000",
+    cachedInputPriceUsdPer1m: cost.cachedInputUsdPer1m || "0.00000000",
+    outputPriceUsdPer1m: cost.outputUsdPer1m || "0.00000000",
+    pricingSource: cost.pricingSource || "",
+    pricingEffectiveFrom: cost.pricingEffectiveFrom ? new Date(cost.pricingEffectiveFrom) : null,
+    pricingEffectiveUntil: cost.pricingEffectiveUntil ? new Date(cost.pricingEffectiveUntil) : null,
+  };
 }
 
 function projectAiUsageSummary(record) {
@@ -2900,6 +3016,13 @@ function projectAiUsageSummary(record) {
     status: record.status,
     errorType: record.errorType || "",
     pricingVersion: record.pricingVersion,
+    resolvedModel: record.resolvedModel || "",
+    inputPriceUsdPer1m: decimalToString(record.inputPriceUsdPer1m),
+    cachedInputPriceUsdPer1m: decimalToString(record.cachedInputPriceUsdPer1m),
+    outputPriceUsdPer1m: decimalToString(record.outputPriceUsdPer1m),
+    pricingSource: record.pricingSource || "",
+    pricingEffectiveFrom: record.pricingEffectiveFrom || null,
+    pricingEffectiveUntil: record.pricingEffectiveUntil || null,
     createdAt: record.createdAt,
   };
 }

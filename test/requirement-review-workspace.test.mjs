@@ -167,6 +167,24 @@ test("AI acceptance does not require a confirmation dialog and blocks unsafe sta
   assert.match(app, /state\.finalScoreUpdates\.has\(Number\(item\.rowNumber\)\)/);
 });
 
+test("AI suggestion acceptance button is enabled only when the suggestion changed since last acceptance", () => {
+  const blockSource = app.match(/function productFinalAcceptBlockReason[\s\S]*?async function confirmFinalAiSuggestionAcceptance/)?.[0] || "";
+  const acceptSource = app.match(/async function selectFinalText[\s\S]*?function productApprovalSubmissionBlockReason/)?.[0] || "";
+  const upsertSource = app.match(/function upsertResult[\s\S]*?function normalizeAiSuggestionResult/)?.[0] || "";
+
+  assert.match(app, /function richTextContentHash/);
+  assert.match(app, /function currentAiSuggestionAcceptanceHash/);
+  assert.match(app, /function lastAcceptedAiSuggestionHash/);
+  assert.match(app, /function isCurrentAiSuggestionAlreadyAccepted/);
+  assert.match(blockSource, /isCurrentAiSuggestionAlreadyAccepted\(result, item\.rowNumber\)/);
+  assert.match(app, /"Dieser AI-Vorschlag wurde bereits übernommen\.": "This AI suggestion has already been accepted\."/);
+  assert.match(acceptSource, /const acceptedSuggestionHash = richTextContentHash\(richContent\)/);
+  assert.match(acceptSource, /markAiSuggestionAccepted\(result, rowNumber, acceptedSuggestionHash\)/);
+  assert.match(acceptSource, /if \(!saved\) \{[\s\S]*result\.aiSuggestionAcceptedContentHash = previousAcceptedState\.aiSuggestionAcceptedContentHash/);
+  assert.match(acceptSource, /else \{[\s\S]*state\.finalSelections\.delete\(Number\(rowNumber\)\)/);
+  assert.match(upsertSource, /aiSuggestionAcceptedContentHash/);
+});
+
 test("AI acceptance stores the saved AI version and recalculates score without forcing approval or 100", () => {
   assert.match(app, /selectedSource:\s*choice === "ai" \? "AI_PROPOSAL"/);
   assert.match(app, /finalizedContentHash:\s*choice === "ai" \? contentHash/);
@@ -208,6 +226,8 @@ test("review analysis keeps original score and original issues visible", () => {
 });
 
 test("saving or cancelling AI suggestion editing restores preview actions", () => {
+  const saveSource = app.match(/async function saveAiSuggestionEdit[\s\S]*?async function cancelAiSuggestionEdit/)?.[0] || "";
+
   assert.match(app, /function finishAiSuggestionEditMode/);
   assert.match(app, /finishAiSuggestionEditMode\(result\);[\s\S]{0,120}renderProductReviewPanel\(\);[\s\S]{0,120}finishAiSuggestionEditMode\(result\);/);
   assert.match(app, /applyAiSuggestionEditorVisibility\(false\)/);
@@ -218,7 +238,9 @@ test("saving or cancelling AI suggestion editing restores preview actions", () =
   assert.match(app, /function currentAiSuggestionContentForAcceptance/);
   assert.match(app, /richTextFromEditorElement\(els\.aiSuggestionEditor\)/);
   assert.match(app, /els\.selectAiButton\.hidden = false/);
-  assert.doesNotMatch(app.match(/async function saveAiSuggestionEdit[\s\S]*?async function cancelAiSuggestionEdit/)?.[0] || "", /recalculateFinalScore/);
+  assert.match(saveSource, /showAlertDialog\("AI-Vorschlag darf nicht leer sein\."\)/);
+  assert.doesNotMatch(saveSource, /AI Suggestion wurde gespeichert/);
+  assert.doesNotMatch(saveSource, /recalculateFinalScore/);
 });
 
 test("back to list replaces decide later and preserves return context", () => {

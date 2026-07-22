@@ -108,6 +108,13 @@ model ProjectAiUsage {
   status            String
   errorType         String?
   pricingVersion    String
+  resolvedModel     String   @default("")
+  inputPriceUsdPer1m Decimal @default(0) @db.Decimal(18, 8)
+  cachedInputPriceUsdPer1m Decimal @default(0) @db.Decimal(18, 8)
+  outputPriceUsdPer1m Decimal @default(0) @db.Decimal(18, 8)
+  pricingSource     String   @default("")
+  pricingEffectiveFrom DateTime?
+  pricingEffectiveUntil DateTime?
   createdAt         DateTime @default(now())
   project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -117,6 +124,7 @@ model ProjectAiUsage {
   @@index([createdAt])
   @@index([action])
   @@index([model])
+  @@index([resolvedModel])
   @@index([projectId, createdAt])
 }
 
